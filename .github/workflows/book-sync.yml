@@ -1,0 +1,173 @@
+name: Book Sync
+description: Synchronize all books with the latest book-formatter changes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'templates/**'
+      - 'package.json'
+  workflow_dispatch:
+    inputs:
+      target_books:
+        description: 'Target books to sync (comma-separated, or "all")'
+        required: false
+        default: 'all'
+        type: string
+      dry_run:
+        description: 'Perform dry run without making changes'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  sync-books:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout book-formatter
+        uses: actions/checkout@v4
+        with:
+          path: book-formatter
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: book-formatter/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: book-formatter
+        run: npm ci
+      
+      - name: Get book list
+        id: get-books
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ inputs.target_books }}" = "all" ] || [ -z "${{ inputs.target_books }}" ]; then
+            # Get all book repositories from the organization
+            BOOKS=$(gh repo list itdojp --limit 100 --json name,description | \
+              jq -r '.[] | select(.description | contains("book") or contains("Book")) | .name' | \
+              grep -E '(-book$|^book-|textbook)' | \
+              grep -v 'book-formatter' | \
+              tr '\n' ',' | sed 's/,$//')
+          else
+            BOOKS="${{ inputs.target_books }}"
+          fi
+          echo "books=$BOOKS" >> $GITHUB_OUTPUT
+          echo "📚 Target books: $BOOKS"
+      
+      - name: Sync each book
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          IFS=',' read -ra BOOK_ARRAY <<< "${{ steps.get-books.outputs.books }}"
+          
+          for BOOK in "${BOOK_ARRAY[@]}"; do
+            BOOK=$(echo $BOOK | xargs) # Trim whitespace
+            
+            if [ -z "$BOOK" ]; then
+              continue
+            fi
+            
+            echo "📖 Processing: $BOOK"
+            
+            # Clone the book repository
+            git clone "https://github.com/itdojp/$BOOK.git" || {
+              echo "❌ Failed to clone $BOOK"
+              continue
+            }
+            
+            cd "$BOOK"
+            
+            # Check if book-config.json exists
+            if [ ! -f "book-config.json" ]; then
+              echo "⚠️  No book-config.json found in $BOOK, skipping..."
+              cd ..
+              continue
+            fi
+            
+            # Run sync command
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "🔍 Dry run mode for $BOOK"
+              node ../book-formatter/src/index.js update-book \
+                --config ./book-config.json \
+                --book . \
+                --dry-run
+            else
+              echo "🔄 Updating $BOOK"
+              node ../book-formatter/src/index.js update-book \
+                --config ./book-config.json \
+                --book .
+              
+              # Check for changes
+              if [ -n "$(git status --porcelain)" ]; then
+                # Create a new branch
+                BRANCH="update-book-formatter-$(date +%Y%m%d-%H%M%S)"
+                git checkout -b "$BRANCH"
+                
+                # Commit changes
+                git config user.name "github-actions[bot]"
+                git config user.email "github-actions[bot]@users.noreply.github.com"
+                git add -A
+                git commit -m "chore: update book structure with latest book-formatter
+
+- Updated by book-formatter sync workflow
+- Source: book-formatter@${{ github.sha }}"
+                
+                # Push branch
+                git push origin "$BRANCH"
+                
+                # Create pull request
+                gh pr create \
+                  --title "chore: Update book structure with latest book-formatter" \
+                  --body "This PR updates the book structure using the latest book-formatter.
+
+## Changes
+- Updated book structure and configuration
+- Applied latest templates and patterns
+
+## Source
+- book-formatter version: \`${{ github.sha }}\`
+- Triggered by: ${{ github.event_name }}
+
+---
+*This PR was automatically created by the book-sync workflow.*" \
+                  --base main \
+                  --head "$BRANCH"
+                
+                echo "✅ Created PR for $BOOK"
+              else
+                echo "✅ No changes needed for $BOOK"
+              fi
+            fi
+            
+            cd ..
+          done
+      
+      - name: Summary
+        run: |
+          echo "## 📊 Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "🔍 **Mode**: Dry Run" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "🔄 **Mode**: Live Update" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target Books**: ${{ steps.get-books.outputs.books }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered By**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          fi

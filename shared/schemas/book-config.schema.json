@@ -1,0 +1,215 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/itdojp/book-formatter/shared/schemas/book-config.schema.json",
+  "title": "Book Configuration",
+  "description": "Configuration schema for book-formatter projects",
+  "type": "object",
+  "required": ["title", "description", "author"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "The title of the book",
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "description": "A brief description of the book",
+      "maxLength": 500
+    },
+    "author": {
+      "type": "string",
+      "description": "The author of the book"
+    },
+    "version": {
+      "type": "string",
+      "description": "The version of the book",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "language": {
+      "type": "string",
+      "description": "The language of the book",
+      "default": "ja",
+      "enum": ["ja", "en", "zh", "ko"]
+    },
+    "license": {
+      "type": "string",
+      "description": "The license of the book",
+      "default": "MIT"
+    },
+    "repository": {
+      "type": "object",
+      "description": "Repository information",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "The URL of the repository"
+        },
+        "branch": {
+          "type": "string",
+          "description": "The default branch",
+          "default": "main"
+        }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "description": "The structure of the book",
+      "properties": {
+        "chapters": {
+          "type": "array",
+          "description": "List of chapters",
+          "items": {
+            "type": "object",
+            "required": ["id", "title"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]+$",
+                "description": "Chapter ID (lowercase, numbers, hyphens only)"
+              },
+              "title": {
+                "type": "string",
+                "description": "Chapter title"
+              },
+              "description": {
+                "type": "string",
+                "description": "Chapter description"
+              },
+              "objectives": {
+                "type": "array",
+                "description": "Learning objectives",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "exercises": {
+                "type": "array",
+                "description": "Chapter exercises",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "appendices": {
+          "type": "array",
+          "description": "List of appendices",
+          "items": {
+            "type": "object",
+            "required": ["id", "title"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]+$",
+                "description": "Appendix ID"
+              },
+              "title": {
+                "type": "string",
+                "description": "Appendix title"
+              }
+            }
+          }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "description": "Output configuration",
+      "properties": {
+        "formats": {
+          "type": "array",
+          "description": "Output formats",
+          "items": {
+            "type": "string",
+            "enum": ["html", "pdf", "epub", "mobi"]
+          },
+          "default": ["html"]
+        },
+        "theme": {
+          "type": "string",
+          "description": "Theme name",
+          "default": "default"
+        }
+      }
+    },
+    "shared": {
+      "type": "object",
+      "description": "Shared components configuration",
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Version of shared components to use"
+        },
+        "components": {
+          "type": "object",
+          "description": "Components to sync",
+          "properties": {
+            "layouts": {
+              "type": "boolean",
+              "default": true
+            },
+            "includes": {
+              "type": "boolean",
+              "default": true
+            },
+            "assets": {
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "css": {
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "js": {
+                      "type": "boolean",
+                      "default": true
+                    }
+                  }
+                }
+              ],
+              "default": true
+            },
+            "templates": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "description": "Build configuration",
+      "properties": {
+        "outputDir": {
+          "type": "string",
+          "description": "Output directory",
+          "default": "_site"
+        },
+        "jekyll": {
+          "type": "object",
+          "description": "Jekyll-specific configuration",
+          "properties": {
+            "theme": {
+              "type": "string",
+              "description": "Jekyll theme"
+            },
+            "plugins": {
+              "type": "array",
+              "description": "Jekyll plugins",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

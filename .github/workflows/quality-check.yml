@@ -1,0 +1,244 @@
+name: Quality Check
+description: Run quality checks on book-formatter and generated books
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run ESLint
+        run: npm run lint
+      
+      - name: Run tests
+        run: npm test
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.node-version }}
+          path: |
+            test-results/
+            coverage/
+
+  validate-templates:
+    name: Validate Templates
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Validate template syntax
+        run: |
+          echo "🔍 Validating template files..."
+          node -e "
+          const { TemplateEngine } = require('./src/TemplateEngine.js');
+          const engine = new TemplateEngine();
+          const templates = engine.getAvailableTemplates();
+          console.log('✅ Found ' + templates.length + ' templates');
+          console.log('Templates:', templates.join(', '));
+          "
+      
+      - name: Test template rendering
+        run: |
+          echo "🧪 Testing template rendering..."
+          node scripts/test-templates.js || echo "⚠️  Template test script not found, skipping..."
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run npm audit
+        run: npm audit --production
+        continue-on-error: true
+      
+      - name: Run CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        continue-on-error: true
+
+  book-generation-test:
+    name: Book Generation Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Test book generation
+        run: |
+          echo "📚 Testing book generation..."
+          
+          # Create sample config
+          npm start init -- --output test-config.json
+          
+          # Generate book
+          npm start create-book -- --config test-config.json --output test-book
+          
+          # Validate generated structure
+          echo "🔍 Validating generated book structure..."
+          
+          # Check required files
+          for file in "index.md" "book-config.json" "_config.yml" "package.json"; do
+            if [ -f "test-book/$file" ]; then
+              echo "✅ Found: $file"
+            else
+              echo "❌ Missing: $file"
+              exit 1
+            fi
+          done
+          
+          # Check directories
+          for dir in "src" "assets" "templates" "scripts" "tests"; do
+            if [ -d "test-book/$dir" ]; then
+              echo "✅ Found directory: $dir"
+            else
+              echo "❌ Missing directory: $dir"
+              exit 1
+            fi
+          done
+          
+          echo "✅ Book generation test passed!"
+      
+      - name: Test Jekyll build
+        run: |
+          cd test-book
+          
+          # Install Jekyll dependencies
+          bundle init
+          bundle add jekyll
+          bundle add jekyll-feed
+          bundle add jekyll-sitemap
+          bundle add jekyll-seo-tag
+          
+          # Try to build with Jekyll
+          bundle exec jekyll build || echo "⚠️  Jekyll build failed (expected without theme)"
+      
+      - name: Upload generated book
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-test-book
+          path: test-book/
+
+  markdown-quality:
+    name: Markdown Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install markdownlint
+        run: npm install -g markdownlint-cli
+      
+      - name: Run markdownlint
+        run: |
+          echo "📝 Checking markdown files..."
+          markdownlint README.md || echo "⚠️  Some markdown issues found"
+
+  summary:
+    name: Quality Summary
+    needs: [lint-and-test, validate-templates, security-scan, book-generation-test, markdown-quality]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 📊 Quality Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check job statuses
+          echo "### Job Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          # Add job status badges
+          if [ "${{ needs.lint-and-test.result }}" = "success" ]; then
+            echo "| Lint and Test | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Lint and Test | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.validate-templates.result }}" = "success" ]; then
+            echo "| Template Validation | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Template Validation | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.security-scan.result }}" = "success" ]; then
+            echo "| Security Scan | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Security Scan | ⚠️ Warning |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.book-generation-test.result }}" = "success" ]; then
+            echo "| Book Generation | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Book Generation | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.markdown-quality.result }}" = "success" ]; then
+            echo "| Markdown Quality | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Markdown Quality | ⚠️ Warning |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow**: ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

@@ -10,7 +10,15 @@
     "test": "node --test tests/BookGenerator.test.js tests/ConfigValidator.test.js",
     "format": "prettier --write .",
     "lint": "eslint src/ tests/",
-    "build": "node scripts/build.js"
+    "build": "node scripts/build.js",
+    "check-links": "node scripts/check-links.js",
+    "check-links:all": "node scripts/check-links.js . --output link-report.json",
+    "dashboard": "node scripts/dashboard.js",
+    "dashboard:watch": "node scripts/dashboard.js --watch",
+    "dashboard:report": "node scripts/dashboard.js --report markdown --save dashboard-report.md",
+    "sync-components": "node scripts/sync-components.js",
+    "sync-components:all": "node scripts/sync-components.js --all",
+    "sync-components:dry-run": "node scripts/sync-components.js --all --dry-run"
   },
   "keywords": [
     "book",
