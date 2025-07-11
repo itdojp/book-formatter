@@ -269,7 +269,7 @@ npm run build
 
     // リポジトリ情報の処理
     if (processed.repository?.url) {
-      const match = processed.repository.url.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+      const match = processed.repository.url.match(/github\.com\/([^/]+)\/([^/]+)/);
       if (match) {
         processed.repository.owner = match[1];
         processed.repository.name = match[2].replace(/\.git$/, '');

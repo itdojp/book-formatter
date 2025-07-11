@@ -87,13 +87,13 @@ export class BookGenerator {
     const ext = path.extname(configPath).toLowerCase();
     
     switch (ext) {
-      case '.json':
-        return JSON.parse(configContent);
-      case '.yml':
-      case '.yaml':
-        return YAML.parse(configContent);
-      default:
-        throw new Error(`サポートされていない設定ファイル形式: ${ext}`);
+    case '.json':
+      return JSON.parse(configContent);
+    case '.yml':
+    case '.yaml':
+      return YAML.parse(configContent);
+    default:
+      throw new Error(`サポートされていない設定ファイル形式: ${ext}`);
     }
   }
 
