@@ -176,6 +176,10 @@ npm start sync-all-books --dry-run
 }
 ```
 
+## 改善提案
+
+Book Formatterの改善提案については[IMPROVEMENT_PROPOSALS.md](./docs/IMPROVEMENT_PROPOSALS.md)を参照してください。
+
 ## 生成されるファイル構造
 
 ```
@@ -242,6 +246,8 @@ DEBUG=book-formatter:* npm start create-book
 - npm 8.0.0以上
 
 ## トラブルシューティング
+
+詳細なトラブルシューティングガイドは[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)を参照してください。
 
 ### よくある問題
 
