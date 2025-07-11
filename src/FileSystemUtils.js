@@ -324,4 +324,14 @@ export class FileSystemUtils {
       throw new Error(`ファイル内容の置換に失敗しました: ${filePath} - ${error.message}`);
     }
   }
+
+  /**
+   * ディレクトリをコピーする（copyDirectoryのエイリアス）
+   * @param {string} srcPath - コピー元パス
+   * @param {string} destPath - コピー先パス
+   * @param {Object} options - オプション
+   */
+  async copyDir(srcPath, destPath, options = {}) {
+    return this.copyDirectory(srcPath, destPath, { ...options, overwrite: true });
+  }
 }

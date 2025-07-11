@@ -110,6 +110,8 @@ language: "ja"
       assert.strictEqual(await fs.pathExists(path.join(outputPath, 'src')), true);
       assert.strictEqual(await fs.pathExists(path.join(outputPath, 'assets')), true);
       assert.strictEqual(await fs.pathExists(path.join(outputPath, 'templates')), true);
+      assert.strictEqual(await fs.pathExists(path.join(outputPath, '_layouts')), true);
+      assert.strictEqual(await fs.pathExists(path.join(outputPath, '_includes')), true);
       
       // 章ディレクトリが作成されているかチェック
       assert.strictEqual(await fs.pathExists(path.join(outputPath, 'src', 'chapter-test-chapter')), true);
@@ -124,6 +126,13 @@ language: "ja"
       assert.strictEqual(await fs.pathExists(path.join(outputPath, 'book-config.json')), true);
       assert.strictEqual(await fs.pathExists(path.join(outputPath, '_config.yml')), true);
       assert.strictEqual(await fs.pathExists(path.join(outputPath, 'package.json')), true);
+      
+      // テンプレートファイルがコピーされているかチェック
+      assert.strictEqual(await fs.pathExists(path.join(outputPath, '_layouts', 'default.html')), true);
+      assert.strictEqual(await fs.pathExists(path.join(outputPath, '_layouts', 'book.html')), true);
+      assert.strictEqual(await fs.pathExists(path.join(outputPath, '_includes', 'sidebar-nav.html')), true);
+      assert.strictEqual(await fs.pathExists(path.join(outputPath, 'assets', 'css', 'main.css')), true);
+      assert.strictEqual(await fs.pathExists(path.join(outputPath, 'assets', 'js', 'theme.js')), true);
     });
 
     test('章ファイルの内容が正しい', async () => {

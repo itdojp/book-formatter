@@ -1,0 +1,117 @@
+<!-- Sidebar Navigation -->
+<div class="sidebar-content">
+    <!-- Book Info -->
+    <div class="book-info">
+        <h2 class="book-title">{{ site.title | escape }}</h2>
+        {% if site.subtitle %}
+        <p class="book-subtitle">{{ site.subtitle | escape }}</p>
+        {% endif %}
+    </div>
+
+    <!-- Table of Contents -->
+    <div class="toc">
+        <h3 class="toc-title">目次</h3>
+        
+        <!-- Introduction -->
+        {% if site.structure.introduction %}
+        <div class="toc-section">
+            <h4 class="toc-section-title">はじめに</h4>
+            <ul class="toc-list">
+                {% for item in site.structure.introduction %}
+                <li class="toc-item">
+                    <a href="{{ item.path | relative_url }}" class="toc-link {% if page.url == item.path %}active{% endif %}">
+                        {{ item.title }}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- Chapters -->
+        {% if site.structure.chapters %}
+        <div class="toc-section">
+            <h4 class="toc-section-title">本編</h4>
+            <ul class="toc-list">
+                {% for chapter in site.structure.chapters %}
+                <li class="toc-item toc-chapter">
+                    <a href="{{ chapter.path | relative_url }}" class="toc-link {% if page.url == chapter.path %}active{% endif %}">
+                        <span class="chapter-number">第{{ chapter.id }}章</span>
+                        <span class="chapter-title">{{ chapter.title }}</span>
+                    </a>
+                    
+                    {% if chapter.sections %}
+                    <ul class="toc-sections">
+                        {% for section in chapter.sections %}
+                        <li class="toc-item toc-section">
+                            <a href="{{ section.path | relative_url }}" class="toc-link {% if page.url == section.path %}active{% endif %}">
+                                <span class="section-number">{{ chapter.id }}.{{ section.id }}</span>
+                                <span class="section-title">{{ section.title }}</span>
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- Appendices -->
+        {% if site.structure.appendices %}
+        <div class="toc-section">
+            <h4 class="toc-section-title">付録</h4>
+            <ul class="toc-list">
+                {% for appendix in site.structure.appendices %}
+                <li class="toc-item">
+                    <a href="{{ appendix.path | relative_url }}" class="toc-link {% if page.url == appendix.path %}active{% endif %}">
+                        <span class="appendix-label">付録{{ appendix.id }}</span>
+                        <span class="appendix-title">{{ appendix.title }}</span>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- Resources -->
+        {% if site.structure.resources %}
+        <div class="toc-section">
+            <h4 class="toc-section-title">リソース</h4>
+            <ul class="toc-list">
+                {% for resource in site.structure.resources %}
+                <li class="toc-item">
+                    <a href="{{ resource.path | relative_url }}" class="toc-link {% if page.url == resource.path %}active{% endif %}">
+                        {{ resource.title }}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- External Links -->
+    <div class="sidebar-footer">
+        <div class="external-links">
+            {% if site.repository.github %}
+            <a href="{{ site.repository.github }}" target="_blank" rel="noopener" class="external-link">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                GitHub
+            </a>
+            {% endif %}
+            
+            {% if site.repository.zenn %}
+            <a href="https://zenn.dev/{{ site.author.github }}/books/{{ site.repository.zenn }}" target="_blank" rel="noopener" class="external-link">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M.264 23.993h4.414V16.57c0-4.833 2.075-7.252 5.192-7.252 2.756 0 4.606 1.88 4.606 4.681v9.994h4.417V13.25c0-5.393-3.045-8.945-7.728-8.945-2.447 0-4.528.892-5.779 2.565h-.109v-6.863H.264v23.986z"/>
+                </svg>
+                Zenn
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
