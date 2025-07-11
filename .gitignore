@@ -36,6 +36,8 @@ logs/
 # Generated files
 book-config.json
 *.backup-*
+link-report.json
+dashboard-report.md
 
 # Build artifacts
 .cache/
