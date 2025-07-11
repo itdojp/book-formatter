@@ -12,16 +12,16 @@ describe('ConfigValidator', () => {
   describe('validate', () => {
     test('有効な設定を正常にバリデーションする', () => {
       const validConfig = {
-        title: "有効な書籍",
-        description: "有効な説明",
-        author: "有効な作成者",
-        version: "1.0.0",
-        language: "ja",
+        title: '有効な書籍',
+        description: '有効な説明',
+        author: '有効な作成者',
+        version: '1.0.0',
+        language: 'ja',
         structure: {
           chapters: [
             {
-              id: "chapter1",
-              title: "第1章"
+              id: 'chapter1',
+              title: '第1章'
             }
           ]
         }
@@ -34,7 +34,7 @@ describe('ConfigValidator', () => {
 
     test('必須フィールドが不足している場合エラーを投げる', () => {
       const invalidConfig = {
-        description: "説明のみ"
+        description: '説明のみ'
       };
 
       assert.throws(() => {
@@ -48,7 +48,7 @@ describe('ConfigValidator', () => {
       }, /設定ファイルが正しくありません/);
 
       assert.throws(() => {
-        validator.validate("string");
+        validator.validate('string');
       }, /設定ファイルが正しくありません/);
     });
   });
@@ -57,8 +57,8 @@ describe('ConfigValidator', () => {
     test('タイトルが文字列でない場合エラーを投げる', () => {
       const config = {
         title: 123,
-        description: "説明",
-        author: "作成者"
+        description: '説明',
+        author: '作成者'
       };
 
       assert.throws(() => {
@@ -68,9 +68,9 @@ describe('ConfigValidator', () => {
 
     test('タイトルが長すぎる場合エラーを投げる', () => {
       const config = {
-        title: "a".repeat(101),
-        description: "説明",
-        author: "作成者"
+        title: 'a'.repeat(101),
+        description: '説明',
+        author: '作成者'
       };
 
       assert.throws(() => {
@@ -80,9 +80,9 @@ describe('ConfigValidator', () => {
 
     test('説明が長すぎる場合エラーを投げる', () => {
       const config = {
-        title: "タイトル",
-        description: "a".repeat(501),
-        author: "作成者"
+        title: 'タイトル',
+        description: 'a'.repeat(501),
+        author: '作成者'
       };
 
       assert.throws(() => {
@@ -92,10 +92,10 @@ describe('ConfigValidator', () => {
 
     test('無効なバージョン形式の場合エラーを投げる', () => {
       const config = {
-        title: "タイトル",
-        description: "説明",
-        author: "作成者",
-        version: "1.0"
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
+        version: '1.0'
       };
 
       assert.throws(() => {
@@ -107,11 +107,11 @@ describe('ConfigValidator', () => {
   describe('validateStructure', () => {
     test('章の設定が配列でない場合エラーを投げる', () => {
       const config = {
-        title: "タイトル",
-        description: "説明",
-        author: "作成者",
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
         structure: {
-          chapters: "not an array"
+          chapters: 'not an array'
         }
       };
 
@@ -122,13 +122,13 @@ describe('ConfigValidator', () => {
 
     test('章にIDがない場合エラーを投げる', () => {
       const config = {
-        title: "タイトル",
-        description: "説明",
-        author: "作成者",
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
         structure: {
           chapters: [
             {
-              title: "章タイトル"
+              title: '章タイトル'
             }
           ]
         }
@@ -141,13 +141,13 @@ describe('ConfigValidator', () => {
 
     test('章にタイトルがない場合エラーを投げる', () => {
       const config = {
-        title: "タイトル",
-        description: "説明",
-        author: "作成者",
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
         structure: {
           chapters: [
             {
-              id: "chapter1"
+              id: 'chapter1'
             }
           ]
         }
@@ -160,14 +160,14 @@ describe('ConfigValidator', () => {
 
     test('章のIDが無効な形式の場合エラーを投げる', () => {
       const config = {
-        title: "タイトル",
-        description: "説明",
-        author: "作成者",
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
         structure: {
           chapters: [
             {
-              id: "Chapter_1!",
-              title: "章タイトル"
+              id: 'Chapter_1!',
+              title: '章タイトル'
             }
           ]
         }
@@ -180,11 +180,11 @@ describe('ConfigValidator', () => {
 
     test('付録の設定が配列でない場合エラーを投げる', () => {
       const config = {
-        title: "タイトル",
-        description: "説明",
-        author: "作成者",
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
         structure: {
-          appendices: "not an array"
+          appendices: 'not an array'
         }
       };
 
@@ -197,11 +197,11 @@ describe('ConfigValidator', () => {
   describe('validateRepository', () => {
     test('リポジトリURLが無効な場合エラーを投げる', () => {
       const config = {
-        title: "タイトル",
-        description: "説明",
-        author: "作成者",
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
         repository: {
-          url: "invalid-url"
+          url: 'invalid-url'
         }
       };
 
@@ -212,11 +212,11 @@ describe('ConfigValidator', () => {
 
     test('リポジトリブランチが文字列でない場合エラーを投げる', () => {
       const config = {
-        title: "タイトル",
-        description: "説明",
-        author: "作成者",
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
         repository: {
-          url: "https://github.com/user/repo.git",
+          url: 'https://github.com/user/repo.git',
           branch: 123
         }
       };
@@ -263,20 +263,20 @@ describe('ConfigValidator', () => {
   describe('getValidationDetails', () => {
     test('有効な設定の詳細を返す', () => {
       const validConfig = {
-        title: "有効な書籍",
-        description: "有効な説明",
-        author: "有効な作成者",
-        version: "1.0.0",
+        title: '有効な書籍',
+        description: '有効な説明',
+        author: '有効な作成者',
+        version: '1.0.0',
         structure: {
           chapters: [
             {
-              id: "chapter1",
-              title: "第1章"
+              id: 'chapter1',
+              title: '第1章'
             }
           ]
         },
         repository: {
-          url: "https://github.com/user/repo.git"
+          url: 'https://github.com/user/repo.git'
         }
       };
 
@@ -289,7 +289,7 @@ describe('ConfigValidator', () => {
 
     test('無効な設定のエラーを返す', () => {
       const invalidConfig = {
-        description: "説明のみ"
+        description: '説明のみ'
       };
 
       const details = validator.getValidationDetails(invalidConfig);
@@ -301,9 +301,9 @@ describe('ConfigValidator', () => {
 
     test('警告を適切に返す', () => {
       const configWithWarnings = {
-        title: "タイトル",
-        description: "説明",
-        author: "作成者",
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
         structure: {} // 空の構造
         // version, chapters, repository が不足
       };

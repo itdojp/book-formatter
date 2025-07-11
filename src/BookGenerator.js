@@ -87,13 +87,13 @@ export class BookGenerator {
     const ext = path.extname(configPath).toLowerCase();
     
     switch (ext) {
-      case '.json':
-        return JSON.parse(configContent);
-      case '.yml':
-      case '.yaml':
-        return YAML.parse(configContent);
-      default:
-        throw new Error(`サポートされていない設定ファイル形式: ${ext}`);
+    case '.json':
+      return JSON.parse(configContent);
+    case '.yml':
+    case '.yaml':
+      return YAML.parse(configContent);
+    default:
+      throw new Error(`サポートされていない設定ファイル形式: ${ext}`);
     }
   }
 
@@ -109,6 +109,11 @@ export class BookGenerator {
     const directories = [
       'src',
       'assets',
+      'assets/css',
+      'assets/js',
+      'assets/images',
+      '_layouts',
+      '_includes',
       'templates',
       'scripts',
       'tests'
@@ -150,6 +155,9 @@ export class BookGenerator {
     
     // パッケージファイル
     await this.generatePackageFile(config, outputPath);
+    
+    // テンプレートファイルをコピー
+    await this.copyTemplateFiles(outputPath);
   }
 
   /**
@@ -251,5 +259,38 @@ export class BookGenerator {
     
     // インデックスファイルの更新
     await this.generateIndexFile(config, bookPath);
+    
+    // テンプレートファイルを更新
+    await this.copyTemplateFiles(bookPath);
+  }
+
+  /**
+   * テンプレートファイルをコピーする
+   * @param {string} outputPath - 出力パス
+   */
+  async copyTemplateFiles(outputPath) {
+    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+    const sharedPath = path.join(moduleDir, '..', 'shared');
+    
+    // レイアウトファイルをコピー
+    const layoutsSource = path.join(sharedPath, 'layouts');
+    const layoutsDest = path.join(outputPath, '_layouts');
+    if (await this.fsUtils.exists(layoutsSource)) {
+      await this.fsUtils.copyDir(layoutsSource, layoutsDest);
+    }
+    
+    // インクルードファイルをコピー
+    const includesSource = path.join(sharedPath, 'includes');
+    const includesDest = path.join(outputPath, '_includes');
+    if (await this.fsUtils.exists(includesSource)) {
+      await this.fsUtils.copyDir(includesSource, includesDest);
+    }
+    
+    // アセットファイルをコピー
+    const assetsSource = path.join(sharedPath, 'assets');
+    const assetsDest = path.join(outputPath, 'assets');
+    if (await this.fsUtils.exists(assetsSource)) {
+      await this.fsUtils.copyDir(assetsSource, assetsDest);
+    }
   }
 }
