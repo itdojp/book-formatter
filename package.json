@@ -18,7 +18,10 @@
     "dashboard:report": "node scripts/dashboard.js --report markdown --save dashboard-report.md",
     "sync-components": "node scripts/sync-components.js",
     "sync-components:all": "node scripts/sync-components.js --all",
-    "sync-components:dry-run": "node scripts/sync-components.js --all --dry-run"
+    "sync-components:dry-run": "node scripts/sync-components.js --all --dry-run",
+    "diagnose": "node scripts/diagnose.js",
+    "troubleshoot": "node scripts/troubleshoot.js",
+    "health-check": "node scripts/diagnose.js --export"
   },
   "keywords": [
     "book",
