@@ -38,6 +38,9 @@ export class ConfigValidator {
     // 構造のチェック
     this.validateStructure(config);
     
+    // ナビゲーション設定のチェック
+    this.validateNavigation(config);
+    
     // リポジトリ情報のチェック
     this.validateRepository(config);
     
@@ -258,5 +261,49 @@ export class ConfigValidator {
     }
 
     return results;
+  }
+
+  /**
+   * ナビゲーション設定をバリデーションする
+   * @param {Object} config - 設定オブジェクト
+   */
+  validateNavigation(config) {
+    if (!config.navigation) {
+      // ナビゲーション設定がない場合は自動生成するため、エラーではない
+      return;
+    }
+
+    const navigation = config.navigation;
+
+    // order が設定されている場合の検証
+    if (navigation.order) {
+      if (!Array.isArray(navigation.order)) {
+        throw new Error('navigation.order は配列である必要があります');
+      }
+
+      // 重複チェック
+      const uniquePaths = new Set(navigation.order);
+      if (uniquePaths.size !== navigation.order.length) {
+        throw new Error('navigation.order に重複したパスが含まれています');
+      }
+
+      // 空の値のチェック
+      const invalidPaths = navigation.order.filter(path => !path || typeof path !== 'string');
+      if (invalidPaths.length > 0) {
+        throw new Error('navigation.order に無効なパスが含まれています');
+      }
+
+      // パスの形式チェック
+      const invalidFormat = navigation.order.filter(path => {
+        // パスは英数字、ハイフン、スラッシュ、アンダースコアのみ許可
+        return !/^[a-zA-Z0-9\-_/]+$/.test(path);
+      });
+      
+      if (invalidFormat.length > 0) {
+        throw new Error(`navigation.order に無効な形式のパスが含まれています: ${invalidFormat.join(', ')}`);
+      }
+
+      console.log(`✅ ナビゲーション設定を検証しました: ${navigation.order.length}ページ`);
+    }
   }
 }

@@ -303,6 +303,134 @@ git checkout -b feature/major-change
 - [GitHub Pages公式ドキュメント](https://docs.github.com/pages)
 - [GitHub Actions公式ドキュメント](https://docs.github.com/actions)
 
+## negotiation-for-engineers プロジェクト実施時の追加知見
+
+### 問題: ブラウザハングアップ（Chapter読み込み時に応答しなくなる）
+
+**原因**: 
+- `main.js`のヘディングID生成処理で無限ループが発生
+- `search.js`の検索インデックス構築処理が重い
+- `code-copy.js`の過剰なDOM操作
+
+**症状**:
+- 特定の章（特に第1章）でブラウザがフリーズ
+- コンソールエラーは出ないが、ページが応答しなくなる
+- モバイルブラウザでも同様の問題が発生
+
+**解決方法**:
+問題のあるJavaScriptファイルを一時的に無効化
+```javascript
+// assets/js/main.js
+console.log('Main.js loaded but functionality disabled for performance');
+// 元の機能をすべてコメントアウト
+
+// assets/js/search.js  
+console.log('Search.js loaded but functionality disabled for performance');
+// 検索機能を無効化
+
+// assets/js/code-copy.js
+console.log('Code-copy.js loaded but functionality disabled for performance');
+// コードコピー機能を無効化
+```
+
+**予防策**:
+- JavaScriptの処理でDOM要素数が多い場合は、バッチ処理や遅延実行を使用
+- 無限ループを防ぐための上限値設定
+- パフォーマンス重要なページでは必要最小限の機能のみ有効化
+
+### 問題: パンくずリストが不要だが表示される
+
+**原因**: 
+- book.htmlレイアウトでパンくずリストが自動生成される
+- 他の書籍との一貫性のためパンくずリストを削除したい場合
+
+**解決方法**:
+1. `_includes/breadcrumb.html`を無効化
+```html
+<!-- Breadcrumb navigation is disabled for this book -->
+<!-- To maintain consistent design, this component is left empty -->
+```
+
+2. `_layouts/book.html`からパンくず表示部分を削除
+```html
+<!-- Breadcrumb removed for this book -->
+```
+
+### 問題: サイドバーナビゲーションに目次が表示されない
+
+**原因**: 
+- `_config.yml`のサイト構造設定が不適切
+- `site.structure`ではなく`structure`として設定する必要がある
+
+**解決方法**:
+`_config.yml`を正しい構造に修正
+```yaml
+# サイト構造設定
+structure:
+  introduction:
+    - title: "はじめに：なぜエンジニアこそ交渉力が必要か"
+      path: "/src/introduction/index.html"
+  
+  chapters:
+    - id: 1
+      title: "コードは雄弁に語る - 技術的根拠による説得術"
+      path: "/src/chapter-1/index.html"
+    # ... 他の章
+  
+  conclusion:
+    - title: "おわりに：継続的インテグレーション"
+      path: "/src/conclusion/index.html"
+  
+  appendices:
+    - title: "実践ツールキット"
+      path: "/src/appendices/toolkit.html"
+```
+
+### 問題: ページナビゲーション（前へ/次へ）のリンクが正しくない
+
+**原因**: 
+- 自動生成されるページ順序が意図と異なる
+- ページのorder属性やファイル名による自動ソートが期待通りでない
+
+**解決方法**:
+`_includes/page-navigation.html`で手動でページ順序を定義
+```liquid
+<!-- Define page order manually -->
+{% if current_url contains '/introduction/' %}
+    {% assign next_page_url = '/src/chapter-1/index.html' %}
+    {% assign next_page_title = '第1章 コードは雄弁に語る' %}
+{% elsif current_url contains '/chapter-1/' %}
+    {% assign previous_page_url = '/src/introduction/index.html' %}
+    {% assign previous_page_title = 'はじめに' %}
+    {% assign next_page_url = '/src/chapter-2/index.html' %}
+    {% assign next_page_title = '第2章 ステークホルダー・インターフェース設計' %}
+<!-- ... 他のページの定義 -->
+{% endif %}
+```
+
+### 問題: トップページにナビゲーションが表示されない
+
+**原因**: 
+- `index.md`のレイアウトが`default`になっている
+- `book`レイアウトでないとサイドバーナビゲーションが表示されない
+
+**解決方法**:
+`index.md`のfront matterを修正
+```yaml
+---
+title: "書籍タイトル"
+layout: book  # defaultからbookに変更
+---
+```
+
+### 実装時のベストプラクティス
+
+1. **段階的テスト**: 各章を個別にテストして、特定の章で問題が発生しないか確認
+2. **JavaScript最小化**: パフォーマンス重要なページでは不要なJavaScript機能を無効化
+3. **ナビゲーション手動設定**: 自動生成に頼らず、明示的にページ順序を定義
+4. **レイアウト統一**: すべてのページで`book`レイアウトを使用してナビゲーション一貫性を保つ
+5. **構造設定確認**: `_config.yml`の構造設定が他の書籍と同じ形式になっているか確認
+
 ---
 
 このトラブルシューティングガイドは継続的に更新されます。新しい問題や解決方法を発見した場合は、このドキュメントに追加してください。
