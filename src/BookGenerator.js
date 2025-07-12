@@ -5,6 +5,7 @@ import { ConfigValidator } from './ConfigValidator.js';
 import { TemplateEngine } from './TemplateEngine.js';
 import { FileSystemUtils } from './FileSystemUtils.js';
 import { ErrorHandler } from './ErrorHandler.js';
+import { GitHubPagesHandler } from './GitHubPagesHandler.js';
 
 /**
  * 設定駆動型のブック生成システムのメインクラス
@@ -15,6 +16,7 @@ export class BookGenerator {
     this.templateEngine = new TemplateEngine();
     this.fsUtils = new FileSystemUtils();
     this.errorHandler = new ErrorHandler();
+    this.gitHubPagesHandler = new GitHubPagesHandler();
     
     // Safe file system wrapper
     this.safeFs = this.errorHandler.createSafeFileSystem(fs);
@@ -205,6 +207,11 @@ export class BookGenerator {
     // パッケージファイル
     await this.generatePackageFile(config, outputPath);
     
+    // GitHub Pages設定
+    if (config.deployment?.platform === 'github-pages') {
+      await this.gitHubPagesHandler.setupGitHubPages(config, outputPath);
+    }
+    
     // Safe JavaScript設定
     await this.setupSafeJavaScript(config, outputPath);
     
@@ -242,9 +249,33 @@ export class BookGenerator {
       JSON.stringify(bookConfig, null, 2)
     );
     
-    // _config.yml (Jekyll用)
-    const jekyllConfig = this.templateEngine.render('_config.yml', config);
-    await fs.writeFile(path.join(outputPath, '_config.yml'), jekyllConfig);
+    // _config.yml (Jekyll用) - GitHub Pages用に拡張
+    let jekyllConfig;
+    if (config.deployment?.platform === 'github-pages') {
+      jekyllConfig = this.gitHubPagesHandler.enhanceJekyllConfig(config);
+    } else {
+      jekyllConfig = this.templateEngine.render('_config.yml', config);
+    }
+    
+    await fs.writeFile(
+      path.join(outputPath, '_config.yml'),
+      typeof jekyllConfig === 'string' ? jekyllConfig : this.formatYaml(jekyllConfig)
+    );
+  }
+
+  /**
+   * オブジェクトをYAML形式に変換する
+   * @param {Object} obj - 変換するオブジェクト
+   * @returns {string} YAML文字列
+   */
+  formatYaml(obj) {
+    return YAML.stringify(obj, {
+      indent: 2,
+      lineWidth: 0,
+      quotingType: '"',
+      defaultKeyType: null,
+      defaultStringType: 'PLAIN'
+    });
   }
 
   /**
@@ -278,8 +309,39 @@ export class BookGenerator {
    * @param {string} outputPath - 出力パス
    */
   async generatePackageFile(config, outputPath) {
-    const packageContent = this.templateEngine.render('package.json', config);
-    await fs.writeFile(path.join(outputPath, 'package.json'), packageContent);
+    // Enhanced package.json with GitHub Pages deployment scripts
+    const packageData = {
+      name: config.repository?.name || 'book',
+      version: config.version || '1.0.0',
+      description: config.description || '',
+      author: config.author || '',
+      license: 'MIT',
+      scripts: {
+        'build': 'bundle exec jekyll build',
+        'serve': 'bundle exec jekyll serve --livereload',
+        'deploy': 'npm run build && gh-pages -d _site',
+        'deploy-setup': 'gh-pages-clean',
+        'validate-deploy': 'node scripts/validate-github-pages.js',
+        'pages-status': 'node scripts/check-pages-status.js'
+      },
+      devDependencies: {
+        'gh-pages': '^6.0.0'
+      },
+      repository: config.repository?.url ? {
+        type: 'git',
+        url: config.repository.url
+      } : undefined,
+      homepage: config.deployment?.customDomain 
+        ? `https://${config.deployment.customDomain}`
+        : config.repository?.owner 
+          ? `https://${config.repository.owner}.github.io/${config.repository.name || 'repo'}`
+          : undefined
+    };
+
+    await fs.writeFile(
+      path.join(outputPath, 'package.json'),
+      JSON.stringify(packageData, null, 2)
+    );
   }
 
   /**
