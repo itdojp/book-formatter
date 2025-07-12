@@ -4,6 +4,7 @@ import YAML from 'yaml';
 import { ConfigValidator } from './ConfigValidator.js';
 import { TemplateEngine } from './TemplateEngine.js';
 import { FileSystemUtils } from './FileSystemUtils.js';
+import { MobileOptimizer } from './MobileOptimizer.js';
 
 /**
  * 設定駆動型のブック生成システムのメインクラス
@@ -13,6 +14,7 @@ export class BookGenerator {
     this.validator = new ConfigValidator();
     this.templateEngine = new TemplateEngine();
     this.fsUtils = new FileSystemUtils();
+    this.mobileOptimizer = new MobileOptimizer();
   }
 
   /**
@@ -150,6 +152,11 @@ export class BookGenerator {
     
     // パッケージファイル
     await this.generatePackageFile(config, outputPath);
+    
+    // モバイル最適化
+    if (config.mobile?.enabled !== false) {
+      await this.mobileOptimizer.optimizeForMobile(config, outputPath);
+    }
   }
 
   /**
