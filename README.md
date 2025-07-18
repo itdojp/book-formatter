@@ -337,9 +337,17 @@ GitHub: [@itdojp](https://github.com/itdojp)
 
 ## 関連リンク
 
-- [Book Publishing Template v3.0](https://github.com/itdojp/book-publishing-template)
 - [使用例とサンプル](https://github.com/itdojp/book-formatter/tree/main/examples)
-- [API ドキュメント](https://github.com/itdojp/book-formatter/tree/main/docs)
+
+### 廃止されたシステム
+
+**⚠️ 重要な注意事項**
+
+- **Book Publishing Template v3.0** - **使用禁止**
+  - このシステムの基盤となった旧テンプレートシステム
+  - 現在は廃止されており、使用は禁止されています
+  - 新規書籍作成時は必ずbook-formatterを使用してください
+  - 旧テンプレートからの移行については[移行ガイド](./docs/migration-guide.md)を参照してください
 
 ---
 
