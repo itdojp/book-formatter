@@ -297,6 +297,7 @@ GitHub: [@itdojp](https://github.com/itdojp)
 - [Book Publishing Template v3.0](https://github.com/itdojp/book-publishing-template)
 - [使用例とサンプル](https://github.com/itdojp/book-formatter/tree/main/examples)
 - [API ドキュメント](https://github.com/itdojp/book-formatter/tree/main/docs)
+- [📚 新規書籍作成手順書](./docs/book-creation-guide.md)
 
 ---
 
