@@ -9,6 +9,7 @@
 3. [JavaScript関連の問題](#javascript関連の問題)
 4. [レイアウト・デザイン関連の問題](#レイアウトデザイン関連の問題)
 5. [設定ファイル関連の問題](#設定ファイル関連の問題)
+6. [Markdown記法・コードブロック関連の問題](#markdown記法コードブロック関連の問題)
 
 ## GitHub Pages関連の問題
 
@@ -295,6 +296,209 @@ gh run view [RUN_ID] --log
 重要な変更前にはブランチを作成:
 ```bash
 git checkout -b feature/major-change
+```
+
+## Markdown記法・コードブロック関連の問題
+
+### 問題：コードブロックが正しく表示されない / 内容が外部に漏れる
+
+**症状:**
+- コードブロック内のコメントやテキストが通常のテキストとして表示される
+- 「ワークロード分析の例」などのコメントがコードブロック外に表示される
+- 見出しやテキストがコードブロック内に含まれてしまう
+
+**原因:**
+- 単一バックティック（`）と3つのバックティック（```）の混在
+- 言語指定の記法が不完全（例：`python ではなく ```python）
+- コードブロックの開始・終了タグの不整合
+
+**診断方法:**
+```bash
+# 単一バックティック + 言語名のパターンを検索
+grep -n "`[a-z]" docs/chapter-*/index.md
+
+# 開始・終了タグの不整合を確認
+grep -n "^```" docs/chapter-*/index.md | sort
+```
+
+**解決手順:**
+1. **単一バックティック問題の修正**
+   ```bash
+   # 修正前
+   `python
+   # コード例
+   
+   # 修正後
+   ```python
+   # コード例
+   ```
+
+2. **言語指定の統一**
+   - `python` → ````python`
+   - `bash` → ````bash`
+   - `yaml` → ````yaml`
+   - `json` → ````json`
+
+3. **開始・終了タグの対応確認**
+   ```bash
+   # 各章で開始・終了タグの数を確認
+   grep -c "^```" docs/chapter-*/index.md
+   ```
+
+**予防策:**
+- コードブロックは必ず3つのバックティックで開始・終了する
+- 言語指定は一貫した記法を使用する
+- 大量のコードブロックがある場合は、作成後に一括チェックを実行する
+
+### 問題：フォントサイズ・スタイリングの不整合
+
+**症状:**
+- h3見出しが異常に大きく表示される
+- 太字テキストのフォントサイズが不適切
+- コードブロック内のテキストが大きすぎる
+
+**原因:**
+- CSS継承の問題
+- 単一バックティック使用による誤った要素認識
+- スタイルシートの競合
+
+**診断方法:**
+```bash
+# フォントサイズ関連のCSS確認
+grep -n "font-size" docs/assets/css/*.css
+
+# 太字テキストの設定確認
+grep -n "font-weight.*bold" docs/assets/css/*.css
+```
+
+**解決手順:**
+1. **CSS階層の修正**
+   ```css
+   /* 太字テキストの継承修正 */
+   strong, b {
+       font-weight: 600;
+       font-size: inherit !important;
+       color: inherit;
+   }
+   
+   /* コードブロックのフォントサイズ統一 */
+   code, pre, .highlight * {
+       font-size: 0.75rem !important;
+   }
+   ```
+
+2. **Markdown記法の統一**
+   - 単一バックティックを3つのバックティックに統一
+   - 適切な見出しレベルを使用
+
+**予防策:**
+- 初期テンプレート設定時にフォントサイズを明示的に定義
+- コードブロックとインラインコードの記法を統一
+- 定期的にライブサイトでの表示確認を実施
+
+### 問題：Jekyll Liquid構文競合
+
+**症状:**
+- Infrastructure as Code（Terraform、Ansible）のサンプルコードでビルドエラー
+- テンプレート変数（`${variable}`、`{{ variable }}`）が原因でJekyllが失敗
+- GitHub Actionsのワークフローサンプルが正しく表示されない
+
+**原因:**
+- JekyllがInfrastructure as Codeのテンプレート変数をLiquid構文として解釈
+- 特に`{{ }}`や`{% %}`を含むコードブロックでの問題
+
+**診断方法:**
+```bash
+# 問題となりうるパターンを検索
+grep -n "{{" docs/chapter-*/index.md
+grep -n "{%" docs/chapter-*/index.md
+grep -n "${" docs/chapter-*/index.md
+```
+
+**解決手順:**
+1. **rawタグで囲む**
+   ```markdown
+   {% raw %}
+   ```terraform
+   resource "aws_instance" "web" {
+     ami           = "${var.ami_id}"
+     instance_type = "${var.instance_type}"
+   }
+   ```
+   {% endraw %}
+   ```
+
+2. **一括修正スクリプトの作成**
+   ```bash
+   # 競合修正スクリプト
+   #!/bin/bash
+   find docs/chapter-* -name "*.md" -exec sed -i 's/`terraform/```terraform/g' {} \;
+   find docs/chapter-* -name "*.md" -exec sed -i 's/`ansible/```ansible/g' {} \;
+   ```
+
+**予防策:**
+- Infrastructure as Codeのサンプルコードは事前に`{% raw %}`タグで囲む
+- CI/CDパイプラインでJekyllビルドテストを実施
+- テンプレート変数を含むコードブロックは特に注意深く確認
+
+## 作業効率化のためのヒント
+
+### 一括修正のためのスクリプト例
+
+```bash
+#!/bin/bash
+# code-block-fix.sh - コードブロック記法の一括修正
+
+echo "コードブロック記法の修正を開始..."
+
+# 単一バックティック + 言語名を3つのバックティックに修正
+find docs/chapter-* -name "*.md" -exec sed -i 's/`python/```python/g' {} \;
+find docs/chapter-* -name "*.md" -exec sed -i 's/`bash/```bash/g' {} \;
+find docs/chapter-* -name "*.md" -exec sed -i 's/`yaml/```yaml/g' {} \;
+find docs/chapter-* -name "*.md" -exec sed -i 's/`json/```json/g' {} \;
+
+echo "修正完了"
+
+# 修正箇所の確認
+echo "修正箇所の確認:"
+grep -n "^```" docs/chapter-*/index.md | wc -l
+```
+
+### 品質確認のためのチェックリスト
+
+- [ ] コードブロックの開始・終了タグが対応している
+- [ ] 言語指定が一貫している
+- [ ] Infrastructure as Codeサンプルが`{% raw %}`で囲まれている
+- [ ] フォントサイズが適切に表示されている
+- [ ] 太字テキストのサイズが正常
+- [ ] ローカルでのJekyllビルドが成功する
+- [ ] GitHub Pagesでの表示が正常
+
+### 定期メンテナンスの推奨
+
+```bash
+# 月次実行推奨のチェックスクリプト
+#!/bin/bash
+echo "書籍品質チェックを実行..."
+
+# Markdown記法チェック
+echo "1. Markdown記法チェック"
+grep -r "`[a-z]" docs/chapter-* && echo "警告: 単一バックティック+言語名が検出されました"
+
+# Jekyll構文競合チェック
+echo "2. Jekyll構文競合チェック"
+grep -r "{{" docs/chapter-* | grep -v "{% raw %}" && echo "警告: 未保護のLiquid構文が検出されました"
+
+# コードブロック整合性チェック
+echo "3. コードブロック整合性チェック"
+for file in docs/chapter-*/index.md; do
+    count=$(grep -c "^```" "$file")
+    if [ $((count % 2)) -ne 0 ]; then
+        echo "警告: $file でコードブロックの開始・終了が不整合です"
+    fi
+done
+
+echo "チェック完了"
 ```
 
 ## 関連リソース
