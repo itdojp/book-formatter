@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2025-07-19
+
+### Fixed
+- **Performance Issues**: Fixed JavaScript browser freeze caused by heavy DOM processing
+  - Optimized `addHeadingIds()` function with heading count limit (max 50)
+  - Added deferred initialization using setTimeout for heavy operations
+  - Simplified regex patterns for better performance
+  - Added error handling for all DOM operations
+
+### Improved
+- **Layout System**: Enhanced page layout and navigation
+  - Fixed page navigation display on all pages
+  - Improved page content minimum height and spacing
+  - Added flexbox layout for proper content distribution
+  - Fixed excessive whitespace at page bottom
+
+### Added
+- **Documentation**: Added comprehensive performance guide
+  - New `PERFORMANCE_GUIDE.md` with troubleshooting steps
+  - Updated `book-creation-guide.md` with performance warnings
+  - Added performance monitoring recommendations
+
+### Changed
+- **Templates**: Updated layout templates for better reliability
+  - Removed conditional navigation display that caused missing navigation
+  - Added performance notes for script loading
+  - Improved CSS for consistent page layout
+
 ## [1.0.0] - 2025-07-10
 
 ### Added
