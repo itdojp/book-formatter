@@ -30,18 +30,24 @@
         });
     }
     
-    // Add IDs to headings for anchor links
+    // Add IDs to headings for anchor links - optimized version
     function addHeadingIds() {
         const headings = document.querySelectorAll('.page-content h1, .page-content h2, .page-content h3, .page-content h4, .page-content h5, .page-content h6');
         
-        headings.forEach(heading => {
+        // Limit processing to avoid performance issues
+        const maxHeadings = 50;
+        const limitedHeadings = Array.from(headings).slice(0, maxHeadings);
+        
+        limitedHeadings.forEach(heading => {
             if (!heading.id) {
-                // Generate ID from heading text
+                // Generate ID from heading text - simplified regex for performance
                 const text = heading.textContent.trim();
                 const id = text
                     .toLowerCase()
-                    .replace(/[^a-z0-9\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf]+/g, '-')
-                    .replace(/^-+|-+$/g, '');
+                    .replace(/[^\w\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf-]/g, '-')
+                    .replace(/--+/g, '-')
+                    .replace(/^-+|-+$/g, '')
+                    .substring(0, 50); // Limit length
                 
                 // Ensure unique ID
                 let uniqueId = id;
@@ -341,14 +347,30 @@
         document.head.insertAdjacentHTML('beforeend', styles);
     }
     
-    // Initialize all features
+    // Initialize all features - optimized for performance
     function init() {
+        // Critical features first
         addStyles();
         initSmoothScrolling();
-        addHeadingIds();
-        generateTOC();
-        handleExternalLinks();
-        enhanceImages();
+        
+        // Defer heavy processing to prevent browser freeze
+        setTimeout(() => {
+            try {
+                addHeadingIds();
+            } catch (e) {
+                console.warn('Error in addHeadingIds:', e);
+            }
+        }, 100);
+        
+        setTimeout(() => {
+            try {
+                generateTOC();
+                handleExternalLinks();
+                enhanceImages();
+            } catch (e) {
+                console.warn('Error in deferred initialization:', e);
+            }
+        }, 200);
     }
     
     // Initialize when DOM is ready

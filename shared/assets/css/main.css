@@ -444,6 +444,23 @@ a:hover {
     }
 }
 
+/* Page Content Layout Improvements */
+.page-content {
+    min-height: 60vh;
+    margin-bottom: 2rem;
+}
+
+.book-content {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - var(--header-height));
+}
+
+.page-navigation {
+    margin-top: auto;
+    padding-top: 3rem;
+}
+
 /* Print Styles */
 @media print {
     .book-header,
