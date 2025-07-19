@@ -118,11 +118,9 @@
                 </article>
 
                 <!-- Navigation -->
-                {% if page.url != '/' %}
                 <nav class="page-navigation" aria-label="Page navigation">
                     {% include page-navigation.html %}
                 </nav>
-                {% endif %}
 
                 <!-- Edit on GitHub -->
                 {% if site.repository.github and page.path %}
@@ -149,6 +147,7 @@
     <!-- Scripts -->
     <script src="{{ '/assets/js/theme.js' | relative_url }}"></script>
     <script src="{{ '/assets/js/sidebar.js' | relative_url }}"></script>
+    <!-- Note: For better performance, consider disabling heavy scripts on content-heavy pages -->
     <script src="{{ '/assets/js/search.js' | relative_url }}"></script>
     <script src="{{ '/assets/js/code-copy.js' | relative_url }}"></script>
     <script src="{{ '/assets/js/main.js' | relative_url }}"></script>
