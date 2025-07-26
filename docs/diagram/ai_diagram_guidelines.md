@@ -408,3 +408,206 @@ Common issues to prevent:
 ```
 
 このガイドラインにより、AIが生成する図表の品質と一貫性を大幅に向上できます。
+
+## 学術品質図表の作成指針
+
+### 学術出版レベルの要求事項
+
+#### 品質基準
+```
+Create academic-quality diagrams meeting publication standards:
+- Research paper/textbook level visual quality
+- Professional typography with mathematical notation support
+- Consistent design language across entire document
+- High-resolution vector output suitable for print
+- Accessibility compliance (WCAG AA standard)
+- Multi-language support with proper Unicode handling
+```
+
+#### 大規模プロジェクト管理
+```
+For large-scale diagram conversion projects:
+
+Phase 1: Assessment and Planning
+- Comprehensive audit of existing diagrams (grep/search tools)
+- Classification by complexity and content type
+- Priority-based conversion schedule
+- Quality benchmark establishment
+
+Phase 2: Systematic Implementation
+- Batch creation of related diagrams
+- Template standardization across chapters
+- Version control with meaningful commit messages
+- Iterative review and refinement process
+
+Phase 3: Quality Assurance
+- Consistency verification across all diagrams
+- Performance optimization (file size, loading speed)
+- Cross-platform compatibility testing
+- Accessibility validation and compliance check
+```
+
+### 理論計算機科学分野の特殊要件
+
+#### 数学的表記の適切な処理
+```
+Mathematical notation requirements:
+- Unicode symbols: Σ, Γ, δ, ∈, ∉, ⟨⟩, ≤, ≥, ∞
+- Subscripts and superscripts: q₀, qₐ, qᵣ, 2^n, O(n²)
+- Set notation: {0,1}*, ∅, ∪, ∩, ⊆, ⊊
+- Logic symbols: ∧, ∨, ¬, →, ↔, ∀, ∃
+- Greek letters: α, β, γ, δ, ε, λ, μ, π, σ, τ, φ, ψ, ω
+
+Font specification for mathematical content:
+- Primary: 'Inter', 'Helvetica Neue', system-ui
+- Mathematical: 'Latin Modern Math', 'STIX Two Math', fallback
+- Monospace: 'SF Mono', 'Monaco', 'Consolas', monospace
+```
+
+#### 専門分野別図表パターン
+
+##### 複雑性理論図表
+```
+Complexity theory diagrams should include:
+- Clear hierarchy visualization (P ⊆ NP ⊆ PSPACE ⊆ EXPTIME)
+- Proper inclusion symbols and relationships
+- Color coding for different complexity classes
+- Semantic colors (avoid decorative use)
+- Professional academic appearance suitable for textbooks
+```
+
+##### 暗号プロトコル図表
+```
+Cryptographic protocol diagrams require:
+- Timeline-based interaction flows
+- Clear participant identification
+- Security boundary visualization
+- Attack scenario representations
+- Multi-step protocol sequences with proper ordering
+```
+
+##### アルゴリズム実行図表
+```
+Algorithm execution visualization needs:
+- Step-by-step process breakdown
+- Data structure state changes
+- Clear variable tracking
+- Time/space complexity annotations
+- Input/output relationship clarity
+```
+
+##### オートマトン理論図表
+```
+Automaton diagrams must feature:
+- State transition clarity
+- Input symbol management
+- Accept/reject state distinction
+- Transition function accuracy
+- Formal language relationship visualization
+```
+
+### 大規模変換プロジェクトの実践的ガイドライン
+
+#### プロジェクト成功要因
+```
+Critical success factors for diagram conversion projects:
+
+1. Systematic Approach
+   - Complete inventory before starting (use grep/ripgrep tools)
+   - Chapter-by-chapter organization
+   - Related diagram batch processing
+   - Consistent naming conventions
+
+2. Quality Management
+   - Academic publication standards
+   - Accessibility compliance (WCAG AA)
+   - Cross-platform compatibility
+   - Performance optimization (10-30KB per diagram)
+
+3. Technical Excellence
+   - SVG best practices implementation
+   - Responsive design considerations
+   - Unicode support for international content
+   - Version control with meaningful commits
+
+4. Documentation Standards
+   - Comprehensive alt text descriptions
+   - Consistent style guide adherence
+   - Multi-language annotation support
+   - Educational effectiveness priority
+```
+
+#### 効率的なワークフロー
+```
+Proven workflow for large conversions:
+
+Pre-conversion Phase:
+- Repository-wide diagram audit using search tools
+- Content classification and priority assignment
+- Template creation and standardization
+- Quality benchmarks establishment
+
+Conversion Phase:
+- Batch processing by content similarity
+- Iterative refinement and review
+- Git branch management per chapter/section
+- Pull request workflow with proper review
+
+Post-conversion Phase:
+- Comprehensive quality assurance
+- Performance testing and optimization
+- Accessibility validation
+- Documentation integration and maintenance
+```
+
+### プロジェクト規模別の推奨アプローチ
+
+#### 小規模プロジェクト (1-10図表)
+```
+- Direct creation with immediate implementation
+- Focus on individual diagram quality
+- Manual review and optimization
+- Simple file naming and organization
+```
+
+#### 中規模プロジェクト (10-50図表)
+```
+- Template-based standardization
+- Batch creation by content type
+- Systematic quality assurance
+- Documented style guide adherence
+```
+
+#### 大規模プロジェクト (50+図表)
+```
+- Comprehensive project planning phase
+- Automated quality checking tools
+- Team-based review processes
+- Extensive documentation and guidelines
+- Performance monitoring and optimization
+- Long-term maintenance strategy
+```
+
+### 実装品質の測定指標
+
+#### 定量的指標
+```
+Quality metrics for academic diagrams:
+- File size efficiency: 10-30KB average per diagram
+- Accessibility compliance: 100% WCAG AA conformance
+- Loading performance: <1 second render time
+- Cross-platform compatibility: 99% device support
+- Academic accuracy: Expert review validation
+```
+
+#### 定性的指標
+```
+Qualitative assessment criteria:
+- Educational effectiveness enhancement
+- Visual consistency across content
+- Professional academic appearance
+- International accessibility standards
+- Long-term maintainability assurance
+```
+
+このセクションにより、特に学術コンテンツや大規模変換プロジェクトにおける図表作成の成功確率が大幅に向上します。
