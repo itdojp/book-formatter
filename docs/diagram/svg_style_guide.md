@@ -356,3 +356,394 @@ document.documentElement.setAttribute('data-theme', savedTheme);
 3. **Lighthouse**: パフォーマンス測定
 
 この仕様により、技術書として適切な品質と一貫性を確保できます。
+
+## 理論的コンテンツの特殊要件
+
+### 数学的・学術的図表の設計原則
+
+#### 学術出版品質の実現
+```css
+/* 学術品質向けスタイル拡張 */
+:root {
+  --svg-math-bg: #FAFAFA;
+  --svg-math-border: #D1D5DB;
+  --svg-theorem-bg: #EFF6FF;
+  --svg-proof-bg: #F0FDF4;
+  --svg-definition-bg: #FFFBEB;
+  --svg-example-bg: #F5F3FF;
+}
+
+[data-theme="dark"] {
+  --svg-math-bg: #1F2937;
+  --svg-math-border: #4B5563;
+  --svg-theorem-bg: #1E3A8A;
+  --svg-proof-bg: #14532D;
+  --svg-definition-bg: #92400E;
+  --svg-example-bg: #5B21B6;
+}
+```
+
+#### 数学記号とUnicode対応
+```xml
+<!-- 数学記号テンプレート -->
+<defs>
+  <style>
+    .math-symbol { font-family: 'Latin Modern Math', 'STIX Two Math', serif; }
+    .complexity-class { font-weight: 600; color: var(--svg-primary); }
+    .formal-notation { font-family: 'SF Mono', 'Monaco', monospace; font-size: 11px; }
+    .theorem-text { font-style: italic; fill: var(--svg-text); }
+    .proof-text { fill: var(--svg-text-secondary); }
+  </style>
+</defs>
+
+<!-- 複雑性クラス表現例 -->
+<text class="complexity-class math-symbol">P ⊆ NP ⊆ PSPACE ⊆ EXPTIME</text>
+
+<!-- 形式記法例 -->
+<text class="formal-notation">δ: Q × Γ → Q × Γ × {L,R}</text>
+
+<!-- 集合記法例 -->
+<text class="math-symbol">Σ* = {ε} ∪ Σ ∪ Σ² ∪ Σ³ ∪ ...</text>
+```
+
+### 専門分野別スタイルパターン
+
+#### 複雑性理論図表
+```css
+/* 複雑性クラス階層 */
+.complexity-inclusion {
+  fill: var(--svg-theorem-bg);
+  stroke: var(--svg-primary);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+
+.complexity-class-p { fill: #10B981; fill-opacity: 0.1; }
+.complexity-class-np { fill: #3B82F6; fill-opacity: 0.1; }
+.complexity-class-pspace { fill: #8B5CF6; fill-opacity: 0.1; }
+.complexity-class-exptime { fill: #EF4444; fill-opacity: 0.1; }
+
+.inclusion-arrow {
+  stroke: var(--svg-text);
+  stroke-width: 2;
+  marker-end: url(#inclusion-head);
+}
+```
+
+#### 暗号プロトコル図表
+```css
+/* セキュリティ境界と参加者 */
+.security-boundary {
+  fill: none;
+  stroke: var(--svg-error);
+  stroke-width: 3;
+  stroke-dasharray: 8,4;
+}
+
+.trusted-zone {
+  fill: var(--svg-success);
+  fill-opacity: 0.05;
+  stroke: var(--svg-success);
+  stroke-width: 1;
+}
+
+.participant-alice { fill: #3B82F6; }
+.participant-bob { fill: #10B981; }
+.participant-adversary { fill: var(--svg-error); }
+
+.protocol-message {
+  stroke: var(--svg-primary);
+  stroke-width: 2;
+  marker-end: url(#message-arrow);
+}
+
+.encryption-notation {
+  font-family: 'SF Mono', monospace;
+  font-size: 10px;
+  fill: var(--svg-text-secondary);
+}
+```
+
+#### アルゴリズム実行図表
+```css
+/* アルゴリズム可視化 */
+.algorithm-step {
+  fill: var(--svg-bg-alt);
+  stroke: var(--svg-border);
+  stroke-width: 1;
+  rx: 4;
+}
+
+.algorithm-step.current {
+  fill: var(--svg-warning);
+  fill-opacity: 0.2;
+  stroke: var(--svg-warning);
+  stroke-width: 2;
+}
+
+.data-structure {
+  fill: var(--svg-bg);
+  stroke: var(--svg-primary);
+  stroke-width: 1.5;
+}
+
+.variable-value {
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--svg-primary);
+}
+
+.complexity-annotation {
+  font-size: 10px;
+  font-style: italic;
+  fill: var(--svg-text-secondary);
+}
+```
+
+#### オートマトン理論図表
+```css
+/* 状態機械と遷移 */
+.state {
+  fill: var(--svg-bg);
+  stroke: var(--svg-primary);
+  stroke-width: 2;
+  r: 20;
+}
+
+.state.initial {
+  stroke-width: 3;
+}
+
+.state.accept {
+  stroke-width: 4;
+}
+
+.state.reject {
+  stroke: var(--svg-error);
+  stroke-width: 2;
+}
+
+.transition {
+  fill: none;
+  stroke: var(--svg-text);
+  stroke-width: 1.5;
+  marker-end: url(#transition-arrow);
+}
+
+.transition-label {
+  font-family: 'SF Mono', monospace;
+  font-size: 11px;
+  text-anchor: middle;
+  fill: var(--svg-text);
+}
+
+.epsilon-transition {
+  stroke-dasharray: 3,3;
+}
+```
+
+### 大規模プロジェクト向け管理仕様
+
+#### ファイル命名規則（拡張版）
+```
+{分野}_{章}_{図番号}_{概念名}_{バリエーション}.svg
+
+例:
+complexity_ch5_01_class_inclusions.svg
+crypto_ch11_03_diffie_hellman_protocol.svg
+automata_ch3_05_nfa_to_dfa_conversion.svg
+algorithm_ch8_02_dijkstra_execution_step3.svg
+```
+
+#### 大規模変換での品質統一
+```css
+/* 統一スタイルシート */
+.academic-diagram {
+  font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+  background: var(--svg-bg);
+}
+
+.academic-diagram .title {
+  font-size: 16px;
+  font-weight: 600;
+  text-anchor: middle;
+  fill: var(--svg-text);
+}
+
+.academic-diagram .subtitle {
+  font-size: 14px;
+  font-weight: 500;
+  text-anchor: middle;
+  fill: var(--svg-text-secondary);
+}
+
+.academic-diagram .description {
+  font-size: 11px;
+  fill: var(--svg-text-secondary);
+  text-anchor: start;
+}
+
+.academic-diagram .mathematical {
+  font-family: 'Latin Modern Math', 'STIX Two Math', serif;
+  font-size: 12px;
+}
+
+.academic-diagram .formal {
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 11px;
+}
+```
+
+#### パフォーマンス最適化（34+図表規模）
+```css
+/* 大量図表での最適化 */
+.diagram-container {
+  container-type: inline-size;
+  max-width: 100%;
+}
+
+/* コンテナクエリ対応 */
+@container (max-width: 480px) {
+  .academic-diagram .title { font-size: 14px; }
+  .academic-diagram .subtitle { font-size: 12px; }
+  .academic-diagram .description { font-size: 10px; }
+}
+
+@container (max-width: 320px) {
+  .academic-diagram .title { font-size: 13px; }
+  .academic-diagram .mathematical { font-size: 11px; }
+  .academic-diagram .formal { font-size: 10px; }
+}
+```
+
+### 多言語対応仕様
+
+#### 日本語技術文書対応
+```css
+/* 日本語フォント最適化 */
+.japanese-text {
+  font-family: 'Hiragino Sans', 'Yu Gothic UI', 'Noto Sans CJK JP', sans-serif;
+  font-feature-settings: "palt" 1; /* プロポーショナル調整 */
+  line-height: 1.6;
+}
+
+.mixed-text {
+  font-family: 'Inter', 'Hiragino Sans', 'Yu Gothic UI', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums; /* 数字の幅統一 */
+}
+
+/* 縦書き対応（必要に応じて） */
+.vertical-text {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+```
+
+#### Unicode記号の標準化
+```xml
+<!-- よく使用される理論計算機科学記号 -->
+<defs>
+  <g id="common-symbols">
+    <!-- ギリシャ文字 -->
+    <text class="symbol-alpha">α</text>
+    <text class="symbol-beta">β</text>
+    <text class="symbol-gamma">γ</text>
+    <text class="symbol-delta">δ</text>
+    <text class="symbol-epsilon">ε</text>
+    <text class="symbol-lambda">λ</text>
+    <text class="symbol-sigma">Σ</text>
+    <text class="symbol-gamma-cap">Γ</text>
+    
+    <!-- 集合記号 -->
+    <text class="symbol-element">∈</text>
+    <text class="symbol-not-element">∉</text>
+    <text class="symbol-subset">⊆</text>
+    <text class="symbol-proper-subset">⊊</text>
+    <text class="symbol-union">∪</text>
+    <text class="symbol-intersection">∩</text>
+    <text class="symbol-empty-set">∅</text>
+    
+    <!-- 論理記号 -->
+    <text class="symbol-and">∧</text>
+    <text class="symbol-or">∨</text>
+    <text class="symbol-not">¬</text>
+    <text class="symbol-implies">→</text>
+    <text class="symbol-iff">↔</text>
+    <text class="symbol-forall">∀</text>
+    <text class="symbol-exists">∃</text>
+    
+    <!-- 特殊記号 -->
+    <text class="symbol-infinity">∞</text>
+    <text class="symbol-angle-left">⟨</text>
+    <text class="symbol-angle-right">⟩</text>
+    <text class="symbol-less-equal">≤</text>
+    <text class="symbol-greater-equal">≥</text>
+  </g>
+</defs>
+```
+
+### 品質チェックリスト（学術版）
+
+#### 学術品質チェック
+- [ ] 論文・教科書レベルの視覚品質
+- [ ] 数学記号の正確な表示
+- [ ] 専門用語の適切な日本語化
+- [ ] 理論的概念の正確な視覚化
+- [ ] 学習効果の考慮（段階的理解）
+
+#### 大規模プロジェクト対応
+- [ ] 34+図表での一貫性確保
+- [ ] チャプター間の統一感
+- [ ] ファイル命名規則の徹底
+- [ ] パフォーマンス最適化（10-30KB/図表）
+- [ ] Git管理での効率的運用
+
+#### 国際化対応
+- [ ] Unicode記号の適切な処理
+- [ ] 日本語・英語混在での可読性
+- [ ] 多言語展開の考慮
+- [ ] フォントフォールバック戦略
+
+#### アクセシビリティ（学術版）
+- [ ] 数学記号の音声読み上げ対応
+- [ ] 色盲対応（色以外での区別）
+- [ ] 高コントラスト対応
+- [ ] 数式のalt text適切な記述
+
+### 実装サンプル（理論計算機科学）
+
+#### 複雑性クラス包含図
+```xml
+<svg viewBox="0 0 800 600" class="academic-diagram">
+  <defs>
+    <style>
+      .complexity-p { fill: #10B981; fill-opacity: 0.1; stroke: #10B981; }
+      .complexity-np { fill: #3B82F6; fill-opacity: 0.1; stroke: #3B82F6; }
+      .complexity-pspace { fill: #8B5CF6; fill-opacity: 0.1; stroke: #8B5CF6; }
+      .inclusion-text { font-family: 'Latin Modern Math', serif; font-size: 14px; }
+    </style>
+  </defs>
+  
+  <title>計算複雑性クラスの包含関係</title>
+  <desc>P, NP, PSPACE, EXPTIMEの階層構造を示す学術的図表</desc>
+  
+  <!-- 背景 -->
+  <rect width="100%" height="100%" fill="var(--svg-bg)"/>
+  
+  <!-- 複雑性クラス階層 -->
+  <ellipse cx="400" cy="450" rx="350" ry="120" class="complexity-pspace"/>
+  <ellipse cx="400" cy="400" rx="280" ry="90" class="complexity-np"/>
+  <ellipse cx="400" cy="380" rx="200" ry="60" class="complexity-p"/>
+  
+  <!-- ラベル -->
+  <text x="400" y="380" class="inclusion-text" text-anchor="middle">P</text>
+  <text x="400" y="430" class="inclusion-text" text-anchor="middle">NP</text>
+  <text x="400" y="500" class="inclusion-text" text-anchor="middle">PSPACE</text>
+  
+  <!-- 包含記号 -->
+  <text x="400" y="320" class="inclusion-text" text-anchor="middle">P ⊆ NP ⊆ PSPACE ⊆ EXPTIME</text>
+</svg>
+```
+
+このセクションにより、特に理論的・学術的コンテンツでの図表品質が大幅に向上し、大規模変換プロジェクトでの成功確率が高まります。
