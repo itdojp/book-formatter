@@ -4,6 +4,7 @@ import YAML from 'yaml';
 import { ConfigValidator } from './ConfigValidator.js';
 import { TemplateEngine } from './TemplateEngine.js';
 import { FileSystemUtils } from './FileSystemUtils.js';
+import { ErrorHandler } from './ErrorHandler.js';
 
 /**
  * 設定駆動型のブック生成システムのメインクラス
@@ -13,6 +14,10 @@ export class BookGenerator {
     this.validator = new ConfigValidator();
     this.templateEngine = new TemplateEngine();
     this.fsUtils = new FileSystemUtils();
+    this.errorHandler = new ErrorHandler();
+    
+    // Safe file system wrapper
+    this.safeFs = this.errorHandler.createSafeFileSystem(fs);
   }
 
   /**
@@ -21,28 +26,69 @@ export class BookGenerator {
    * @param {string} outputPath - 出力ディレクトリのパス
    */
   async createBook(configPath, outputPath) {
-    try {
+    this.errorHandler.reset();
+    this.errorHandler.setContext('createBook');
+    
+    return this.errorHandler.safeExecute(async () => {
+      // Input validation
+      this.errorHandler.validateInput({ configPath, outputPath }, {
+        configPath: { required: true, type: 'string' },
+        outputPath: { required: true, type: 'string' }
+      });
+
       // 設定ファイルの読み込み
-      const config = await this.loadConfig(configPath);
+      const config = await this.errorHandler.safeExecute(
+        () => this.loadConfig(configPath),
+        'loading configuration',
+        {
+          fallback: () => {
+            throw new Error(`設定ファイルを読み込めませんでした: ${configPath}`);
+          }
+        }
+      );
       
       // 設定ファイルのバリデーション
-      this.validator.validate(config);
+      await this.errorHandler.safeExecute(
+        () => this.validator.validate(config),
+        'validating configuration'
+      );
       
       // 出力ディレクトリの作成
-      await this.fsUtils.ensureDir(outputPath);
+      await this.errorHandler.safeExecute(
+        () => this.safeFs.ensureDir(outputPath),
+        'creating output directory',
+        { retries: 2 }
+      );
       
       // ブック構造の生成
-      await this.generateBookStructure(config, outputPath);
+      await this.errorHandler.safeExecute(
+        () => this.generateBookStructure(config, outputPath),
+        'generating book structure',
+        { timeout: 10000 }
+      );
       
       // ファイルの生成
-      await this.generateFiles(config, outputPath);
+      await this.errorHandler.safeExecute(
+        () => this.generateFiles(config, outputPath),
+        'generating files',
+        { timeout: 30000 }
+      );
+      
+      const stats = this.errorHandler.getStats();
+      if (stats.hasWarnings) {
+        console.log(`⚠️  書籍が生成されましたが、${stats.warnings}件の警告があります`);
+      }
       
       console.log(`✅ 書籍 "${config.title}" が正常に生成されました`);
-      return true;
-    } catch (error) {
-      console.error('❌ 書籍生成中にエラーが発生しました:', error.message);
-      throw error;
-    }
+      return { success: true, stats };
+      
+    }, 'book creation', {
+      fallback: (error) => {
+        const userMessage = this.errorHandler.formatUserError(error);
+        console.error('❌ 書籍生成中にエラーが発生しました:', userMessage);
+        throw error;
+      }
+    });
   }
 
   /**
@@ -158,6 +204,9 @@ export class BookGenerator {
     
     // パッケージファイル
     await this.generatePackageFile(config, outputPath);
+    
+    // Safe JavaScript設定
+    await this.setupSafeJavaScript(config, outputPath);
     
     // テンプレートファイルをコピー
     await this.copyTemplateFiles(outputPath);
@@ -430,5 +479,62 @@ export class BookGenerator {
 
     // タイトルが見つからない場合はパスから推測
     return pagePath.replace(/[-_/]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+
+  /**
+   * Safe JavaScriptの設定とファイル生成
+   * @param {Object} config - 設定オブジェクト
+   * @param {string} outputPath - 出力パス
+   */
+  async setupSafeJavaScript(config, outputPath) {
+    return this.errorHandler.safeExecute(async () => {
+      const jsDir = path.join(outputPath, 'shared', 'assets', 'js');
+      await this.safeFs.ensureDir(jsDir);
+      
+      // safe-main.jsをコピー
+      const safeMainSource = path.join(process.cwd(), 'shared', 'assets', 'js', 'safe-main.js');
+      const safeMainDest = path.join(jsDir, 'safe-main.js');
+      
+      if (await this.safeFs.pathExists(safeMainSource)) {
+        await this.safeFs.copy(safeMainSource, safeMainDest);
+        console.log('✅ Safe JavaScript file copied');
+      } else {
+        this.errorHandler.logWarning('safe-main.js not found in source directory');
+      }
+      
+      // 既存のJavaScriptファイルをチェックして問題のあるものを無効化
+      const mainJsPath = path.join(jsDir, 'main.js');
+      if (await this.safeFs.pathExists(mainJsPath)) {
+        const content = await this.safeFs.readFile(mainJsPath);
+        
+        // 危険なパターンをチェック
+        const dangerousPatterns = [
+          /while\s*\(\s*true\s*\)/g,
+          /for\s*\(\s*;;\s*\)/g,
+          /setInterval\s*\([^,]*,\s*[0-9]+\s*\)/g,
+          /setTimeout\s*\([^,]*,\s*0\s*\)/g
+        ];
+        
+        let hasDangerousCode = false;
+        for (const pattern of dangerousPatterns) {
+          if (pattern.test(content)) {
+            hasDangerousCode = true;
+            break;
+          }
+        }
+        
+        if (hasDangerousCode) {
+          const backupPath = path.join(jsDir, 'main.js.backup');
+          await this.safeFs.copy(mainJsPath, backupPath);
+          this.errorHandler.logWarning('Potentially problematic JavaScript detected and backed up');
+          
+          // main.jsを無効化
+          await this.safeFs.writeFile(
+            mainJsPath,
+            '// This file was disabled due to potentially problematic code\n// Original backed up as main.js.backup\n// Using safe-main.js instead\nconsole.log("Using safe JavaScript implementation");'
+          );
+        }
+      }
+    }, 'setupSafeJavaScript');
   }
 }
