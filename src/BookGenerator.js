@@ -6,6 +6,7 @@ import { TemplateEngine } from './TemplateEngine.js';
 import { FileSystemUtils } from './FileSystemUtils.js';
 import { ErrorHandler } from './ErrorHandler.js';
 import { GitHubPagesHandler } from './GitHubPagesHandler.js';
+import { MobileOptimizer } from './MobileOptimizer.js';
 
 /**
  * 設定駆動型のブック生成システムのメインクラス
@@ -16,7 +17,8 @@ export class BookGenerator {
     this.templateEngine = new TemplateEngine();
     this.fsUtils = new FileSystemUtils();
     this.errorHandler = new ErrorHandler();
-    this.gitHubPagesHandler = new GitHubPagesHandler();
+    this.gitHubPagesHandler = new GitHubPagesHandler(this.errorHandler);
+    this.mobileOptimizer = new MobileOptimizer();
     
     // Safe file system wrapper
     this.safeFs = this.errorHandler.createSafeFileSystem(fs);
@@ -210,6 +212,11 @@ export class BookGenerator {
     // GitHub Pages設定
     if (config.deployment?.platform === 'github-pages') {
       await this.gitHubPagesHandler.setupGitHubPages(config, outputPath);
+    }
+    
+    // モバイル最適化
+    if (config.mobile?.enabled !== false) {
+      await this.mobileOptimizer.optimizeForMobile(config, outputPath);
     }
     
     // Safe JavaScript設定
