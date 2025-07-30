@@ -9,8 +9,9 @@
 3. [JavaScript関連の問題](#javascript関連の問題)
 4. [レイアウト・デザイン関連の問題](#レイアウトデザイン関連の問題)
 5. [設定ファイル関連の問題](#設定ファイル関連の問題)
-6. [Markdown記法・コードブロック関連の問題](#markdown記法コードブロック関連の問題)
-7. [パフォーマンス最適化とコンテンツ保護の原則](#パフォーマンス最適化とコンテンツ保護の原則)
+6. [Jekyll Collections・テンプレート関連の問題](#jekyll-collectionsテンプレート関連の問題)
+7. [Markdown記法・コードブロック関連の問題](#markdown記法コードブロック関連の問題)
+8. [パフォーマンス最適化とコンテンツ保護の原則](#パフォーマンス最適化とコンテンツ保護の原則)
 
 ## GitHub Pages関連の問題
 
@@ -269,6 +270,266 @@ CSS変数を使用した実装を確認
 1. YAMLの構文を検証
 2. インデントの統一（スペース2つまたは4つ）
 3. 特殊文字のエスケープ
+
+## Jekyll Collections・テンプレート関連の問題
+
+### 問題: コレクションページのリンクが正しく表示されない（/src/プレフィックス不足）
+
+**症状:**
+- ナビゲーションリンクが間違ったパス（例：`/chapter-1/`）を表示
+- 正しいパス（例：`/src/chapter-1/`）にアクセスできない
+- ページは存在するが404エラーになる
+
+**原因:**
+Jekyll Collections設定での`permalink`が`/:path/`になっており、これによりコレクション内のファイル構造の`src/`プレフィックスが削除される
+
+**診断方法:**
+```bash
+# _config.ymlのコレクション設定を確認
+grep -A 10 "collections:" _config.yml
+
+# 実際のURL生成結果を確認
+bundle exec jekyll serve --trace
+```
+
+**解決方法:**
+
+1. **_config.ymlのコレクション設定を修正**
+```yaml
+# 修正前
+collections:
+  chapters:
+    output: true
+    permalink: /:path/
+
+# 修正後
+collections:
+  chapters:
+    output: true
+    permalink: /src/:path/
+```
+
+2. **ナビゲーションテンプレートの確認**
+```liquid
+<!-- _includes/sidebar-nav.html等で確認 -->
+{% for chapter in site.chapters %}
+  <a href="{{ chapter.url | relative_url }}">{{ chapter.title }}</a>
+{% endfor %}
+```
+
+**予防策:**
+- コレクション設定変更時は必ずローカルでURL生成を確認
+- ナビゲーション関連テンプレートとの整合性をテスト
+
+### 問題: ページが存在するのに404エラーになる
+
+**症状:**
+- ファイルシステム上にはMarkdownファイルが存在
+- ブラウザでアクセスすると404エラー
+- Jekyll buildは成功する
+
+**原因:**
+Jekyll Front Matterが不足または不適切で、Jekyllがファイルを処理対象として認識していない
+
+**診断方法:**
+```bash
+# Front Matterの有無を確認
+head -5 src/chapter-*/index.md
+
+# Jekyll処理対象ファイルを確認
+bundle exec jekyll build --verbose 2>&1 | grep "Processing"
+```
+
+**解決方法:**
+
+1. **適切なFront Matterを追加**
+```yaml
+---
+title: "章のタイトル"
+chapter: chapter-identifier
+layout: book
+---
+```
+
+2. **必要最小限のFront Matter**
+```yaml
+---
+layout: book
+---
+```
+
+**予防策:**
+- 新規ファイル作成時は必ずFront Matterテンプレートを使用
+- CI/CDでFront Matter有無をチェック
+
+### 問題: ナビゲーションテンプレートでのパス不整合
+
+**症状:**
+- ナビゲーションリンクをクリックすると404エラー
+- `_data/navigation.yml`のパスとテンプレート内のパスが一致しない
+- ハードコードされたパスが実際のファイル構造と異なる
+
+**原因:**
+- テンプレート内でのハードコードされたパス指定
+- Jekyll変数とデータファイルの不整合
+- Collections設定変更後のテンプレート未更新
+
+**診断方法:**
+```bash
+# ナビゲーションデータファイルを確認
+cat _data/navigation.yml
+
+# テンプレート内のハードコードされたパスを検索
+grep -r "href.*src/" _includes/
+grep -r "url.*chapter" _includes/
+```
+
+**解決方法:**
+
+1. **データ駆動のナビゲーション実装**
+```yaml
+# _data/navigation.yml
+main:
+  - title: "第1章"
+    url: "/src/chapter-1/"
+  - title: "第2章" 
+    url: "/src/chapter-2/"
+```
+
+```liquid
+<!-- _includes/sidebar-nav.html -->
+{% for item in site.data.navigation.main %}
+  <a href="{{ item.url | relative_url }}" class="nav-link">
+    {{ item.title }}
+  </a>
+{% endfor %}
+```
+
+2. **Jekyll Collectionsを活用した動的ナビゲーション**
+```liquid
+<!-- Collections使用例 -->
+{% assign sorted_chapters = site.chapters | sort: 'order' %}
+{% for chapter in sorted_chapters %}
+  <a href="{{ chapter.url | relative_url }}">
+    {{ chapter.title }}
+  </a>
+{% endfor %}
+```
+
+**予防策:**
+- ハードコードされたパスを避け、Jekyll変数やデータファイルを活用
+- 構造変更時はナビゲーションテンプレートも同時更新
+- ナビゲーション整合性テストスクリプトを定期実行
+
+### 問題: GitHub Pagesでのキャッシュによる変更反映遅延
+
+**症状:**
+- ローカルでは正常に表示されるが、GitHub Pagesで古い状態のまま
+- 設定変更やコンテンツ更新が反映されない
+- ハードリフレッシュでも改善しない
+
+**原因:**
+- GitHub Pagesの内部キャッシュ
+- CDNレベルでのキャッシュ
+- ブラウザキャッシュとの複合効果
+
+**診断方法:**
+```bash
+# 最新のビルド状況を確認
+gh api repos/[owner]/[repo]/pages/builds/latest --jq '{status, created_at, updated_at}'
+
+# デプロイ履歴を確認
+gh api repos/[owner]/[repo]/deployments --jq '.[0:3] | .[] | {created_at, environment, description}'
+```
+
+**解決方法:**
+
+1. **段階的な確認プロセス**
+```bash
+# 1. ビルドの完了を確認（通常2-5分）
+gh api repos/[owner]/[repo]/pages/builds/latest --jq '.status'
+
+# 2. 異なるブラウザ・デバイスでテスト
+# 3. インコグニートモードでテスト
+# 4. DNS/CDNキャッシュのクリア待機（10-15分）
+```
+
+2. **強制的な更新方法**
+```bash
+# 軽微な変更をプッシュしてビルドを再トリガー
+echo "<!-- Updated: $(date) -->" >> _config.yml
+git add _config.yml
+git commit -m "Force rebuild"
+git push
+```
+
+**予防策:**
+- 重要な変更後は最低5分の待機時間を設ける
+- 複数ブラウザでの確認を標準とする
+- 本番デプロイ前にstaging環境での確認を実施
+
+### 問題: Mermaid図表の表示不整合
+
+**症状:**
+- ローカルではMermaid図表が正常表示されるが、GitHub Pagesで表示されない
+- レスポンシブデザインで図表が崩れる
+- アクセシビリティが不適切
+
+**原因:**
+- Mermaid JavaScriptライブラリの読み込み問題
+- 動的レンダリングがGitHub Pages環境で動作しない
+- レスポンシブ対応不足
+
+**解決方法:**
+
+1. **SVG形式への事前変換**
+```bash
+# Mermaid CLIを使用してSVG生成
+npm install -g @mermaid-js/mermaid-cli
+mmdc -i diagram.mmd -o diagram.svg -t neutral -b white
+```
+
+2. **book-formatter準拠のSVG埋め込み**
+```markdown
+<!-- 修正前: Mermaidコードブロック -->
+```mermaid
+graph TD
+    A[Start] --> B[Process]
+```
+
+<!-- 修正後: SVG埋め込み -->
+<div class="diagram-container">
+  <img src="/assets/images/diagrams/process-flow.svg" 
+       alt="Process flow diagram showing start to process steps"
+       class="responsive-diagram">
+</div>
+```
+
+3. **レスポンシブCSS対応**
+```css
+.diagram-container {
+  margin: 1.5rem 0;
+  text-align: center;
+}
+
+.responsive-diagram {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #e1e5e9;
+  border-radius: 4px;
+}
+
+@media (max-width: 768px) {
+  .responsive-diagram {
+    max-width: 95%;
+  }
+}
+```
+
+**予防策:**
+- 図表作成時点でSVG形式を標準とする
+- アクセシビリティを考慮したalt属性の設定
+- レスポンシブデザインテストの実施
 
 ## ベストプラクティス
 
