@@ -709,7 +709,7 @@ algorithm_ch8_02_dijkstra_execution_step3.svg
 - [ ] 数学記号の音声読み上げ対応
 - [ ] 色盲対応（色以外での区別）
 - [ ] 高コントラスト対応
-- [ ] 数式のalt text適切な記述
+- [ ] 数式のalt textの適切な記述
 
 ### 実装サンプル（理論計算機科学）
 
