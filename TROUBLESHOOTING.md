@@ -10,6 +10,7 @@
 4. [レイアウト・デザイン関連の問題](#レイアウトデザイン関連の問題)
 5. [設定ファイル関連の問題](#設定ファイル関連の問題)
 6. [Markdown記法・コードブロック関連の問題](#markdown記法コードブロック関連の問題)
+7. [パフォーマンス最適化とコンテンツ保護の原則](#パフォーマンス最適化とコンテンツ保護の原則)
 
 ## GitHub Pages関連の問題
 
@@ -500,6 +501,243 @@ done
 
 echo "チェック完了"
 ```
+
+## パフォーマンス最適化とコンテンツ保護の原則
+
+### 問題: ページが重くブラウザがハング・フリーズする
+
+**症状:**
+- 特定の章（長いコンテンツを含むページ）でブラウザが応答しなくなる
+- ページ読み込みが異常に遅い（数十秒以上）
+- CPUが100%に張り付く
+
+**根本原因の理解:**
+ページのパフォーマンス問題は**JavaScript処理**が原因であることが多く、**コンテンツの長さ自体は問題ではない**ことを理解することが重要です。
+
+**誤った対処法（絶対に行ってはいけない）:**
+- ❌ コンテンツを短縮する
+- ❌ 詳細な説明を削除する
+- ❌ 章を分割してコンテンツ量を減らす
+
+**正しい対処法の優先順位:**
+1. **JavaScript処理の最適化（最優先）**
+2. CSS処理の軽量化
+3. 画像・メディアファイルの最適化
+4. **最後の手段として**コンテンツ構造の調整
+
+### JavaScript処理最適化の具体的方法
+
+#### 1. 正規表現パターンの最適化
+
+**問題のあるコード例:**
+```javascript
+// 複雑で重い正規表現
+const id = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+```
+
+**最適化されたコード例:**
+```javascript
+// 軽量化された正規表現
+const id = text
+    .toLowerCase()
+    .replace(/[^\w\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, 50); // 長さ制限で処理量を制限
+```
+
+**最適化のポイント:**
+- Unicode範囲を簡素化（`\w`の活用）
+- 処理する文字列の長さに制限を設ける
+- 複雑なキャラクタークラスを避ける
+
+#### 2. DOM処理の制限と最適化
+
+**問題のあるコード例:**
+```javascript
+// 無制限にすべての要素を処理
+const headings = document.querySelectorAll('.page-content h1, .page-content h2, .page-content h3');
+headings.forEach((heading, index) => {
+    // 重い処理をすべての要素に適用
+});
+```
+
+**最適化されたコード例:**
+```javascript
+// 処理対象を制限
+const headings = document.querySelectorAll('.page-content h1, .page-content h2, .page-content h3');
+const limitedHeadings = Array.from(headings).slice(0, 20); // 最大20個まで
+
+limitedHeadings.forEach((heading, index) => {
+    // 簡素化された処理
+    if (!heading.id) {
+        const text = heading.textContent.trim();
+        const id = `heading-${index}-${text.substring(0, 10).replace(/[^\w]+/g, '')}`;
+        heading.id = id;
+    }
+});
+```
+
+#### 3. 遅延実行による負荷分散
+
+**最適化されたコード例:**
+```javascript
+function init() {
+    // 軽い処理は即座に実行
+    addStyles();
+    initSmoothScrolling();
+    
+    // 重い処理は段階的に遅延実行
+    setTimeout(() => {
+        addHeadingIds();
+        enhanceImages();
+    }, 500);
+    
+    // さらに重い処理はより遅延
+    setTimeout(() => {
+        handleExternalLinks();
+    }, 2000);
+}
+```
+
+### コンテンツ保護の重要原則
+
+#### 1. コンテンツ短縮は最後の手段
+
+**基本原則:**
+- 詳細で価値あるコンテンツは書籍の核心価値
+- パフォーマンス問題の90%以上は技術的最適化で解決可能
+- コンテンツ短縮は根本解決ではなく、価値の毀損
+
+#### 2. 許可なきコンテンツ変更の禁止
+
+**絶対に守るべきルール:**
+- ユーザーの明示的な許可なしにコンテンツを削除・短縮してはならない
+- 技術的問題を理由にコンテンツ品質を犠牲にしてはならない
+- 「重いから削る」ではなく「重い原因を技術的に解決する」
+
+#### 3. 問題発生時の正しい対応手順
+
+```bash
+# 1. 問題の特定
+echo "パフォーマンス問題の診断開始"
+
+# 2. JavaScript処理の確認
+echo "JavaScriptファイルの確認:"
+find assets/js -name "*.js" -exec wc -l {} \;
+
+# 3. 重い処理の特定
+echo "正規表現パターンの確認:"
+grep -n "replace.*/" assets/js/*.js
+
+# 4. DOM操作の確認
+echo "DOM操作の確認:"
+grep -n "querySelectorAll\|forEach" assets/js/*.js
+
+# 5. 最適化の適用
+echo "最適化を適用し、コンテンツは保持"
+```
+
+### 予防策と設計指針
+
+#### 1. パフォーマンス重視のJavaScript設計
+
+```javascript
+// 設計指針に従ったコード例
+(function() {
+    'use strict';
+    
+    // 設定可能な制限値
+    const CONFIG = {
+        MAX_HEADINGS: 20,
+        MAX_EXTERNAL_LINKS: 50,
+        MAX_IMAGES: 20,
+        ID_MAX_LENGTH: 50
+    };
+    
+    // 処理を軽量化する関数
+    function optimizeProcessing() {
+        // 制限を設けた処理
+        const headings = Array.from(
+            document.querySelectorAll('.page-content h2')
+        ).slice(0, CONFIG.MAX_HEADINGS);
+        
+        // 簡素化されたID生成
+        headings.forEach((heading, index) => {
+            if (!heading.id) {
+                const text = heading.textContent.trim();
+                heading.id = `h-${index}-${text.substring(0, 10).replace(/[^\w]/g, '')}`;
+            }
+        });
+    }
+    
+    // 段階的初期化
+    function init() {
+        setTimeout(optimizeProcessing, 100);
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+```
+
+#### 2. コンテンツ品質保持のチェックリスト
+
+- [ ] パフォーマンス問題発生時、まずJavaScript処理を確認した
+- [ ] 正規表現パターンを最適化した
+- [ ] DOM操作に制限を設けた
+- [ ] 重い処理を遅延実行にした
+- [ ] **コンテンツの削除・短縮は行わなかった**
+- [ ] 問題解決後、コンテンツの完全性を確認した
+
+#### 3. 継続的監視
+
+```bash
+#!/bin/bash
+# performance-monitor.sh - パフォーマンス監視スクリプト
+
+echo "パフォーマンス監視を開始..."
+
+# JavaScript処理の複雑さチェック
+echo "1. JavaScript複雑性チェック"
+find assets/js -name "*.js" -exec grep -l "replace.*\[.*\].*g" {} \; | wc -l
+
+# DOM操作の頻度チェック
+echo "2. DOM操作頻度チェック"
+find assets/js -name "*.js" -exec grep -c "querySelectorAll\|forEach" {} \;
+
+# コンテンツ量の監視（削除・短縮の検出）
+echo "3. コンテンツ完全性チェック"
+find docs/chapter-* -name "*.md" -exec wc -l {} \; | awk '{sum+=$1} END {print "総行数:", sum}'
+
+echo "監視完了"
+```
+
+### まとめ
+
+**パフォーマンス最適化における重要な教訓:**
+
+1. **技術的問題は技術的手段で解決する**
+   - JavaScript最適化を最優先
+   - 正規表現とDOM操作の軽量化
+   - 遅延実行による負荷分散
+
+2. **コンテンツは資産として保護する**
+   - 詳細なコンテンツが書籍の価値
+   - 短縮は最後の手段であり、通常は不要
+   - 許可なき変更は絶対に行わない
+
+3. **根本解決を目指す**
+   - 症状への対処ではなく原因の解決
+   - 持続可能な最適化手法の採用
+   - 予防的監視体制の構築
+
+**この原則を守ることで、高品質なコンテンツと優れたパフォーマンスを両立できます。**
 
 ## 関連リソース
 
