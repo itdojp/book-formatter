@@ -133,13 +133,13 @@ export class BookGenerator {
     const ext = path.extname(configPath).toLowerCase();
     
     switch (ext) {
-      case '.json':
-        return JSON.parse(configContent);
-      case '.yml':
-      case '.yaml':
-        return YAML.parse(configContent);
-      default:
-        throw new Error(`サポートされていない設定ファイル形式: ${ext}`);
+    case '.json':
+      return JSON.parse(configContent);
+    case '.yml':
+    case '.yaml':
+      return YAML.parse(configContent);
+    default:
+      throw new Error(`サポートされていない設定ファイル形式: ${ext}`);
     }
   }
 
@@ -155,6 +155,11 @@ export class BookGenerator {
     const directories = [
       'src',
       'assets',
+      'assets/css',
+      'assets/js',
+      'assets/images',
+      '_layouts',
+      '_includes',
       'templates',
       'scripts',
       'tests'
@@ -194,11 +199,17 @@ export class BookGenerator {
     // 章ファイル
     await this.generateChapterFiles(config, outputPath);
     
+    // ナビゲーションデータの生成
+    await this.generateNavigationData(config, outputPath);
+    
     // パッケージファイル
     await this.generatePackageFile(config, outputPath);
     
     // Safe JavaScript設定
     await this.setupSafeJavaScript(config, outputPath);
+    
+    // テンプレートファイルをコピー
+    await this.copyTemplateFiles(outputPath);
   }
 
   /**
@@ -300,6 +311,174 @@ export class BookGenerator {
     
     // インデックスファイルの更新
     await this.generateIndexFile(config, bookPath);
+    
+    // テンプレートファイルを更新
+    await this.copyTemplateFiles(bookPath);
+  }
+
+  /**
+   * テンプレートファイルをコピーする
+   * @param {string} outputPath - 出力パス
+   */
+  async copyTemplateFiles(outputPath) {
+    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+    const sharedPath = path.join(moduleDir, '..', 'shared');
+    
+    // レイアウトファイルをコピー
+    const layoutsSource = path.join(sharedPath, 'layouts');
+    const layoutsDest = path.join(outputPath, '_layouts');
+    if (await this.fsUtils.exists(layoutsSource)) {
+      await this.fsUtils.copyDir(layoutsSource, layoutsDest);
+    }
+    
+    // インクルードファイルをコピー
+    const includesSource = path.join(sharedPath, 'includes');
+    const includesDest = path.join(outputPath, '_includes');
+    if (await this.fsUtils.exists(includesSource)) {
+      await this.fsUtils.copyDir(includesSource, includesDest);
+    }
+    
+    // アセットファイルをコピー
+    const assetsSource = path.join(sharedPath, 'assets');
+    const assetsDest = path.join(outputPath, 'assets');
+    if (await this.fsUtils.exists(assetsSource)) {
+      await this.fsUtils.copyDir(assetsSource, assetsDest);
+    }
+  }
+
+  /**
+   * ナビゲーションデータを生成する
+   * @param {Object} config - 設定オブジェクト
+   * @param {string} outputPath - 出力パス
+   */
+  async generateNavigationData(config, outputPath) {
+    try {
+      // _dataディレクトリを作成
+      const dataDir = path.join(outputPath, '_data');
+      await this.fsUtils.ensureDir(dataDir);
+
+      let navigationOrder = [];
+
+      // config.navigation.order が設定されている場合はそれを使用
+      if (config.navigation?.order) {
+        navigationOrder = config.navigation.order;
+      } else {
+        // 設定されていない場合は、構造から自動生成
+        navigationOrder = this.generateDefaultNavigationOrder(config);
+      }
+
+      // ナビゲーションデータを生成
+      const navigationData = {};
+      navigationOrder.forEach((pagePath, index) => {
+        const prevPath = index > 0 ? navigationOrder[index - 1] : null;
+        const nextPath = index < navigationOrder.length - 1 ? navigationOrder[index + 1] : null;
+        
+        navigationData[pagePath] = {
+          previous: prevPath ? {
+            path: `/${prevPath}.html`,
+            title: this.getPageTitle(config, prevPath)
+          } : null,
+          next: nextPath ? {
+            path: `/${nextPath}.html`, 
+            title: this.getPageTitle(config, nextPath)
+          } : null,
+          index: index,
+          total: navigationOrder.length
+        };
+      });
+
+      // navigation.jsonとして出力
+      const navigationFile = path.join(dataDir, 'navigation.json');
+      await fs.writeFile(navigationFile, JSON.stringify(navigationData, null, 2));
+      
+      console.log(`✅ ナビゲーションデータを生成しました: ${navigationOrder.length}ページ`);
+    } catch (error) {
+      console.error('❌ ナビゲーションデータ生成中にエラーが発生しました:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * デフォルトのナビゲーション順序を生成する
+   * @param {Object} config - 設定オブジェクト
+   * @returns {Array} ナビゲーション順序の配列
+   */
+  generateDefaultNavigationOrder(config) {
+    const order = [];
+    const structure = config.structure || {};
+
+    // はじめに
+    if (structure.introduction) {
+      structure.introduction.forEach(intro => {
+        if (intro.path) {
+          // パスから先頭の "/" を除去し、".html" も除去
+          const cleanPath = intro.path.replace(/^\//, '').replace(/\.html$/, '');
+          order.push(cleanPath);
+        }
+      });
+    }
+
+    // 各章
+    if (structure.chapters) {
+      structure.chapters.forEach(chapter => {
+        if (chapter.path) {
+          const cleanPath = chapter.path.replace(/^\//, '').replace(/\.html$/, '');
+          order.push(cleanPath);
+        }
+      });
+    }
+
+    // おわりに
+    if (structure.conclusion) {
+      structure.conclusion.forEach(concl => {
+        if (concl.path) {
+          const cleanPath = concl.path.replace(/^\//, '').replace(/\.html$/, '');
+          order.push(cleanPath);
+        }
+      });
+    }
+
+    // 付録
+    if (structure.appendices) {
+      structure.appendices.forEach(appendix => {
+        if (appendix.path) {
+          const cleanPath = appendix.path.replace(/^\//, '').replace(/\.html$/, '');
+          order.push(cleanPath);
+        }
+      });
+    }
+
+    return order;
+  }
+
+  /**
+   * ページのタイトルを取得する
+   * @param {Object} config - 設定オブジェクト
+   * @param {string} pagePath - ページパス
+   * @returns {string} ページタイトル
+   */
+  getPageTitle(config, pagePath) {
+    const structure = config.structure || {};
+    
+    // すべてのセクションを検索
+    const allSections = [
+      ...(structure.introduction || []),
+      ...(structure.chapters || []),
+      ...(structure.conclusion || []),
+      ...(structure.appendices || [])
+    ];
+
+    for (const item of allSections) {
+      if (item.path) {
+        const cleanPath = item.path.replace(/^\//, '').replace(/\.html$/, '');
+        if (cleanPath === pagePath) {
+          return item.title || pagePath;
+        }
+      }
+    }
+
+    // タイトルが見つからない場合はパスから推測
+    return pagePath.replace(/[-_/]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   }
 
   /**

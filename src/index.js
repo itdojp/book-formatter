@@ -232,33 +232,33 @@ program
 
       // サンプル設定の作成
       const sampleConfig = {
-        title: "サンプル書籍",
-        description: "この書籍はbook-formatterで作成されたサンプルです",
-        author: "著者名",
-        version: "1.0.0",
-        language: "ja",
-        license: "MIT",
+        title: 'サンプル書籍',
+        description: 'この書籍はbook-formatterで作成されたサンプルです',
+        author: '著者名',
+        version: '1.0.0',
+        language: 'ja',
+        license: 'MIT',
         repository: {
-          url: "https://github.com/user/repo.git",
-          branch: "main"
+          url: 'https://github.com/user/repo.git',
+          branch: 'main'
         },
         structure: {
           chapters: [
             {
-              id: "introduction",
-              title: "はじめに",
-              description: "この書籍について説明します"
+              id: 'introduction',
+              title: 'はじめに',
+              description: 'この書籍について説明します'
             },
             {
-              id: "getting-started",
-              title: "はじめ方",
-              description: "基本的な使い方を説明します"
+              id: 'getting-started',
+              title: 'はじめ方',
+              description: '基本的な使い方を説明します'
             }
           ],
           appendices: [
             {
-              id: "references",
-              title: "参考文献"
+              id: 'references',
+              title: '参考文献'
             }
           ]
         }

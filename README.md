@@ -94,7 +94,50 @@ npm start validate-config --verbose
 npm start validate-config --config ./path/to/config.json
 ```
 
-### 4. 新しい書籍の作成
+### 4. 新しい書籍の生成
+
+**⚡ 実証済み効率的手順**: 7つのフェーズを通じて、新しい書籍を約4.5時間で完成させることができます。
+
+#### 🎯 7つのフェーズ概要
+
+1. **Phase 1: プロジェクト初期化** (30分)
+   - book-formatter を使用した初期化
+   - 書籍設定ファイルの作成
+
+2. **Phase 2: GitHub リポジトリ設定** (30分)
+   - GitHub リポジトリの作成
+   - GitHub Pages 設定（Deploy from a branch）
+
+3. **Phase 3: Jekyll テンプレート設定** (60分)
+   - 必須ファイルの確認と設定
+   - ナビゲーションテンプレートの設定
+
+4. **Phase 4: 章ファイルの作成** (章数 × 15分)
+   - 各章ファイルの構造設定
+   - front matter の設定
+
+5. **Phase 5: リンク設定の統一** (30分)
+   - index.md のリンク形式統一
+   - 章間リンクの設定
+
+6. **Phase 6: 品質保証とテスト** (30分)
+   - 設定ファイル検証
+   - リンクチェック
+   - ビルドテスト
+
+7. **Phase 7: 公開前の最終確認** (30分)
+   - 全ページの表示確認
+   - コンテンツ品質確認
+
+#### 📋 詳細な手順書
+
+**全手順の詳細は以下の新規書籍作成手順書を参照してください：**
+
+📚 **[新規書籍作成手順書](./docs/book-creation-guide.md)**
+
+この手順書には、各フェーズの詳細なコマンド、設定例、よくある問題と解決策が含まれています。
+
+#### 🚀 クイックスタート
 
 ```bash
 # 基本的な使用方法
@@ -176,6 +219,10 @@ npm start sync-all-books --dry-run
 }
 ```
 
+## 改善提案
+
+Book Formatterの改善提案については[IMPROVEMENT_PROPOSALS.md](./docs/IMPROVEMENT_PROPOSALS.md)を参照してください。
+
 ## 生成されるファイル構造
 
 ```
@@ -243,6 +290,8 @@ DEBUG=book-formatter:* npm start create-book
 
 ## トラブルシューティング
 
+詳細なトラブルシューティングガイドは[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)を参照してください。
+
 ### よくある問題
 
 1. **設定ファイルのバリデーションエラー**
@@ -288,9 +337,17 @@ GitHub: [@itdojp](https://github.com/itdojp)
 
 ## 関連リンク
 
-- [Book Publishing Template v3.0](https://github.com/itdojp/book-publishing-template)
 - [使用例とサンプル](https://github.com/itdojp/book-formatter/tree/main/examples)
-- [API ドキュメント](https://github.com/itdojp/book-formatter/tree/main/docs)
+
+### 廃止されたシステム
+
+**⚠️ 重要な注意事項**
+
+- **Book Publishing Template v3.0** - **使用禁止**
+  - このシステムの基盤となった旧テンプレートシステム
+  - 現在は廃止されており、使用は禁止されています
+  - 新規書籍作成時は必ずbook-formatterを使用してください
+  - 旧テンプレートからの移行については[移行ガイド](./docs/migration-guide.md)を参照してください
 
 ---
 
