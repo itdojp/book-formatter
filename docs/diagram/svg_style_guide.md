@@ -759,8 +759,11 @@ algorithm_ch8_02_dijkstra_execution_step3.svg
 
 ## SVG塗りつぶし問題の予防ガイドライン
 
-### 問題の概要
-SVGの矢印マーカー要素において、`path`要素に`fill="none"`属性が不足していると、曲線や線の内部が意図せず塗りつぶされる視覚的問題が発生します。
+### 問題の概要  
+SVGにおいて、以下の要素で`fill="none"`属性が不足していると、意図しない塗りつぶしが発生します：
+1. **矢印マーカー要素**：マーカー内の`path`要素
+2. **曲線path要素**：ブランチ線やフロー線など、Qコマンド（quadratic curves）を使用するpath
+3. **複雑なpath要素**：複数の線分や曲線を組み合わせたpath
 
 ### 必須対応事項
 
@@ -779,7 +782,26 @@ SVGの矢印マーカー要素において、`path`要素に`fill="none"`属性�
 </marker>
 ```
 
-#### 2. 全マーカータイプでの統一対応
+#### 2. 曲線path要素の適切な定義
+```xml
+<!-- ❌ 問題のある曲線path定義 -->
+<path d="M 250 100 Q 270 130 290 160 L 480 160 Q 500 130 520 100" 
+      class="primary" stroke-width="3"/>
+
+<!-- ✅ 正しい曲線path定義 -->
+<path d="M 250 100 Q 270 130 290 160 L 480 160 Q 500 130 520 100" 
+      fill="none" class="primary" stroke-width="3"/>
+
+<!-- ❌ 問題のある複雑path定義 -->
+<path d="M 120 120 Q 140 140 160 160 L 240 160" 
+      class="primary" stroke-width="3"/>
+
+<!-- ✅ 正しい複雑path定義 -->
+<path d="M 120 120 Q 140 140 160 160 L 240 160" 
+      fill="none" class="primary" stroke-width="3"/>
+```
+
+#### 3. 全マーカータイプでの統一対応
 ```xml
 <!-- 通常の矢印 -->
 <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="3" 
@@ -800,26 +822,44 @@ SVGの矢印マーカー要素において、`path`要素に`fill="none"`属性�
 </marker>
 ```
 
-#### 3. 品質チェック項目の追加
+#### 4. 品質チェック項目の追加
 SVG作成・更新時には以下を必ず確認：
 
+**マーカー要素**
 - [ ] すべてのmarker要素内のpath要素に`fill="none"`属性が設定されている
 - [ ] 線や曲線に接続される矢印で意図しない塗りつぶしが発生していない
-- [ ] ダークモード・ライトモード両方で矢印の表示が適切
-- [ ] 印刷時やPDF出力時にも塗りつぶし問題が発生しない
 
-#### 4. 開発・レビューワークフローでの組み込み
+**path要素全般**
+- [ ] Qコマンド（quadratic curves）を使用するpath要素に`fill="none"`属性が設定されている
+- [ ] 複数の線分・曲線を組み合わせたpath要素に`fill="none"`属性が設定されている
+- [ ] ブランチ線、フロー線、接続線などの装飾的path要素の塗りつぶしが適切
+
+**表示確認**
+- [ ] ダークモード・ライトモード両方で表示が適切
+- [ ] 印刷時やPDF出力時にも塗りつぶし問題が発生しない
+- [ ] 複数ブラウザでの表示確認
+
+#### 5. 開発・レビューワークフローでの組み込み
 ```bash
-# SVGファイルの一括チェックコマンド例
+# マーカー要素の一括チェック
 find . -name "*.svg" -exec grep -l "<marker" {} \; | \
 xargs grep -L 'fill="none"' | \
 head -10
 
+# 曲線path要素の一括チェック
+find . -name "*.svg" -exec grep -l "path.*d=.*Q" {} \; | \
+xargs grep -v 'fill="none"' | \
+head -10
+
 # 問題修正の一括実行例（要注意: バックアップを取ってから実行）
+# マーカー修正
 find . -name "*.svg" -exec sed -i 's|<path d="M0,0 L0,6 L9,3 z" class="primary"/>|<path d="M0,0 L0,6 L9,3 z" class="primary" fill="none"/>|g' {} \;
+
+# 曲線path修正（パターンに応じて個別対応が必要）
+# find . -name "*.svg" -exec sed -i 's|<path d="M \([0-9 ]*\) Q \([0-9 ]*\)"|<path d="M \1 Q \2" fill="none"|g' {} \;
 ```
 
-#### 5. 予防的設計パターン
+#### 6. 予防的設計パターン
 新規SVG作成時は以下のテンプレートを使用：
 
 ```xml
@@ -830,7 +870,9 @@ find . -name "*.svg" -exec sed -i 's|<path d="M0,0 L0,6 L9,3 z" class="primary"/
       .bg { fill: var(--svg-bg); }
       .primary { fill: var(--svg-primary); }
       .primary-stroke { stroke: var(--svg-primary); stroke-width: 2; fill: none; }
-      /* 他のスタイル定義 */
+      /* 重要: stroke系のスタイルには必ずfill: noneを含める */
+      .branch-line { stroke: var(--svg-primary); stroke-width: 3; fill: none; }
+      .flow-line { stroke: var(--svg-neutral); stroke-width: 2; fill: none; }
     </style>
     
     <!-- 標準矢印マーカー（塗りつぶし問題を予防） -->
@@ -842,22 +884,38 @@ find . -name "*.svg" -exec sed -i 's|<path d="M0,0 L0,6 L9,3 z" class="primary"/
     <!-- 必要に応じて他のマーカー定義 -->
   </defs>
   
-  <!-- SVGコンテンツ -->
+  <!-- SVGコンテンツ例 -->
+  <!-- ブランチ線（曲線path）の適切な使用例 -->
+  <path d="M 100 100 Q 120 120 140 100 L 200 100" 
+        fill="none" class="branch-line" marker-end="url(#arrow)"/>
+  
+  <!-- フロー線（直線+曲線path）の適切な使用例 -->
+  <path d="M 250 100 L 280 100 Q 300 120 320 100" 
+        fill="none" class="flow-line"/>
 </svg>
 ```
 
 ### トラブルシューティング
 
 #### 症状の確認方法
-1. **視覚確認**: ブラウザで曲線・線の内部に意図しない色付きエリアがないかチェック
-2. **コード確認**: `<marker>`内の`<path>`要素に`fill="none"`があるかチェック
+1. **視覚確認**: ブラウザで以下をチェック
+   - 矢印内部の意図しない色付きエリア
+   - 曲線・折れ線内部の意図しない塗りつぶし
+   - ブランチ線やフロー線の不自然な色付き部分
+2. **コード確認**: 
+   - `<marker>`内の`<path>`要素に`fill="none"`があるかチェック
+   - Qコマンド使用path要素に`fill="none"`があるかチェック
+   - 複雑なpath要素の塗りつぶし設定をチェック
 3. **レンダリング確認**: 複数ブラウザ・印刷プレビューでの表示確認
 
 #### 修正手順
 1. 問題のあるSVGファイルを特定
-2. `<marker>`要素内の`<path>`要素を探す
-3. `fill="none"`属性を追加
-4. 表示を再確認
+2. 以下の要素を順次チェック・修正：
+   - `<marker>`要素内の`<path>`要素に`fill="none"`を追加
+   - 曲線path要素（Qコマンド使用）に`fill="none"`を追加
+   - 複雑なpath要素に`fill="none"`を追加
+3. 表示を再確認
+4. テスト（ダークモード、印刷プレビュー等）
 5. コミット・プッシュ
 
 この予防ガイドラインにより、今後のSVG作成において同様の塗りつぶし問題の発生を防ぎ、一貫した品質を維持できます。
