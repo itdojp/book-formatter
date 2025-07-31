@@ -123,7 +123,7 @@ font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
     <!-- 矢印マーカー（テーマ対応） -->
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="3" 
             markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L0,6 L9,3 z" class="primary"/>
+      <path d="M0,0 L0,6 L9,3 z" class="primary" fill="none"/>
     </marker>
     
     <!-- パターン定義（認知負荷軽減） -->
@@ -336,6 +336,11 @@ document.documentElement.setAttribute('data-theme', savedTheme);
 - [ ] 表示速度1秒以内
 - [ ] CSS Variables使用
 - [ ] 不要要素除去済み
+
+### SVGマーカー要素チェック
+- [ ] 矢印マーカーのpath要素に`fill="none"`属性が追加済み
+- [ ] 曲線や線内部の意図しない塗りつぶしが発生していない
+- [ ] すべてのマーカー定義で適切なfill属性が設定済み
 
 ## ツール推奨
 
@@ -751,3 +756,108 @@ algorithm_ch8_02_dijkstra_execution_step3.svg
 ```
 
 このセクションにより、特に理論的・学術的コンテンツでの図表品質が大幅に向上し、大規模変換プロジェクトでの成功確率が高まります。
+
+## SVG塗りつぶし問題の予防ガイドライン
+
+### 問題の概要
+SVGの矢印マーカー要素において、`path`要素に`fill="none"`属性が不足していると、曲線や線の内部が意図せず塗りつぶされる視覚的問題が発生します。
+
+### 必須対応事項
+
+#### 1. 矢印マーカーの適切な定義
+```xml
+<!-- ❌ 問題のあるマーカー定義 -->
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="3" 
+        markerWidth="6" markerHeight="6" orient="auto">
+  <path d="M0,0 L0,6 L9,3 z" class="primary"/>
+</marker>
+
+<!-- ✅ 正しいマーカー定義 -->
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="3" 
+        markerWidth="6" markerHeight="6" orient="auto">
+  <path d="M0,0 L0,6 L9,3 z" class="primary" fill="none"/>
+</marker>
+```
+
+#### 2. 全マーカータイプでの統一対応
+```xml
+<!-- 通常の矢印 -->
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="3" 
+        markerWidth="6" markerHeight="6" orient="auto">
+  <path d="M0,0 L0,6 L9,3 z" class="primary" fill="none"/>
+</marker>
+
+<!-- 双方向矢印 -->
+<marker id="arrow-bidirectional" viewBox="0 0 10 10" refX="5" refY="3" 
+        markerWidth="6" markerHeight="6" orient="auto">
+  <path d="M0,0 L0,6 L4,3 L0,0 M6,0 L10,3 L6,6" stroke="var(--svg-primary)" fill="none"/>
+</marker>
+
+<!-- カスタム矢印 -->
+<marker id="arrow-custom" viewBox="0 0 12 8" refX="11" refY="4" 
+        markerWidth="6" markerHeight="4" orient="auto">
+  <path d="M0,0 L0,8 L12,4 z" class="primary" fill="none"/>
+</marker>
+```
+
+#### 3. 品質チェック項目の追加
+SVG作成・更新時には以下を必ず確認：
+
+- [ ] すべてのmarker要素内のpath要素に`fill="none"`属性が設定されている
+- [ ] 線や曲線に接続される矢印で意図しない塗りつぶしが発生していない
+- [ ] ダークモード・ライトモード両方で矢印の表示が適切
+- [ ] 印刷時やPDF出力時にも塗りつぶし問題が発生しない
+
+#### 4. 開発・レビューワークフローでの組み込み
+```bash
+# SVGファイルの一括チェックコマンド例
+find . -name "*.svg" -exec grep -l "<marker" {} \; | \
+xargs grep -L 'fill="none"' | \
+head -10
+
+# 問題修正の一括実行例（要注意: バックアップを取ってから実行）
+find . -name "*.svg" -exec sed -i 's|<path d="M0,0 L0,6 L9,3 z" class="primary"/>|<path d="M0,0 L0,6 L9,3 z" class="primary" fill="none"/>|g' {} \;
+```
+
+#### 5. 予防的設計パターン
+新規SVG作成時は以下のテンプレートを使用：
+
+```xml
+<svg viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg" 
+     style="max-width: 100%; height: auto;">
+  <defs>
+    <style>
+      .bg { fill: var(--svg-bg); }
+      .primary { fill: var(--svg-primary); }
+      .primary-stroke { stroke: var(--svg-primary); stroke-width: 2; fill: none; }
+      /* 他のスタイル定義 */
+    </style>
+    
+    <!-- 標準矢印マーカー（塗りつぶし問題を予防） -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="3" 
+            markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" class="primary" fill="none"/>
+    </marker>
+    
+    <!-- 必要に応じて他のマーカー定義 -->
+  </defs>
+  
+  <!-- SVGコンテンツ -->
+</svg>
+```
+
+### トラブルシューティング
+
+#### 症状の確認方法
+1. **視覚確認**: ブラウザで曲線・線の内部に意図しない色付きエリアがないかチェック
+2. **コード確認**: `<marker>`内の`<path>`要素に`fill="none"`があるかチェック
+3. **レンダリング確認**: 複数ブラウザ・印刷プレビューでの表示確認
+
+#### 修正手順
+1. 問題のあるSVGファイルを特定
+2. `<marker>`要素内の`<path>`要素を探す
+3. `fill="none"`属性を追加
+4. 表示を再確認
+5. コミット・プッシュ
+
+この予防ガイドラインにより、今後のSVG作成において同様の塗りつぶし問題の発生を防ぎ、一貫した品質を維持できます。
