@@ -1,5 +1,8 @@
 /* Main CSS for Book Template */
 
+/* Import CSS-only responsive sidebar implementation */
+@import url('./mobile-responsive.css');
+
 /* CSS Variables */
 :root {
     /* Colors */
@@ -400,35 +403,40 @@ a:hover {
     color: var(--primary-color);
 }
 
-/* Mobile Styles */
-.sidebar-overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 850;
+/* Copy Button Styles */
+.copy-button {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition);
+    z-index: 10;
 }
 
-@media (max-width: 1024px) {
-    .book-sidebar {
-        transform: translateX(-100%);
-    }
-    
-    .book-sidebar.active {
-        transform: translateX(0);
-    }
-    
-    .book-main {
-        margin-left: 0;
-    }
-    
-    .sidebar-overlay.active {
-        display: block;
-    }
+.copy-button:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
 }
+
+.copy-button.copied {
+    background: var(--success-color);
+    color: white;
+    border-color: var(--success-color);
+}
+
+.copy-button.error {
+    background: var(--danger-color);
+    color: white;
+    border-color: var(--danger-color);
+}
+
+/* Legacy mobile styles removed - using CSS-only implementation in mobile-responsive.css */
 
 @media (max-width: 768px) {
     .book-content {
