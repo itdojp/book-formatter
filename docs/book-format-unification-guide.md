@@ -419,6 +419,63 @@ npm run build
 - リソースセクションの順序統一完了
 - 他のITDO書籍プロジェクトとの一貫性確保
 
+### 6書籍一括ナビゲーション統一作業
+
+**作業期間**: 2025-08-05
+**所要時間**: 約90分（6書籍）
+
+#### 対象書籍と実施結果
+| 書籍 | PR | 所要時間 | 特徴 |
+|------|----|---------|----|
+| **it-infra-security-guide-book** | #12 | 15分 | 標準テンプレート |
+| **practical-auth-book** | #12 | 12分 | 標準テンプレート |
+| **supabase-architecture-patterns-book** | #15 | 15分 | アイコン統一も実施 |
+| **IT-infra-book** | #18 | 15分 | 標準テンプレート |
+| **IT-infra-troubleshooting-book** | #3 | 20分 | **特殊テンプレート対応** |
+| **cloud-infra-book** | #10 | 13分 | 標準テンプレート |
+
+#### テンプレート別対応方法
+**標準テンプレート（5書籍）**:
+- `docs/_includes/sidebar-nav.html` の `リソース` セクション修正
+- 統一HTML構造での実装
+
+**特殊テンプレート（1書籍）**:
+- **IT-infra-troubleshooting-book**: Jekyll data構造使用
+- `sidebar-footer` の `external-links` セクションで実装
+- SVGアイコンとスタイリング対応
+
+#### 統一後の効果
+- **100%統一達成**: 全6書籍で統一ナビゲーション実装
+- **ユーザー体験向上**: どの書籍からでも書籍一覧にアクセス可能
+- **メンテナンス効率化**: 標準化による運用工数削減
+
+### it-infra-security-guide-book GitHub Pages設定修正
+
+**作業期間**: 2025-08-05
+**所要時間**: 約30分
+
+#### 発見・修正した問題
+1. **GitHub Pages設定不整合** → `main /root` から `main /docs` に修正
+2. **レイアウト確認とリビルド** → 統一テンプレート正常動作確認
+
+#### 実施したAPI操作
+```bash
+# GitHub Pages設定変更
+gh api repos/itdojp/it-infra-security-guide-book/pages -X PUT \
+  --field source[branch]=main --field source[path]=/docs
+
+# 設定確認
+gh api repos/itdojp/it-infra-security-guide-book/pages --jq '{status, html_url, source}'
+```
+
+#### 実施したPR
+- **PR#13**: SEO改善とPages再ビルドトリガー
+
+**結果**:
+- GitHub Pages設定統一完了
+- レイアウト・デザイン一貫性確保
+- 他書籍との完全な統一達成
+
 ## トラブルシューティング
 
 ### よくある問題と解決策
@@ -457,6 +514,51 @@ done
 **原因**: CSSのメディアクエリ設定
 
 **解決策**: mobile-responsive.cssの設定確認・修正
+
+#### 問題4: GitHub Pages設定が異なる（root vs docs）
+**原因**: 書籍プロジェクトによってGitHub Pages公開ディレクトリが不統一
+
+**症状**:
+- 一部の書籍が `main /root` から公開
+- 統一テンプレートは `/docs` ディレクトリ使用
+
+**解決策**:
+```bash
+# GitHub CLI を使用した設定変更
+gh api repos/itdojp/[書籍名]/pages -X PUT \
+  --field source[branch]=main --field source[path]=/docs
+
+# 設定確認
+gh api repos/itdojp/[書籍名]/pages --jq '{status, html_url, source}'
+```
+
+**予防策**: 新規書籍作成時に最初から `/docs` ディレクトリ設定を使用
+
+#### 問題5: 特殊テンプレート書籍でのナビゲーション統一
+**原因**: Jekyll data構造を使用している書籍での標準手順の不適用
+
+**対象書籍**: IT-infra-troubleshooting-book（`external-links`構造使用）
+
+**解決策**:
+```html
+<!-- 標準テンプレートと異なり、sidebar-footerのexternal-linksセクションを修正 -->
+<div class="external-links">
+    <a href="[GitHub-URL]" target="_blank" rel="noopener" class="external-link">
+        <svg>[GitHub-SVG]</svg>
+        GitHubリポジトリ
+    </a>
+    <a href="https://itdojp.github.io/it-engineer-knowledge-architecture/" target="_blank" rel="noopener" class="external-link">
+        <svg>[Books-SVG]</svg>
+        書籍一覧
+    </a>
+    <a href="https://itdo.jp" target="_blank" rel="noopener" class="external-link">
+        <svg>[Home-SVG]</svg>
+        株式会社アイティードゥ
+    </a>
+</div>
+```
+
+**識別方法**: `sidebar-nav.html`で`{% for resource in site.structure.resources %}`構文の有無を確認
 
 ## 効果測定
 
@@ -510,6 +612,11 @@ done
 ### 実装例リポジトリ
 - [supabase-architecture-patterns-book](https://github.com/itdojp/supabase-architecture-patterns-book) - 統一完了
 - [it-infra-software-essentials-book](https://github.com/itdojp/it-infra-software-essentials-book) - ナビゲーション統一完了
+- [it-infra-security-guide-book](https://github.com/itdojp/it-infra-security-guide-book) - GitHub Pages設定修正完了
+- [practical-auth-book](https://github.com/itdojp/practical-auth-book) - ナビゲーション統一完了
+- [IT-infra-book](https://github.com/itdojp/IT-infra-book) - ナビゲーション統一完了
+- [IT-infra-troubleshooting-book](https://github.com/itdojp/IT-infra-troubleshooting-book) - 特殊テンプレート対応完了
+- [cloud-infra-book](https://github.com/itdojp/cloud-infra-book) - ナビゲーション統一完了
 - [competitive_programming_book](https://github.com/itdojp/competitive_programming_book) - リファレンス実装
 
 ### Jekyll・GitHub Pages資料
@@ -519,9 +626,26 @@ done
 ---
 
 **作成日**: 2025-08-05  
-**バージョン**: 1.1.0  
+**バージョン**: 1.2.0  
 **作成者**: Claude Code with ITDO Inc.  
 **最終更新**: 2025-08-05
+
+## 変更履歴
+
+### v1.2.0 (2025-08-05)
+- **新規追加**: 6書籍一括ナビゲーション統一作業の実施事例
+- **新規追加**: GitHub Pages設定修正（root → docs）の手順
+- **強化**: 特殊テンプレート対応方法の詳細化
+- **強化**: トラブルシューティング項目の拡充（問題4、問題5追加）
+- **更新**: 実装例リポジトリ一覧の完全版
+
+### v1.1.0 (2025-08-05)
+- Phase 8: ナビゲーションリソース統一とfavicon手順を追加
+- it-infra-software-essentials-book統一作業事例を追加
+
+### v1.0.0 (2025-08-05)
+- 初版リリース
+- supabase-architecture-patterns-book統一作業を基にした基本手順
 
 ## ライセンス
 
