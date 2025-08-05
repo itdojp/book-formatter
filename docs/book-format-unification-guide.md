@@ -241,9 +241,123 @@ title: "章タイトル"
 ---
 ```
 
-### Phase 8: 品質保証とテスト
+### Phase 8: ナビゲーションリソース統一（it-engineer-knowledge-architecture管理書籍）
 
-#### 8.1 自動テスト実行
+**対象**: https://itdojp.github.io/it-engineer-knowledge-architecture/ で管理される書籍プロジェクト
+
+#### 8.1 リソースセクションの統一
+サイドバーナビゲーション（`docs/_includes/sidebar-nav.html`）のリソースセクションに以下の3つのリンクを統一順序で追加：
+
+**統一リソースリンク構成**:
+```html
+<!-- Additional Resources -->
+<div class="toc-section">
+    <h3 class="toc-section-title">📚 リソース</h3>
+    <ul class="toc-list">
+        <li class="toc-item">
+            <a href="https://github.com/itdojp/[書籍名]" class="toc-link" target="_blank" rel="noopener">
+                💾 GitHubリポジトリ
+            </a>
+        </li>
+        <li class="toc-item">
+            <a href="https://itdojp.github.io/it-engineer-knowledge-architecture/" class="toc-link" target="_blank" rel="noopener">
+                📚 書籍一覧
+            </a>
+        </li>
+        <li class="toc-item">
+            <a href="https://itdo.jp" class="toc-link" target="_blank" rel="noopener">
+                🏢 株式会社アイティードゥ
+            </a>
+        </li>
+    </ul>
+</div>
+```
+
+**実装コマンド例**:
+```bash
+# 現在のリソースセクションを確認
+grep -A 20 "リソース" docs/_includes/sidebar-nav.html
+
+# 書籍一覧リンクを追加（GitHubリポジトリの後、会社リンクの前）
+# 手動でsidebar-nav.htmlを編集するか、以下のsedコマンドを使用
+
+# ブランチ作成
+git checkout -b feature/add-navigation-resources
+
+# ファイル編集後
+git add docs/_includes/sidebar-nav.html
+git commit -m "Add standardized navigation resources
+
+- Added 書籍一覧 link to it-engineer-knowledge-architecture
+- Unified resource link order: GitHubリポジトリ → 書籍一覧 → 株式会社アイティードゥ
+- Maintains consistency across ITDO book projects"
+
+git push -u origin feature/add-navigation-resources
+gh pr create --title "Add standardized navigation resources"
+```
+
+#### 8.2 favicon追加
+
+**favicon統一**:
+すべてのit-engineer-knowledge-architecture管理書籍で統一faviconを使用
+
+**実装手順**:
+```bash
+# 1. ITDO統一faviconをコピー
+# 標準faviconファイル: itdo_logo_48x48_blue.png
+cp /template/docs/assets/images/itdo_logo_48x48_blue.png docs/assets/images/
+
+# 2. HTML head部分にfavicon設定を追加
+# docs/_layouts/book.html のhead部分に以下を追加：
+```
+
+**HTML設定追加**:
+```html
+<!-- Favicon -->
+<link rel="icon" type="image/png" sizes="48x48" href="{{ '/assets/images/itdo_logo_48x48_blue.png' | relative_url }}">
+<link rel="apple-touch-icon" sizes="48x48" href="{{ '/assets/images/itdo_logo_48x48_blue.png' | relative_url }}">
+<meta name="msapplication-TileImage" content="{{ '/assets/images/itdo_logo_48x48_blue.png' | relative_url }}">
+<meta name="msapplication-TileColor" content="#0066cc">
+<meta name="theme-color" content="#0066cc">
+```
+
+**favicon追加の完全なコマンド例**:
+```bash
+# ブランチ作成（ナビゲーション変更と同一ブランチで実施可能）
+git checkout -b feature/add-favicon-and-navigation
+
+# faviconファイルをコピー
+mkdir -p docs/assets/images
+cp /template/docs/assets/images/itdo_logo_48x48_blue.png docs/assets/images/
+
+# _layouts/book.html のhead部分にfavicon設定を挿入
+# 手動編集またはsedコマンドでHTMLのhead部分に上記favicon設定を追加
+
+# コミット
+git add docs/assets/images/itdo_logo_48x48_blue.png docs/_layouts/book.html
+git commit -m "Add ITDO unified favicon
+
+- Added itdo_logo_48x48_blue.png favicon
+- Updated book.html layout with favicon meta tags
+- Ensures consistent branding across ITDO book projects"
+```
+
+#### 8.3 統一作業の検証
+以下をチェックして統一作業完了を確認：
+
+**ナビゲーション検証**:
+- [ ] リソースセクションに3つのリンクが正しい順序で表示
+- [ ] 書籍一覧リンクがit-engineer-knowledge-architectureに正しく遷移
+- [ ] 全リンクが新しいタブで開く（target="_blank"）
+
+**favicon検証**:
+- [ ] ブラウザタブにITDOロゴファビコンが表示
+- [ ] モバイルでホーム画面追加時に正しいアイコンが表示
+- [ ] 各ページでfaviconが一貫して表示
+
+### Phase 9: 品質保証とテスト
+
+#### 9.1 自動テスト実行
 ```bash
 # リンクチェック
 npm run check-links
@@ -255,10 +369,12 @@ npm run check-conflicts
 npm run build
 ```
 
-#### 8.2 デプロイ確認チェックリスト
+#### 9.2 デプロイ確認チェックリスト
 - [ ] メインページが正常表示
 - [ ] 全章へのナビゲーションが動作
 - [ ] サイドバーナビゲーションが全ページで表示
+- [ ] リソースセクションに統一リンクが正しい順序で表示
+- [ ] faviconが全ページで表示される
 - [ ] モバイルでハンバーガーメニューが適切に動作
 - [ ] デスクトップでハンバーガーメニューが非表示
 - [ ] ダークモード・ライトモード切り替えが動作
@@ -285,6 +401,23 @@ npm run build
 - サイト全体の404エラー解決
 - モバイルレスポンシブ対応完了
 - GitHub Actions実行数: 2→1に削減
+
+### it-infra-software-essentials-book ナビゲーション統一作業
+
+**作業期間**: 2025-08-05
+**所要時間**: 約15分
+
+#### 実施内容
+1. **ナビゲーションリソース統一** → Phase 8.1の手順を適用
+2. **リンク順序の統一** → GitHubリポジトリ → 書籍一覧 → 株式会社アイティードゥ
+
+#### 実施したPR
+- **PR#16**: ナビゲーションリソース統一
+
+**結果**:
+- it-engineer-knowledge-architecture書籍一覧への統一リンク追加完了
+- リソースセクションの順序統一完了
+- 他のITDO書籍プロジェクトとの一貫性確保
 
 ## トラブルシューティング
 
@@ -347,16 +480,24 @@ done
 - book-formatter v3.0テンプレートを必須使用
 - 統一されたディレクトリ構造の採用
 - 標準的なGitHub Pages設定の適用
+- **it-engineer-knowledge-architecture管理書籍には統一ナビゲーション・faviconを必須適用**
 
 ### 2. 既存書籍の定期メンテナンス
 - 四半期ごとのテンプレート更新チェック
 - セキュリティアップデートの一括適用
 - パフォーマンス最適化の継続改善
+- **ナビゲーションリソース統一の継続チェック**
 
 ### 3. 品質保証プロセス
 - 自動テストスイートの活用
 - デプロイ前チェックリストの実行
 - ユーザビリティテストの定期実施
+- **統一ナビゲーション・favicon表示の確認**
+
+### 4. it-engineer-knowledge-architecture管理書籍の特別要件
+- リソースセクションの3リンク統一（GitHubリポジトリ → 書籍一覧 → 会社）必須
+- ITDO統一faviconの使用必須
+- 書籍一覧サイトとの連携確保
 
 ## 参考資料
 
@@ -368,6 +509,7 @@ done
 
 ### 実装例リポジトリ
 - [supabase-architecture-patterns-book](https://github.com/itdojp/supabase-architecture-patterns-book) - 統一完了
+- [it-infra-software-essentials-book](https://github.com/itdojp/it-infra-software-essentials-book) - ナビゲーション統一完了
 - [competitive_programming_book](https://github.com/itdojp/competitive_programming_book) - リファレンス実装
 
 ### Jekyll・GitHub Pages資料
@@ -377,7 +519,7 @@ done
 ---
 
 **作成日**: 2025-08-05  
-**バージョン**: 1.0.0  
+**バージョン**: 1.1.0  
 **作成者**: Claude Code with ITDO Inc.  
 **最終更新**: 2025-08-05
 
