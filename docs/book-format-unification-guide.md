@@ -419,6 +419,40 @@ npm run build
 - リソースセクションの順序統一完了
 - 他のITDO書籍プロジェクトとの一貫性確保
 
+### github-workflow-book 統一作業（複数問題の複合解決事例）
+
+**作業期間**: 2025-08-06
+**所要時間**: 約2時間
+
+#### 複合問題の発生
+1. **サイドバーオーバーレイ透明問題**: CSS-only実装でオーバーレイクリックが無効
+2. **Jekyll Liquid変数エラー**: GitHubリンクが文字列として表示
+3. **レスポンシブデザイン問題**: ハンバーガーメニューがタイトル長で画面外にはみ出し
+4. **ヘッダー配置問題**: 検索、ダークモード切替、GitHubボタンの配置不統一
+
+#### 段階的解決アプローチ
+**Phase 1: Actions重複修正**
+- PR #72: カスタムビルドワークフロー削除（3→1 Actions）
+
+**Phase 2: 統一テンプレート適用**
+- PR #73: IT-infra-book（リファレンス実装）から完全統一
+- 1200pxブレークポイント維持（長タイトル対応）
+- CSS-only label overlay pattern実装
+
+**Phase 3: 設定修正**
+- PR #75: Jekyll Liquid変数エラー修正
+- _config.yml の repository設定統一
+
+**Phase 4: UI改善**
+- PR #76: ヘッダー右側要素の配置統一
+- margin-left: auto で右寄せ実現
+
+#### 得られた教訓
+1. **統一テンプレートの完全適用**: 部分修正よりも参照実装の完全コピーが効率的
+2. **CSS-only設計の重要性**: JavaScript依存を避けることでメンテナンス性向上
+3. **段階的アプローチ**: 複数問題を個別PRで分離することで問題追跡が容易
+4. **設定統一の重要性**: Jekyll変数定義の統一化が必須
+
 ## トラブルシューティング
 
 ### よくある問題と解決策
@@ -458,6 +492,64 @@ done
 
 **解決策**: mobile-responsive.cssの設定確認・修正
 
+#### 問題4: GitHub Pages設定不統一
+**原因**: リポジトリによって "main /root" と "main /docs" の設定が混在
+
+**解決策**:
+```bash
+# GitHub CLI API で統一設定に修正
+gh api repos/{owner}/{repo}/pages -X PATCH --field build_type='legacy' --field source='{branch: "main", path: "/docs"}'
+
+# 設定確認
+gh api repos/{owner}/{repo}/pages --jq '{status, html_url, source}'
+```
+
+#### 問題5: Jekyll Liquid変数の表示エラー
+**症状**: 「"itdojp/repository"}" class="github-link"...」のような文字列がページに表示される
+**原因**: _config.yml での変数定義と Layout での参照が不一致
+
+**解決策**:
+```yaml
+# _config.yml で正しく設定
+repository: "https://github.com/itdojp/book-name"
+
+# NG例（階層構造は避ける）
+repository:
+  github: "itdojp/book-name"
+```
+
+#### 問題6: レスポンシブデザインでのハンバーガーメニュー配置ズレ
+**症状**: 長いタイトルが原因でハンバーガーメニューが画面外にはみ出す
+**原因**: ブレークポイント不適切（768px）とタイトル長対応不足
+
+**解決策**:
+```css
+/* 1200pxブレークポイントに拡張 + タイトル省略記号 */
+@media (max-width: 1200px) {
+  .sidebar-toggle { display: flex !important; }
+}
+
+.header-title h1 {
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+```
+
+#### 問題7: CSS-onlyサイドバーでオーバーレイクリックが無効
+**症状**: サイドバー表示時に背景クリックでサイドバーが閉じない
+**原因**: オーバーレイ要素がdivになっている
+
+**解決策**: labelでチェックボックスと連携
+```html
+<!-- NG: div要素 -->
+<div class="book-sidebar-overlay"></div>
+
+<!-- OK: label要素でCSS-only実現 -->
+<label for="sidebar-toggle-checkbox" class="book-sidebar-overlay" aria-label="Close sidebar"></label>
+```
+
 ## 効果測定
 
 ### 統一前後の比較
@@ -473,6 +565,117 @@ done
 - **ページ読み込み速度**: JavaScript依存削除により向上
 - **メモリ使用量**: CSS-only設計により削減
 - **モバイル体験**: 3段階レスポンシブ対応により大幅改善
+
+## 改良されたベストプラクティス
+
+### レスポンシブデザイン対応
+
+#### 推奨ブレークポイント設定
+```css
+/* 長タイトル対応: 1200px推奨 */
+@media (max-width: 1200px) {
+  .sidebar-toggle { display: flex !important; }
+  .book-main { margin-left: 0 !important; }
+}
+
+/* デスクトップ: 1201px以上 */
+@media (min-width: 1201px) {
+  .sidebar-toggle { display: none !important; }
+}
+```
+
+#### CSS-only サイドバー実装パターン
+```html
+<!-- 必須: 隠しチェックボックス -->
+<input type="checkbox" id="sidebar-toggle-checkbox" class="sidebar-toggle-checkbox" aria-hidden="true">
+
+<!-- ハンバーガーメニュー: label要素 -->
+<label for="sidebar-toggle-checkbox" class="sidebar-toggle" aria-label="Toggle sidebar">
+  <!-- SVG icon -->
+</label>
+
+<!-- オーバーレイ: label要素でクリック連携 -->
+<label for="sidebar-toggle-checkbox" class="book-sidebar-overlay" aria-label="Close sidebar"></label>
+```
+
+### Jekyll設定の標準化
+
+#### _config.yml 推奨設定
+```yaml
+# タイトルとメタデータ
+title: "書籍タイトル"
+description: "書籍説明"
+author: "太田和彦"
+baseurl: "/book-name"
+url: "https://itdojp.github.io"
+
+# Jekyll設定
+markdown: kramdown
+highlighter: rouge
+permalink: pretty
+
+# GitHub連携（階層構造避ける）
+repository: "https://github.com/itdojp/book-name"
+
+# レイアウトデフォルト
+defaults:
+  - scope: { path: "", type: "pages" }
+    values: { layout: "book" }
+```
+
+#### 避けるべき設定
+```yaml
+# NG: 処理を制限する設定
+safe: true
+destination: "_site"
+
+# NG: 階層構造（Liquid変数エラー原因）
+repository:
+  github: "itdojp/book-name"
+```
+
+### ヘッダーレイアウト標準化
+
+#### 推奨HTML構造
+```html
+<header class="book-header">
+  <div class="header-left">
+    <label for="sidebar-toggle-checkbox" class="sidebar-toggle"><!-- icon --></label>
+    <a href="{{ '/' | relative_url }}" class="header-title">
+      <h1>{{ site.title | escape }}</h1>
+    </a>
+  </div>
+  
+  <div class="header-center">
+    <!-- Future: breadcrumb area -->
+  </div>
+  
+  <div class="header-right">
+    <div class="search-container"><!-- search --></div>
+    <button class="theme-toggle"><!-- theme toggle --></button>
+    <a href="{{ github_url }}" class="github-link"><!-- github --></a>
+  </div>
+</header>
+```
+
+#### 対応CSS
+```css
+.book-header { display: flex; align-items: center; }
+.header-left { display: flex; align-items: center; gap: var(--space-3); }
+.header-right { 
+  display: flex; 
+  align-items: center; 
+  gap: var(--space-3); 
+  margin-left: auto;  /* 右寄せの実現 */
+}
+
+.header-title h1 {
+  max-width: 300px;      /* 長タイトル対応 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+```
 
 ## 今後の運用方針
 
@@ -519,9 +722,9 @@ done
 ---
 
 **作成日**: 2025-08-05  
-**バージョン**: 1.1.0  
+**バージョン**: 1.3.0  
 **作成者**: Claude Code with ITDO Inc.  
-**最終更新**: 2025-08-05
+**最終更新**: 2025-08-06
 
 ## ライセンス
 
