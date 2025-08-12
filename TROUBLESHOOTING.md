@@ -1134,6 +1134,58 @@ layout: book  # defaultからbookに変更
 4. **レイアウト統一**: すべてのページで`book`レイアウトを使用してナビゲーション一貫性を保つ
 5. **構造設定確認**: `_config.yml`の構造設定が他の書籍と同じ形式になっているか確認
 
+## GitHub Actions自動ビルドによる変更上書き問題
+
+### 問題: docsディレクトリを直接編集しても変更が反映されない
+
+**症状**:
+- `docs/_layouts/book.html`や`docs/assets/css/main.css`を直接編集しても変更が元に戻る
+- ヘッダーレイアウトの修正（検索ボックスの右寄せ、パンくず削除など）が反映されない
+- CSSの修正が上書きされる
+- GitHub Pagesで古いバージョンが表示され続ける
+
+**原因**:
+- GitHub Actionsが`npm run build`を実行し、`templates/`ディレクトリから`docs/`ディレクトリへ自動的にファイルをコピーしている
+- push時に自動的に「Auto-update docs from build」というコミットが作成される
+- `docs/`ディレクトリの直接編集が無効化される仕組みになっている
+
+**解決方法**:
+
+1. **GitHub Actionsの自動ビルドを無効化**
+```yaml
+# .github/workflows/build.yml を編集
+name: Build and Deploy (Legacy Pages)
+
+on:
+  workflow_dispatch:  # push時の自動実行を削除、手動実行のみに変更
+```
+
+2. **templatesディレクトリのソースファイルを修正**
+```bash
+# 正しい修正箇所
+templates/layouts/book.html      # HTMLレイアウトの修正
+templates/styles/main.css        # CSSの修正
+templates/includes/*.html        # インクルードファイルの修正
+```
+
+3. **強制的にスタイルを適用する場合**
+```css
+/* docs/assets/css/main.css に!importantで追記 */
+.header-center {
+    display: none !important;  /* 不要な要素を強制非表示 */
+}
+
+.header-right {
+    margin-left: auto !important;  /* 右寄せを強制 */
+}
+```
+
+**重要な注意事項**:
+- `docs/`ディレクトリは生成物であり、直接編集すべきではない
+- 修正は必ず`templates/`ディレクトリのソースファイルに対して行う
+- GitHub Actionsの自動ビルドが有効な場合は、必ずソースファイルを修正する
+- 緊急の修正が必要な場合は、GitHub Actionsを無効化してから`docs/`を直接編集する
+
 ---
 
 このトラブルシューティングガイドは継続的に更新されます。新しい問題や解決方法を発見した場合は、このドキュメントに追加してください。
