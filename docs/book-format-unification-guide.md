@@ -731,3 +731,4 @@ repository:
 © 2025 株式会社アイティードゥ. All rights reserved.
 
 このドキュメントは、ITDO Inc.の書籍プロジェクト統一化の実践知見をまとめたものです。
+- 新規: page-navigation.html（前へ/次へ）を共通提供。_data/navigation.yml → order → URLの順でフォールバック。

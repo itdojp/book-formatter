@@ -1,0 +1,129 @@
+<!-- Canonical Page Navigation (Previous/Next) for book-formatter v3 -->
+{% comment %}
+Order resolution strategy (first match wins):
+1) site.data.navigation (keys: introduction, chapters, additional, appendices, afterword)
+2) site.pages where layout: book and order exists, sorted by order
+3) Fallback by URL groups sorted by url: /introduction/, /chapters/, /additional/ or /resources/, /appendices/, /afterword/
+{% endcomment %}
+
+{% assign nav_items = nil %}
+{% assign navigation = site.data.navigation %}
+
+{% if navigation %}
+  {%- assign seq = "" | split: "|" -%}
+  {%- if navigation.introduction -%}
+    {%- assign seq = seq | concat: navigation.introduction -%}
+  {%- endif -%}
+  {%- if navigation.chapters -%}
+    {%- assign seq = seq | concat: navigation.chapters -%}
+  {%- endif -%}
+  {%- if navigation.additional -%}
+    {%- assign seq = seq | concat: navigation.additional -%}
+  {%- endif -%}
+  {%- if navigation.resources -%}
+    {%- assign seq = seq | concat: navigation.resources -%}
+  {%- endif -%}
+  {%- if navigation.appendices -%}
+    {%- assign seq = seq | concat: navigation.appendices -%}
+  {%- endif -%}
+  {%- if navigation.afterword -%}
+    {%- assign seq = seq | concat: navigation.afterword -%}
+  {%- endif -%}
+  {% assign nav_items = seq %}
+{% endif %}
+
+{% if nav_items == nil or nav_items.size == 0 %}
+  {%- assign ordered_pages = site.pages | where: "layout", "book" | where_exp: "p", "p.order" | sort: "order" -%}
+  {% if ordered_pages and ordered_pages.size > 0 %}
+    {% assign nav_items = ordered_pages %}
+  {% endif %}
+{% endif %}
+
+{% if nav_items == nil or nav_items.size == 0 %}
+  {%- assign intro = site.pages | where: "layout", "book" | where_exp: "p", "p.url contains '/introduction/'" | sort: "url" -%}
+  {%- assign chaps = site.pages | where: "layout", "book" | where_exp: "p", "p.url contains '/chapters/'" | sort: "url" -%}
+  {%- assign addtn = site.pages | where: "layout", "book" | where_exp: "p", "p.url contains '/additional/' or p.url contains '/resources/'" | sort: "url" -%}
+  {%- assign appdx = site.pages | where: "layout", "book" | where_exp: "p", "p.url contains '/appendices/'" | sort: "url" -%}
+  {%- assign aftwd = site.pages | where: "layout", "book" | where_exp: "p", "p.url contains '/afterword/'" | sort: "url" -%}
+  {%- assign seq = intro | concat: chaps | concat: addtn | concat: appdx | concat: aftwd -%}
+  {% assign nav_items = seq %}
+{% endif %}
+
+{%- assign current_index = nil -%}
+{%- if nav_items and nav_items.size > 0 -%}
+  {%- for item in nav_items -%}
+    {%- if item.path and item.path != '' -%}
+      {%- assign item_url = item.path -%}
+    {%- else -%}
+      {%- assign item_url = item.url -%}
+    {%- endif -%}
+    {%- if item_url == page.url or page.url contains item_url -%}
+      {%- assign current_index = forloop.index0 -%}
+      {%- break -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+
+{%- assign previous_item = nil -%}
+{%- assign next_item = nil -%}
+{%- if current_index != nil -%}
+  {%- assign prev_index = current_index | minus: 1 -%}
+  {%- assign next_index = current_index | plus: 1 -%}
+  {%- if prev_index >= 0 -%}
+    {%- assign previous_item = nav_items[prev_index] -%}
+  {%- endif -%}
+  {%- if next_index < nav_items.size -%}
+    {%- assign next_item = nav_items[next_index] -%}
+  {%- endif -%}
+{%- endif -%}
+
+<nav class="book-navigation" aria-label="Chapter navigation">
+  <div class="chapter-nav">
+    {% if previous_item %}
+      {%- assign prev_url = previous_item.path | default: previous_item.url -%}
+      <a href="{{ prev_url | relative_url }}" class="nav-prev" rel="prev">
+        <span class="arrow">←</span>
+        <span class="label">前へ</span>
+        <span class="title">{{ previous_item.title | default: previous_item.name | default: "前のページ" }}</span>
+      </a>
+    {% else %}
+      <span class="nav-disabled nav-prev">
+        <span class="arrow">←</span>
+        <span class="label">前へ</span>
+      </span>
+    {% endif %}
+
+    <a href="{{ '/' | relative_url }}" class="nav-home">
+      <span class="icon">📚</span>
+      <span class="label">目次へ</span>
+    </a>
+
+    {% if next_item %}
+      {%- assign next_url = next_item.path | default: next_item.url -%}
+      <a href="{{ next_url | relative_url }}" class="nav-next" rel="next">
+        <span class="label">次へ</span>
+        <span class="title">{{ next_item.title | default: next_item.name | default: "次のページ" }}</span>
+        <span class="arrow">→</span>
+      </a>
+    {% else %}
+      <span class="nav-disabled nav-next">
+        <span class="label">次へ</span>
+        <span class="arrow">→</span>
+      </span>
+    {% endif %}
+  </div>
+</nav>
+
+<style>
+.book-navigation { margin: 2rem 0; padding: 1rem; border-top: 1px solid var(--color-border, #e5e7eb); }
+.chapter-nav { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.nav-prev, .nav-next, .nav-home { display: flex; align-items: center; padding: 0.75rem 1.25rem; background: var(--color-surface, #fff); border: 1px solid var(--color-border, #e5e7eb); border-radius: 6px; text-decoration: none; color: inherit; }
+.nav-disabled { opacity: .5; cursor: not-allowed; background: var(--color-muted, #f9fafb); }
+.nav-prev { flex: 1; }
+.nav-next { flex: 1; justify-content: flex-end; text-align: right; }
+.nav-home { flex: 0 0 auto; }
+.label { font-weight: 600; margin: 0 .25rem; }
+.title { font-size: .9rem; opacity: .8; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 768px) { .chapter-nav { flex-wrap: wrap; } .nav-prev, .nav-next { flex: 1 1 45%; } .nav-home { flex: 1 1 100%; order: -1; justify-content: center; } .title { display: none; } }
+</style>
+
