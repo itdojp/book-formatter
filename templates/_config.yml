@@ -1,0 +1,54 @@
+# Canonical Jekyll config for book repos (project Pages)
+# - Permalink: pretty
+# - GitHub Pages supported plugins
+# - Kramdown defaults
+
+# Site metadata (customize per book)
+title: "<BOOK TITLE>"
+description: "<SHORT DESCRIPTION>"
+author: "<AUTHOR>"
+version: "1.0.0"
+lang: "ja"
+
+# GitHub Pages
+yurl: "https://<owner>.github.io"
+baseurl: "/<repo>"
+repository: "<owner>/<repo>"
+
+# Jekyll
+markdown: kramdown
+highlighter: rouge
+permalink: pretty
+
+# Theme
+theme: minima
+
+# Plugins (GitHub Pages supported)
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+
+# Kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+# Defaults
+defaults:
+  - scope:
+      path: ""
+      type: "pages"
+    values:
+      layout: "book"
+
+# Excludes
+exclude:
+  - node_modules/
+  - scripts/
+  - templates/
+  - README.md
+  - Gemfile*
+  - vendor/
