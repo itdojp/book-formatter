@@ -737,3 +737,10 @@ repository:
 ## 補足ガイド
 - JavaScriptのエラーハンドリング: [JS-ERROR-HANDLING.md](./JS-ERROR-HANDLING.md)
 - CLIスクリプトの使い方: [cli-usage.md](./cli-usage.md)
+
+> 推奨: レイアウトに safe-main.js を読み込むことで、クライアント側のエンハンスが例外で停止しないようにできます。
+
+```liquid
+<script src="{{ '/assets/js/safe-main.js' | relative_url }}"></script>
+```
+
