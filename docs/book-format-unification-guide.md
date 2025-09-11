@@ -733,3 +733,7 @@ repository:
 このドキュメントは、ITDO Inc.の書籍プロジェクト統一化の実践知見をまとめたものです。
 - 新規: page-navigation.html（前へ/次へ）を共通提供。_data/navigation.yml → order → URLの順でフォールバック。
 \n- 参照: prev-next-navigation-guide.md（前へ/次への設計と注意点）
+
+## 補足ガイド
+- JavaScriptのエラーハンドリング: [JS-ERROR-HANDLING.md](./JS-ERROR-HANDLING.md)
+- CLIスクリプトの使い方: [cli-usage.md](./cli-usage.md)
