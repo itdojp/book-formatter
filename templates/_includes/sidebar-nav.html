@@ -1,0 +1,81 @@
+<!-- Canonical Sidebar Navigation Template -->
+<div class="sidebar-content">
+  <div class="book-info">
+    <h2 class="book-title">{{ site.title | escape }}</h2>
+    {% if site.description %}
+    <p class="book-subtitle">{{ site.description | escape }}</p>
+    {% endif %}
+  </div>
+
+  <div class="toc">
+    <!-- Home / Top -->
+    <div class="toc-section">
+      <ul class="toc-list">
+        <li class="toc-item">
+          <a href="{{ '/' | relative_url }}" class="toc-link {% if page.url == '/' %}active{% endif %}">トップ</a>
+        </li>
+      </ul>
+    </div>
+
+    {% assign nav = site.data.navigation %}
+    {% if nav %}
+      {% if nav.introduction %}
+      <div class="toc-section">
+        <h3 class="toc-section-title">はじめに</h3>
+        <ul class="toc-list">
+          {% for item in nav.introduction %}
+          <li class="toc-item">
+            <a href="{{ item.path | relative_url }}" class="toc-link {% if page.url contains item.path %}active{% endif %}">{{ item.title }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if nav.chapters %}
+      <div class="toc-section">
+        <h3 class="toc-section-title">目次</h3>
+        <ul class="toc-list">
+          {% for item in nav.chapters %}
+          <li class="toc-item toc-chapter">
+            <a href="{{ item.path | relative_url }}" class="toc-link {% if page.url contains item.path %}active{% endif %}">{{ item.title }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if nav.appendices %}
+      <div class="toc-section">
+        <h3 class="toc-section-title">付録</h3>
+        <ul class="toc-list">
+          {% for item in nav.appendices %}
+          <li class="toc-item">
+            <a href="{{ item.path | relative_url }}" class="toc-link {% if page.url contains item.path %}active{% endif %}">{{ item.title }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    {% else %}
+      <!-- Fallback when no navigation.yml present -->
+      <div class="toc-section">
+        <h3 class="toc-section-title">セクション</h3>
+        <ul class="toc-list">
+          <li class="toc-item"><a href="{{ '/introduction/' | relative_url }}" class="toc-link">はじめに</a></li>
+          <li class="toc-item"><a href="{{ '/chapters/' | relative_url }}" class="toc-link">章一覧</a></li>
+          <li class="toc-item"><a href="{{ '/appendices/' | relative_url }}" class="toc-link">付録</a></li>
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="external-links">
+      {% if site.repository %}
+      <a href="{% if site.repository contains 'http' %}{{ site.repository }}{% else %}https://github.com/{{ site.repository }}{% endif %}"
+         target="_blank" rel="noopener" class="external-link">💾 GitHub</a>
+      {% endif %}
+    </div>
+  </div>
+</div>

@@ -1,0 +1,16 @@
+# Minimal navigation template (edit titles and paths for your book)
+introduction:
+  - title: はじめに
+    path: "/introduction/"
+
+chapters:
+  - title: 第1章 タイトル
+    path: "/chapters/chapter-01/"
+  - title: 第2章 タイトル
+    path: "/chapters/chapter-02/"
+
+appendices:
+  - title: 付録A タイトル
+    path: "/appendices/appendix-a/"
+  - title: 付録B タイトル
+    path: "/appendices/appendix-b/"
