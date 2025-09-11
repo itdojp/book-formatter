@@ -1,0 +1,46 @@
+# Starter Jekyll config for new book repos (project Pages)
+# Customize the values marked with <...>
+
+title: "<BOOK TITLE>"
+description: "<SHORT DESCRIPTION>"
+author: "<AUTHOR>"
+version: "1.0.0"
+lang: "ja"
+
+# GitHub Pages settings
+url: "https://<owner>.github.io"
+baseurl: "/<repo>"
+repository: "<owner>/<repo>"
+
+# Jekyll settings
+markdown: kramdown
+highlighter: rouge
+permalink: pretty
+
+theme: minima
+
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+defaults:
+  - scope:
+      path: ""
+      type: "pages"
+    values:
+      layout: "book"
+
+exclude:
+  - node_modules/
+  - scripts/
+  - templates/
+  - README.md
+  - Gemfile*
+  - vendor/
