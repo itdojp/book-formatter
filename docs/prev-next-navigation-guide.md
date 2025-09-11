@@ -9,6 +9,14 @@
   3) URLグループごとのフォールバック（`/introduction/`, `/chapters/`, `/additional|/resources/`, `/appendices/`, `/afterword/`）
 - 最も確実なのは、`docs/_data/navigation.yml` を整備することです。章/付録の順序・タイトル・パスを明示的に定義してください。
 
+### タイトルの優先順位（Prev/Nextの表示）
+- `page.title` を最優先で使用します（ページ側が最新のため）。
+- 次点で `_data/navigation.yml` の `title`/`label`、最後に `name`/エントリ名を使用します。
+
+### トップページでは下部ナビを表示しない
+- プロジェクトPagesではトップは `/<repo>/`（`site.baseurl` 付き）です。
+- 共通インクルードは `site.baseurl` を取り除いてルートを判定し、トップページでは下部ナビを非表示にします。
+
 ## 2. よくある落とし穴（プロジェクトPages）
 - `docs/index.md` に `permalink: /` を設定しないでください。プロジェクトPages（`baseurl` あり）では、トップは `/<repo>/` に出力される必要があります。`permalink: /` があるとルート`/`に出力され、`/<repo>/` が 404 になります。
 - `baseurl` は `_config.yml` に設定します。引用符で囲んでも動作しますが、ワークフロー等で正しく扱うためにはYAMLとして解釈される前提で記述するのが望ましいです。
@@ -24,4 +32,3 @@
 ## 5. 参考
 - 共通インクルード: `docs/_includes/page-navigation.html`
 - 統一ガイド: `docs/book-format-unification-guide.md`
-
