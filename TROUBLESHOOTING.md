@@ -1137,3 +1137,8 @@ layout: book  # defaultからbookに変更
 ---
 
 このトラブルシューティングガイドは継続的に更新されます。新しい問題や解決方法を発見した場合は、このドキュメントに追加してください。
+
+## GitHub Pages ビルドの失敗
+- _config.yml のYAML破損（例: kramdown行にpermalinkが結合）で失敗することがあります。
+- 対応: YAML整形（permalinkをトップレベル、pluginsを正しく配置）。
+- 旧URLのスタブはfront matterを付与するか、redirect_fromを到達先に記述。
