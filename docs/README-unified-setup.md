@@ -45,7 +45,7 @@ cp -R templates/starter/docs ./docs
 `scripts/scaffold-new-book.sh` で雛形のコピーと基本置換を自動化できます。
 
 ```bash
-# 乾燥実行（ローカルに雛形を展開）
+# 試行実行（ローカルに雛形を展開）
 ./scripts/scaffold-new-book.sh <owner> <repo>
 
 # GitHub上に新規リポを作成して初回pushまで実施
