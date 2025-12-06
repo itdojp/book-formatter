@@ -25,8 +25,13 @@ permalink: /
 - （例）中級者は第 2 部から読み始めてもよい
 - （例）マネージャーは戦略編・組織編の章を中心に読む
 
-- 目次はサイドバー、または navigation.yml を編集して整備してください
-- 章ページは /chapters/ ディレクトリ配下のディレクトリ形式で配置します
-- 付録は /appendices/ 配下に配置します
+> **新規書籍でのディレクトリ構成（推奨）**
+> - 書籍トップ: `docs/index.md`
+> - 序章・まえがき等: `docs/introduction/` 配下（例: `docs/introduction/index.md`, `docs/introduction/preface.md`）
+> - 各章: `docs/chapters/chapter-01/`〜 のディレクトリに `index.md` を置く
+> - 付録: `docs/appendices/appendix-a/` などのディレクトリに `index.md` または `appendix-a.md` を置く
+>
+> 目次はサイドバー、または `_data/navigation.yml` を編集して整備してください。
+
 
 > トップページには下部ナビを表示しません（章/付録では表示されます）
