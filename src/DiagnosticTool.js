@@ -526,21 +526,21 @@ export class DiagnosticTool {
     this.results.details.push(result);
 
     switch (type) {
-      case 'pass':
-        this.results.passed++;
-        break;
-      case 'warning':
-        this.results.warnings++;
-        break;
-      case 'error':
-        this.results.errors++;
-        break;
-      case 'critical':
-        this.results.criticalErrors++;
-        break;
-      default:
-        // info type doesn't count in statistics
-        break;
+    case 'pass':
+      this.results.passed++;
+      break;
+    case 'warning':
+      this.results.warnings++;
+      break;
+    case 'error':
+      this.results.errors++;
+      break;
+    case 'critical':
+      this.results.criticalErrors++;
+      break;
+    default:
+      // info type doesn't count in statistics
+      break;
     }
   }
 

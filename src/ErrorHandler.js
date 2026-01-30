@@ -91,19 +91,21 @@ export class ErrorHandler {
    * @returns {Promise} Operation result
    */
   async executeWithTimeout(operation, timeout, operationName) {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error(`Operation '${operationName}' timed out after ${timeout}ms`));
       }, timeout);
 
-      try {
-        const result = await operation();
-        clearTimeout(timer);
-        resolve(result);
-      } catch (error) {
-        clearTimeout(timer);
-        reject(error);
-      }
+      Promise.resolve()
+        .then(() => operation())
+        .then((result) => {
+          clearTimeout(timer);
+          resolve(result);
+        })
+        .catch((error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
     });
   }
 
