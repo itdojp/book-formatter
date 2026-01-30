@@ -53,7 +53,7 @@ npm start init --output ./my-book-config.json
   "author": "著者名",
   "version": "1.0.0",
   "language": "ja",
-  "license": "MIT",
+  "license": "CC BY-NC-SA 4.0",
   "repository": {
     "url": "https://github.com/username/repository.git",
     "branch": "main"
@@ -198,7 +198,7 @@ npm start sync-all-books --dry-run
 
 - `version`: バージョン（semantic versioning形式）
 - `language`: 言語コード（デフォルト: "ja"）
-- `license`: ライセンス（デフォルト: "MIT"）
+- `license`: ライセンス（デフォルト: "CC BY-NC-SA 4.0"）
 - `repository`: リポジトリ情報
 - `structure`: 書籍構造（章、付録）
 

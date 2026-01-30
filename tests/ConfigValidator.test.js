@@ -1,12 +1,31 @@
-import { test, describe, beforeEach } from 'node:test';
+import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { ConfigValidator } from '../src/ConfigValidator.js';
 
 describe('ConfigValidator', () => {
   let validator;
+  let originalConsole;
 
   beforeEach(() => {
+    // Avoid excessive console output in CI (node:test uses IPC for stdio in some modes).
+    originalConsole = {
+      log: console.log,
+      error: console.error,
+      warn: console.warn
+    };
+    console.log = () => {};
+    console.error = () => {};
+    console.warn = () => {};
+
     validator = new ConfigValidator();
+  });
+
+  afterEach(() => {
+    if (originalConsole) {
+      console.log = originalConsole.log;
+      console.error = originalConsole.error;
+      console.warn = originalConsole.warn;
+    }
   });
 
   describe('validate', () => {

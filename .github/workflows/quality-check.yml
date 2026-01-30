@@ -107,6 +107,11 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      - name: Setup Ruby (for Jekyll build)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
       
       - name: Install dependencies
         run: npm ci

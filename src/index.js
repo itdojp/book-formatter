@@ -237,7 +237,7 @@ program
         author: '著者名',
         version: '1.0.0',
         language: 'ja',
-        license: 'MIT',
+        license: 'CC BY-NC-SA 4.0',
         repository: {
           url: 'https://github.com/user/repo.git',
           branch: 'main'

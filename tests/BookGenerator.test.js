@@ -12,8 +12,19 @@ describe('BookGenerator', () => {
   let bookGenerator;
   let tempDir;
   let testConfigPath;
+  let originalConsole;
 
   beforeEach(async () => {
+    // Avoid excessive console output in CI (node:test uses IPC for stdio in some modes).
+    originalConsole = {
+      log: console.log,
+      error: console.error,
+      warn: console.warn
+    };
+    console.log = () => {};
+    console.error = () => {};
+    console.warn = () => {};
+
     bookGenerator = new BookGenerator();
     tempDir = await fs.mkdtemp(path.join(__dirname, 'tmp-'));
     
@@ -52,6 +63,12 @@ describe('BookGenerator', () => {
   afterEach(async () => {
     if (tempDir) {
       await fs.remove(tempDir);
+    }
+
+    if (originalConsole) {
+      console.log = originalConsole.log;
+      console.error = originalConsole.error;
+      console.warn = originalConsole.warn;
     }
   });
 
