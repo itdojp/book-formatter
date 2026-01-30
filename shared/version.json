@@ -1,28 +1,31 @@
 {
-  "version": "3.1.0",
-  "updated": "2025-07-19",
-  "description": "Performance optimizations and layout improvements",
+  "version": "3.2.0",
+  "updated": "2026-01-30",
+  "description": "Add canonical navigation + footer + reliable GitHub/contact links",
   "components": {
     "layouts": {
-      "version": "3.1.0",
+      "version": "3.2.0",
       "files": [
         "layouts/book.html",
         "layouts/default.html"
       ]
     },
     "includes": {
-      "version": "3.1.0",
+      "version": "3.2.0",
       "files": [
         "includes/sidebar-nav.html",
         "includes/page-navigation.html"
       ]
     },
     "assets": {
-      "version": "3.1.0",
+      "version": "3.2.0",
       "files": [
         "assets/css/main.css",
-        "assets/js/main.js",
-        "assets/js/sidebar.js"
+        "assets/css/mobile-responsive.css",
+        "assets/css/syntax-highlighting.css",
+        "assets/js/code-copy-lightweight.js",
+        "assets/js/search.js",
+        "assets/js/theme.js"
       ]
     },
     "templates": {

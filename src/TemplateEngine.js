@@ -249,13 +249,13 @@ npm run build
    * @param {Object} data - 元のデータ
    * @returns {Object} 処理済みデータ
    */
-  preprocessData(data) {
+    preprocessData(data) {
     const processed = { ...data };
 
     // デフォルト値の設定
     processed.version = processed.version || '1.0.0';
     processed.language = processed.language || 'ja';
-    processed.license = processed.license || 'MIT';
+    processed.license = processed.license || 'CC BY-NC-SA 4.0';
     processed.currentDate = new Date().toISOString().split('T')[0];
 
     // パッケージ名の生成

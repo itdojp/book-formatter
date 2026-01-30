@@ -7,6 +7,12 @@ author: "<AUTHOR>"
 version: "1.0.0"
 lang: "ja"
 
+# Footer / contact / license (Book UI Spec v1)
+contact:
+  email: "knowledge@itdo.jp"
+license_text: "Content licensed under CC BY-NC-SA 4.0 (commercial use requires a separate agreement)."
+repository_branch: "main"
+
 # GitHub Pages settings
 url: "https://<owner>.github.io"
 baseurl: "/<repo>"

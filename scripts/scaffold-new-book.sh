@@ -12,18 +12,29 @@ WORK=$(mktemp -d)
 DST="$WORK/$REPO"
 mkdir -p "$DST"
 
-# Copy starter
-cp -R templates/starter/docs "$DST/"
-# Fill placeholders in _config.yml
-sed -i "s#<owner>#$OWNER#g; s#<repo>#$REPO#g; s#<BOOK TITLE>#${REPO//-/ }#g; s#<SHORT DESCRIPTION>#Book description#g; s#<AUTHOR>#ITDO Inc.#g" "$DST/docs/_config.yml"
+# Copy starter (docs/ + root files)
+cp -R templates/starter/. "$DST/"
+
+# Sync canonical shared components into docs/ (Jekyll conventions)
+mkdir -p "$DST/docs/_layouts" "$DST/docs/_includes" "$DST/docs/assets"
+cp -R shared/layouts/. "$DST/docs/_layouts/"
+cp -R shared/includes/. "$DST/docs/_includes/"
+cp -R shared/assets/. "$DST/docs/assets/"
+
+# Fill placeholders
+TITLE_DEFAULT="${REPO//-/ }"
+sed -i "s#<owner>#$OWNER#g; s#<repo>#$REPO#g; s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<SHORT DESCRIPTION>#Book description#g; s#<AUTHOR>#ITDO Inc.#g" "$DST/docs/_config.yml"
+sed -i "s#<BOOK TITLE>#$TITLE_DEFAULT#g" "$DST/docs/index.md"
+sed -i "s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<owner>#$OWNER#g; s#<repo>#$REPO#g" "$DST/LICENSE.md" "$DST/LICENSE-SCOPE.md" 2>/dev/null || true
 
 # Show next steps
 cat <<EON
 Scaffolded at: $DST
 Next steps:
-1) Review docs/_config.yml (title/description/author)
-2) Add chapters under docs/chapters/, appendices under docs/appendices/
-3) Commit and push to GitHub
+1) Review docs/_config.yml (title/description/author/baseurl/repository)
+2) Update docs/_data/navigation.yml (ToC order)
+3) Add chapters under docs/chapters/, appendices under docs/appendices/
+4) Commit and push to GitHub
 EON
 
 if [ "$CREATE" = "--create" ]; then

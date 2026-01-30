@@ -322,7 +322,7 @@ export class BookGenerator {
       version: config.version || '1.0.0',
       description: config.description || '',
       author: config.author || '',
-      license: 'MIT',
+      license: config.license || 'CC BY-NC-SA 4.0',
       scripts: {
         'build': 'bundle exec jekyll build',
         'serve': 'bundle exec jekyll serve --livereload',
