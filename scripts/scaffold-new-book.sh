@@ -12,6 +12,23 @@ WORK=$(mktemp -d)
 DST="$WORK/$REPO"
 mkdir -p "$DST"
 
+sed_inplace() {
+  local expr=${1:-}
+  shift || true
+  if [ -z "$expr" ] || [ "$#" -eq 0 ]; then
+    echo "sed_inplace: missing args" >&2
+    return 2
+  fi
+
+  # Use -i.bak for portability across GNU/BSD sed.
+  local rc=0
+  sed -i.bak -e "$expr" "$@" || rc=$?
+  for f in "$@"; do
+    rm -f "$f.bak" 2>/dev/null || true
+  done
+  return "$rc"
+}
+
 # Copy starter (docs/ + root files)
 cp -R templates/starter/. "$DST/"
 
@@ -23,9 +40,9 @@ cp -R shared/assets/. "$DST/docs/assets/"
 
 # Fill placeholders
 TITLE_DEFAULT="${REPO//-/ }"
-sed -i "s#<owner>#$OWNER#g; s#<repo>#$REPO#g; s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<SHORT DESCRIPTION>#Book description#g; s#<AUTHOR>#ITDO Inc.#g" "$DST/docs/_config.yml"
-sed -i "s#<BOOK TITLE>#$TITLE_DEFAULT#g" "$DST/docs/index.md"
-sed -i "s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<owner>#$OWNER#g; s#<repo>#$REPO#g" "$DST/LICENSE.md" "$DST/LICENSE-SCOPE.md" 2>/dev/null || true
+sed_inplace "s#<owner>#$OWNER#g; s#<repo>#$REPO#g; s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<SHORT DESCRIPTION>#Book description#g; s#<AUTHOR>#ITDO Inc.#g" "$DST/docs/_config.yml"
+sed_inplace "s#<BOOK TITLE>#$TITLE_DEFAULT#g" "$DST/docs/index.md"
+sed_inplace "s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<owner>#$OWNER#g; s#<repo>#$REPO#g" "$DST/LICENSE.md" "$DST/LICENSE-SCOPE.md" 2>/dev/null || true
 
 # Show next steps
 cat <<EON

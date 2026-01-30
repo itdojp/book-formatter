@@ -249,7 +249,7 @@ npm run build
    * @param {Object} data - 元のデータ
    * @returns {Object} 処理済みデータ
    */
-    preprocessData(data) {
+  preprocessData(data) {
     const processed = { ...data };
 
     // デフォルト値の設定
