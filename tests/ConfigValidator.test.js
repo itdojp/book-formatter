@@ -51,6 +51,31 @@ describe('ConfigValidator', () => {
       });
     });
 
+    test('ux 設定が有効な場合にバリデーションが成功する', () => {
+      const validConfig = {
+        title: 'UX書籍',
+        description: 'UX設定を含む',
+        author: '作成者',
+        ux: {
+          profile: 'A',
+          modules: {
+            quickStart: true,
+            readingGuide: true,
+            checklistPack: false,
+            troubleshootingFlow: false,
+            conceptMap: true,
+            figureIndex: false,
+            legalNotice: false,
+            glossary: true
+          }
+        }
+      };
+
+      assert.doesNotThrow(() => {
+        validator.validate(validConfig);
+      });
+    });
+
     test('必須フィールドが不足している場合エラーを投げる', () => {
       const invalidConfig = {
         description: '説明のみ'
@@ -69,6 +94,47 @@ describe('ConfigValidator', () => {
       assert.throws(() => {
         validator.validate('string');
       }, /設定ファイルが正しくありません/);
+    });
+
+    test('ux.profile が不正な場合エラーを投げる', () => {
+      const config = {
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
+        ux: {
+          profile: 'D'
+        }
+      };
+
+      assert.throws(() => {
+        validator.validate(config);
+      }, /ux\.profile は A\/B\/C/);
+    });
+
+    test('ux.modules に未定義キーがある場合エラーを投げる', () => {
+      const config = {
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
+        ux: {
+          profile: 'B',
+          modules: {
+            quickStart: false,
+            readingGuide: false,
+            checklistPack: true,
+            troubleshootingFlow: true,
+            conceptMap: false,
+            figureIndex: true,
+            legalNotice: false,
+            glossary: false,
+            unknownModule: true
+          }
+        }
+      };
+
+      assert.throws(() => {
+        validator.validate(config);
+      }, /未定義キー/);
     });
   });
 

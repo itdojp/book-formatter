@@ -34,7 +34,34 @@
     "license": {
       "type": "string",
       "description": "The license of the book",
-      "default": "MIT"
+      "default": "CC BY-NC-SA 4.0"
+    },
+    "ux": {
+      "type": "object",
+      "description": "UX profile and modules configuration",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "enum": ["A", "B", "C"],
+          "description": "UX profile (A/B/C)"
+        },
+        "modules": {
+          "type": "object",
+          "description": "UX modules flags",
+          "properties": {
+            "quickStart": { "type": "boolean" },
+            "readingGuide": { "type": "boolean" },
+            "checklistPack": { "type": "boolean" },
+            "troubleshootingFlow": { "type": "boolean" },
+            "conceptMap": { "type": "boolean" },
+            "figureIndex": { "type": "boolean" },
+            "legalNotice": { "type": "boolean" },
+            "glossary": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "repository": {
       "type": "object",

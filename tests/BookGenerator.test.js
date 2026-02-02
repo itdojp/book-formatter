@@ -152,6 +152,48 @@ language: "ja"
       assert.strictEqual(await fs.pathExists(path.join(outputPath, 'assets', 'js', 'theme.js')), true);
     });
 
+    test('ux 指定時に共通テンプレートを使用する', async () => {
+      const uxConfig = {
+        title: 'UX書籍',
+        description: 'UXテンプレートの検証',
+        author: 'UX作成者',
+        version: '1.0.0',
+        language: 'ja',
+        ux: {
+          profile: 'A',
+          modules: {
+            quickStart: true,
+            readingGuide: true,
+            checklistPack: false,
+            troubleshootingFlow: false,
+            conceptMap: true,
+            figureIndex: false,
+            legalNotice: false,
+            glossary: true
+          }
+        },
+        structure: {
+          chapters: [
+            {
+              id: 'intro',
+              title: '導入'
+            }
+          ]
+        }
+      };
+
+      const uxConfigPath = path.join(tempDir, 'ux-config.json');
+      await fs.writeFile(uxConfigPath, JSON.stringify(uxConfig, null, 2));
+
+      const outputPath = path.join(tempDir, 'ux-output');
+      await bookGenerator.createBook(uxConfigPath, outputPath);
+
+      const indexContent = await fs.readFile(path.join(outputPath, 'index.md'), 'utf8');
+      assert(indexContent.includes('AUTO-GENERATED: book-formatter (ux core)'));
+      assert(indexContent.includes('Profile A'));
+      assert(indexContent.includes('読み方ガイド'));
+    });
+
     test('章ファイルの内容が正しい', async () => {
       const outputPath = path.join(tempDir, 'output');
       

@@ -200,6 +200,7 @@ npm start sync-all-books --dry-run
 - `language`: 言語コード（デフォルト: "ja"）
 - `license`: ライセンス（デフォルト: "CC BY-NC-SA 4.0"）
 - `repository`: リポジトリ情報
+- `ux`: UXプロファイル/モジュール設定
 - `structure`: 書籍構造（章、付録）
 
 ### 章の設定
@@ -215,6 +216,26 @@ npm start sync-all-books --dry-run
         "objectives": ["目標1", "目標2"]  // オプション
       }
     ]
+  }
+}
+```
+
+### UX設定
+
+```json
+{
+  "ux": {
+    "profile": "A",
+    "modules": {
+      "quickStart": true,
+      "readingGuide": true,
+      "checklistPack": false,
+      "troubleshootingFlow": false,
+      "conceptMap": true,
+      "figureIndex": false,
+      "legalNotice": false,
+      "glossary": true
+    }
   }
 }
 ```

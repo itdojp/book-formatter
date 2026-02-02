@@ -242,6 +242,19 @@ program
           url: 'https://github.com/user/repo.git',
           branch: 'main'
         },
+        ux: {
+          profile: 'A',
+          modules: {
+            quickStart: true,
+            readingGuide: true,
+            checklistPack: false,
+            troubleshootingFlow: false,
+            conceptMap: true,
+            figureIndex: false,
+            legalNotice: false,
+            glossary: true
+          }
+        },
         structure: {
           chapters: [
             {
