@@ -15,7 +15,20 @@ export class ConfigValidator {
       'structure',
       'repository',
       'output',
-      'theme'
+      'theme',
+      'ux'
+    ];
+
+    this.allowedUxProfiles = new Set(['A', 'B', 'C']);
+    this.allowedUxModules = [
+      'quickStart',
+      'readingGuide',
+      'checklistPack',
+      'troubleshootingFlow',
+      'conceptMap',
+      'figureIndex',
+      'legalNotice',
+      'glossary'
     ];
   }
 
@@ -40,6 +53,9 @@ export class ConfigValidator {
     
     // ナビゲーション設定のチェック
     this.validateNavigation(config);
+
+    // UX 設定のチェック
+    this.validateUx(config);
     
     // リポジトリ情報のチェック
     this.validateRepository(config);
@@ -205,6 +221,48 @@ export class ConfigValidator {
   }
 
   /**
+   * UX 設定をバリデーションする
+   * @param {Object} config - 設定オブジェクト
+   */
+  validateUx(config) {
+    if (!config.ux) return;
+
+    if (typeof config.ux !== 'object') {
+      throw new Error('ux はオブジェクトである必要があります');
+    }
+
+    const profile = config.ux.profile;
+    if (!profile || typeof profile !== 'string') {
+      throw new Error('ux.profile は文字列で指定してください');
+    }
+
+    if (!this.allowedUxProfiles.has(profile)) {
+      throw new Error('ux.profile は A/B/C のいずれかである必要があります');
+    }
+
+    if (config.ux.modules !== undefined) {
+      if (!config.ux.modules || typeof config.ux.modules !== 'object' || Array.isArray(config.ux.modules)) {
+        throw new Error('ux.modules はオブジェクトである必要があります');
+      }
+
+      for (const [key, value] of Object.entries(config.ux.modules)) {
+        if (!this.allowedUxModules.includes(key)) {
+          throw new Error(`ux.modules に未定義キーがあります: ${key}`);
+        }
+        if (typeof value !== 'boolean') {
+          throw new Error(`ux.modules.${key} は boolean である必要があります`);
+        }
+      }
+
+      for (const key of this.allowedUxModules) {
+        if (!(key in config.ux.modules)) {
+          throw new Error(`ux.modules.${key} が欠落しています`);
+        }
+      }
+    }
+  }
+
+  /**
    * バージョン形式が有効かチェックする
    * @param {string} version - バージョン文字列
    * @returns {boolean} 有効な場合true
@@ -258,6 +316,10 @@ export class ConfigValidator {
 
     if (!config.repository) {
       results.warnings.push('リポジトリ情報が設定されていません');
+    }
+
+    if (config.ux && !config.ux.modules) {
+      results.warnings.push('ux.modules が設定されていません');
     }
 
     return results;

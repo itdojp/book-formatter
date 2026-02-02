@@ -276,7 +276,27 @@ npm run build
       }
     }
 
+    // UX プロファイルのフラグ
+    if (processed.ux?.profile) {
+      processed.uxProfile = {
+        A: processed.ux.profile === 'A',
+        B: processed.ux.profile === 'B',
+        C: processed.ux.profile === 'C'
+      };
+    }
+
     return processed;
+  }
+
+  /**
+   * 文字列テンプレートをレンダリングする
+   * @param {string} template - テンプレート文字列
+   * @param {Object} data - データ
+   * @returns {string} レンダリング結果
+   */
+  renderString(template, data) {
+    const processedData = this.preprocessData(data);
+    return this.renderTemplate(template, processedData);
   }
 
   /**

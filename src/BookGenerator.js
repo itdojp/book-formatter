@@ -19,6 +19,16 @@ export class BookGenerator {
     this.errorHandler = new ErrorHandler();
     this.gitHubPagesHandler = new GitHubPagesHandler(this.errorHandler);
     this.mobileOptimizer = new MobileOptimizer();
+    this.uxModules = [
+      'quickStart',
+      'readingGuide',
+      'checklistPack',
+      'troubleshootingFlow',
+      'conceptMap',
+      'figureIndex',
+      'legalNotice',
+      'glossary'
+    ];
     
     // Safe file system wrapper
     this.safeFs = this.errorHandler.createSafeFileSystem(fs);
@@ -232,7 +242,9 @@ export class BookGenerator {
    * @param {string} outputPath - 出力パス
    */
   async generateIndexFile(config, outputPath) {
-    const indexContent = this.templateEngine.render('index.md', config);
+    const indexContent = config.ux?.profile
+      ? await this.renderUxIndex(config)
+      : this.templateEngine.render('index.md', config);
     await fs.writeFile(path.join(outputPath, 'index.md'), indexContent);
   }
 
@@ -248,8 +260,15 @@ export class BookGenerator {
       description: config.description,
       author: config.author,
       version: config.version || '1.0.0',
+      language: config.language || 'ja',
+      license: config.license || 'CC BY-NC-SA 4.0',
+      repository: config.repository,
       structure: config.structure
     };
+
+    if (config.ux) {
+      bookConfig.ux = config.ux;
+    }
     
     await fs.writeFile(
       path.join(outputPath, 'book-config.json'),
@@ -294,10 +313,9 @@ export class BookGenerator {
     if (!config.structure?.chapters) return;
     
     for (const chapter of config.structure.chapters) {
-      const chapterContent = this.templateEngine.render('chapter.md', {
-        ...config,
-        chapter
-      });
+      const chapterContent = config.ux?.profile
+        ? await this.renderUxChapter(config, chapter)
+        : this.templateEngine.render('chapter.md', { ...config, chapter });
       
       const chapterPath = path.join(
         outputPath,
@@ -413,6 +431,98 @@ export class BookGenerator {
     if (await this.fsUtils.exists(assetsSource)) {
       await this.fsUtils.copyDir(assetsSource, assetsDest);
     }
+  }
+
+  /**
+   * UX用インデックスを生成する
+   * @param {Object} config - 設定オブジェクト
+   * @returns {Promise<string>} 生成されたコンテンツ
+   */
+  async renderUxIndex(config) {
+    const templateRoot = this.getTemplateRoot();
+    const coreIndexPath = path.join(templateRoot, 'ux', 'core', 'index.md');
+    const coreTemplate = await fs.readFile(coreIndexPath, 'utf8');
+
+    const profileContent = await this.loadUxProfileContent(config);
+    const moduleContent = await this.loadUxModuleContent(config);
+
+    return this.templateEngine.renderString(coreTemplate, {
+      ...config,
+      profileContent,
+      module: moduleContent
+    });
+  }
+
+  /**
+   * UX用章テンプレートを生成する
+   * @param {Object} config - 設定オブジェクト
+   * @param {Object} chapter - 章オブジェクト
+   * @returns {Promise<string>} 生成されたコンテンツ
+   */
+  async renderUxChapter(config, chapter) {
+    const templateRoot = this.getTemplateRoot();
+    const chapterPath = path.join(templateRoot, 'ux', 'core', 'chapter.md');
+    const chapterTemplate = await fs.readFile(chapterPath, 'utf8');
+    return this.templateEngine.renderString(chapterTemplate, { ...config, chapter });
+  }
+
+  /**
+   * UXテンプレートのルートパスを取得する
+   * @returns {string} テンプレートルート
+   */
+  getTemplateRoot() {
+    const cwdTemplates = path.join(process.cwd(), 'templates');
+    if (fs.existsSync(cwdTemplates)) {
+      return cwdTemplates;
+    }
+    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+    return path.join(moduleDir, '..', 'templates');
+  }
+
+  /**
+   * プロファイル差分を読み込む
+   * @param {Object} config - 設定オブジェクト
+   * @returns {Promise<string>} プロファイルの内容
+   */
+  async loadUxProfileContent(config) {
+    const profile = config.ux?.profile;
+    if (!profile) return '';
+
+    const profilePath = path.join(this.getTemplateRoot(), 'ux', 'profiles', profile, 'index.md');
+    if (!(await this.fsUtils.exists(profilePath))) {
+      return '';
+    }
+
+    const template = await fs.readFile(profilePath, 'utf8');
+    return this.templateEngine.renderString(template, config);
+  }
+
+  /**
+   * モジュールコンテンツを構築する
+   * @param {Object} config - 設定オブジェクト
+   * @returns {Promise<Object>} モジュール内容
+   */
+  async loadUxModuleContent(config) {
+    const modules = config.ux?.modules || {};
+    const content = {};
+
+    for (const key of this.uxModules) {
+      if (!modules[key]) {
+        content[key] = '';
+        continue;
+      }
+
+      const modulePath = path.join(this.getTemplateRoot(), 'ux', 'modules', `${key}.md`);
+      if (!(await this.fsUtils.exists(modulePath))) {
+        content[key] = '';
+        continue;
+      }
+
+      const template = await fs.readFile(modulePath, 'utf8');
+      content[key] = this.templateEngine.renderString(template, config);
+    }
+
+    return content;
   }
 
   /**
