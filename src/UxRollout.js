@@ -164,7 +164,7 @@ export class UxRollout {
     const currentUx = config.ux || null;
     const isSame = currentUx && JSON.stringify(currentUx) === JSON.stringify(nextUx);
     if (isSame) {
-      console.log(chalk.gray(`  - ux 設定は既に最新です`));
+      console.log(chalk.gray('  - ux 設定は既に最新です'));
       return { updated: false, skipped: true };
     }
 
