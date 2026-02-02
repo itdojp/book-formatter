@@ -5,12 +5,23 @@ import chalk from 'chalk';
 import { FileSystemUtils } from './FileSystemUtils.js';
 import { ComponentSync } from '../scripts/sync-components.js';
 
+/**
+ * 既存書籍にUX設定/共通コアを段階適用するロールアウトユーティリティ
+ */
 export class UxRollout {
+  /**
+   * @param {Object} options - 依存の初期化オプション
+   */
   constructor() {
     this.fsUtils = new FileSystemUtils();
     this.componentSync = new ComponentSync();
   }
 
+  /**
+   * レジストリファイルを読み込む
+   * @param {string} registryPath - レジストリのパス（json/yaml）
+   * @returns {Promise<Object>} レジストリオブジェクト
+   */
   async loadRegistry(registryPath) {
     const resolvedPath = path.resolve(registryPath);
     if (!(await this.fsUtils.exists(resolvedPath))) {
@@ -31,6 +42,11 @@ export class UxRollout {
     throw new Error(`サポートされていないレジストリ形式: ${ext}`);
   }
 
+  /**
+   * レジストリの形式を正規化する
+   * @param {Object} registry - レジストリ
+   * @returns {Object} 正規化後のレジストリ
+   */
   normalizeRegistry(registry) {
     if (!registry || typeof registry !== 'object') {
       throw new Error('レジストリ形式が不正です');
@@ -55,6 +71,12 @@ export class UxRollout {
     return registry;
   }
 
+  /**
+   * 書籍一覧を取得する
+   * @param {string} directory - 探索ルート
+   * @param {string} pattern - book-config.json のパターン
+   * @returns {Promise<string[]>} 書籍ディレクトリ配列
+   */
   async listBooks(directory, pattern) {
     const configFiles = await this.fsUtils.listDirectory(directory, {
       recursive: true,
@@ -67,6 +89,13 @@ export class UxRollout {
       .filter(dir => !dir.includes('book-formatter'));
   }
 
+  /**
+   * レジストリエントリを解決する
+   * @param {string} bookPath - 書籍パス
+   * @param {Object|null} config - book-config の内容
+   * @param {Object} registry - レジストリ
+   * @returns {{key: string, entry: Object}|null} 解決結果
+   */
   resolveRegistryEntry(bookPath, config, registry) {
     const books = registry.books || {};
     const bookName = path.basename(bookPath);
@@ -90,9 +119,21 @@ export class UxRollout {
       }
     }
 
+    const repoUrl = config?.repository?.url;
+    const repoInfo = repoUrl ? `, repository URL="${repoUrl}"` : '';
+    console.warn(
+      chalk.yellow(
+        `  ⚠️  レジストリエントリが見つかりません: bookPath="${bookPath}", bookName="${bookName}"${repoInfo}`
+      )
+    );
     return null;
   }
 
+  /**
+   * リポジトリURLからリポジトリ名を抽出する
+   * @param {string} repoUrl - リポジトリURL
+   * @returns {string|null} リポジトリ名
+   */
   extractRepoName(repoUrl) {
     if (!repoUrl || typeof repoUrl !== 'string') return null;
     const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
@@ -100,6 +141,13 @@ export class UxRollout {
     return match[2].replace(/\.git$/, '');
   }
 
+  /**
+   * book-config.json に ux 情報を反映する
+   * @param {string} bookPath - 書籍パス
+   * @param {Object} entry - レジストリエントリ
+   * @param {Object} options - 実行オプション
+   * @returns {Promise<{updated: boolean, skipped: boolean}>} 結果
+   */
   async updateBookConfig(bookPath, entry, options) {
     const configPath = path.join(bookPath, 'book-config.json');
     if (!(await this.fsUtils.exists(configPath))) {
@@ -136,6 +184,12 @@ export class UxRollout {
     return { updated: true, skipped: false };
   }
 
+  /**
+   * 共通コア（layouts/includes/assets）を適用する
+   * @param {string} bookPath - 書籍パス
+   * @param {Object} options - 実行オプション
+   * @returns {Promise<void>}
+   */
   async applyUxCore(bookPath, options) {
     if (options.dryRun) {
       await this.componentSync.checkDiff(bookPath, { components: ['layouts', 'includes', 'assets'] });
@@ -145,6 +199,11 @@ export class UxRollout {
     await this.componentSync.syncToBook(bookPath, { components: ['layouts', 'includes', 'assets'] });
   }
 
+  /**
+   * ロールアウトを実行する
+   * @param {Object} options - 実行オプション
+   * @returns {Promise<void>}
+   */
   async rollout(options) {
     const { directory, pattern, registryPath, applyUxCore, applyUxProfile, dryRun } = options;
 
@@ -178,7 +237,9 @@ export class UxRollout {
       console.log(chalk.blue(`\n📚 処理中: ${bookName}`));
 
       const configPath = path.join(bookPath, 'book-config.json');
-      const config = await (await this.fsUtils.exists(configPath) ? fs.readJson(configPath) : null);
+      const config = (await this.fsUtils.exists(configPath))
+        ? await fs.readJson(configPath)
+        : null;
 
       let registryEntry = null;
       if (registry) {
@@ -186,7 +247,6 @@ export class UxRollout {
         if (resolved) {
           registryEntry = resolved.entry;
         } else {
-          console.log(chalk.yellow('  ⚠️  レジストリに該当エントリがありません。スキップします。'));
           missingRegistry++;
           skippedCount++;
           continue;
