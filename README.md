@@ -189,6 +189,9 @@ npm start rollout-ux --apply-ux-core --dry-run
 npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-profile
 ```
 
+補足:
+- `--apply-ux-profile` は `--registry` が必須です
+
 ## CLIコマンド
 
 | コマンド | 説明 | オプション |
