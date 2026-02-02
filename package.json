@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test --test-concurrency=1 tests/BookGenerator.test.js && node --test --test-concurrency=1 tests/ConfigValidator.test.js",
+    "test": "node --test --test-concurrency=1 tests/BookGenerator.test.js && node --test --test-concurrency=1 tests/ConfigValidator.test.js tests/UxRollout.test.js",
     "format": "prettier --write .",
     "lint": "eslint src/ tests/",
     "build": "node scripts/build.js",

@@ -176,6 +176,22 @@ npm start sync-all-books --directory ./books
 npm start sync-all-books --dry-run
 ```
 
+### 7. UXロールアウト（既存書籍向け）
+
+```bash
+# レジストリに基づき ux.profile/modules を付与
+npm start rollout-ux --registry ./book-registry.json --apply-ux-profile
+
+# 共通コアのみを適用（layouts/includes/assets）
+npm start rollout-ux --apply-ux-core --dry-run
+
+# 併用（レジストリは必須）
+npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-profile
+```
+
+補足:
+- `--apply-ux-profile` は `--registry` が必須です
+
 ## CLIコマンド
 
 | コマンド | 説明 | オプション |
@@ -185,6 +201,7 @@ npm start sync-all-books --dry-run
 | `update-book` | 既存の書籍を更新 | `--config`, `--book`, `--no-backup` |
 | `validate-config` | 設定ファイルをバリデーション | `--config`, `--verbose` |
 | `sync-all-books` | 複数の書籍を一括同期 | `--directory`, `--pattern`, `--dry-run` |
+| `rollout-ux` | 既存書籍へのUX段階適用 | `--directory`, `--pattern`, `--registry`, `--apply-ux-core`, `--apply-ux-profile`, `--dry-run`, `--no-backup` |
 
 ## 設定ファイル仕様
 
