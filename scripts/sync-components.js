@@ -4,6 +4,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
 import { Command } from 'commander';
+import { pathToFileURL } from 'url';
 import { FileSystemUtils } from '../src/FileSystemUtils.js';
 
 /**
@@ -230,7 +231,7 @@ class ComponentSync {
    * 差分を確認（dry run）
    * @param {string} bookPath - 書籍パス
    */
-  async checkDiff(bookPath) {
+  async checkDiff(bookPath, options = {}) {
     console.log(chalk.blue(`\n🔍 差分確認: ${path.basename(bookPath)}`));
     
     const bookConfig = await this.loadBookConfig(bookPath);
@@ -248,7 +249,7 @@ class ComponentSync {
     // 変更されるファイルをリスト
     console.log(chalk.yellow('  📝 変更されるファイル:'));
     
-    const componentsToSync = this.determineComponents(bookConfig, {});
+    const componentsToSync = this.determineComponents(bookConfig, options);
     
     for (const [component, config] of Object.entries(componentsToSync)) {
       if (config === true || (typeof config === 'object' && Object.values(config).some(v => v))) {
@@ -321,6 +322,10 @@ program
     }
   });
 
-program.parse();
+const cliPath = process.argv[1];
+const isDirectExecution = cliPath ? import.meta.url === pathToFileURL(cliPath).href : false;
+if (isDirectExecution) {
+  program.parse();
+}
 
 export { ComponentSync };

@@ -6,11 +6,13 @@ import path from 'path';
 import { BookGenerator } from './BookGenerator.js';
 import { ConfigValidator } from './ConfigValidator.js';
 import { FileSystemUtils } from './FileSystemUtils.js';
+import { UxRollout } from './UxRollout.js';
 
 const program = new Command();
 const bookGenerator = new BookGenerator();
 const configValidator = new ConfigValidator();
 const fsUtils = new FileSystemUtils();
+const uxRollout = new UxRollout();
 
 // バージョン情報
 program
@@ -205,6 +207,38 @@ program
         console.log(chalk.red(`  失敗: ${failed}`));
       }
       
+    } catch (error) {
+      console.error(chalk.red(`❌ エラーが発生しました: ${error.message}`));
+      process.exit(1);
+    }
+  });
+
+// rollout-ux コマンド
+program
+  .command('rollout-ux')
+  .description('レジストリに基づき既存書籍へUX設定/共通コアを段階適用します')
+  .option('-d, --directory <path>', '書籍ディレクトリのパス', './books')
+  .option('-p, --pattern <pattern>', '設定ファイルのパターン', '**/book-config.json')
+  .option('-r, --registry <path>', 'book-registry のパス（json/yaml）')
+  .option('--apply-ux-core', '共通コア（layouts/includes/assets）を適用します', false)
+  .option('--apply-ux-profile', 'book-config に ux.profile/modules を付与します', false)
+  .option('--dry-run', '実際には実行せず、予定のみ表示します', false)
+  .option('--no-backup', 'バックアップを作成しません', false)
+  .action(async (options) => {
+    try {
+      console.log(chalk.blue('🧭 UX ロールアウトを開始します...'));
+
+      await uxRollout.rollout({
+        directory: options.directory,
+        pattern: options.pattern,
+        registryPath: options.registry,
+        applyUxCore: options.applyUxCore,
+        applyUxProfile: options.applyUxProfile,
+        dryRun: options.dryRun,
+        backup: options.backup
+      });
+
+      console.log(chalk.green('✅ UX ロールアウトが完了しました'));
     } catch (error) {
       console.error(chalk.red(`❌ エラーが発生しました: ${error.message}`));
       process.exit(1);
