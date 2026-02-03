@@ -143,13 +143,13 @@ function classifyCodepoint(cp) {
     };
   }
 
-  // Confusable hyphen/minus characters
-  const confusable = new Set([0x2212, 0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015]);
-  if (confusable.has(cp)) {
+  // Confusable punctuation (high-signal only)
+  // U+2212 (MINUS SIGN) is frequently mixed with ASCII '-' in code/math contexts.
+  if (cp === 0x2212) {
     return {
       kind: 'confusable-punctuation',
       severity: 'warning',
-      message: '紛らわしいハイフン/マイナス記号を検出しました（表記統一を推奨）'
+      message: '紛らわしいマイナス記号（U+2212）を検出しました（ASCII "-" と混同に注意）'
     };
   }
 
