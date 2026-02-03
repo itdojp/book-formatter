@@ -102,13 +102,38 @@ describe('ConfigValidator', () => {
         description: '説明',
         author: '作成者',
         ux: {
-          profile: 'D'
+          profile: 'D',
+          modules: {
+            quickStart: true,
+            readingGuide: true,
+            checklistPack: false,
+            troubleshootingFlow: false,
+            conceptMap: false,
+            figureIndex: false,
+            legalNotice: false,
+            glossary: true
+          }
         }
       };
 
       assert.throws(() => {
         validator.validate(config);
       }, /ux\.profile は A\/B\/C/);
+    });
+
+    test('ux.modules が未設定の場合エラーを投げる', () => {
+      const config = {
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
+        ux: {
+          profile: 'A'
+        }
+      };
+
+      assert.throws(() => {
+        validator.validate(config);
+      }, /ux\.modules はオブジェクト/);
     });
 
     test('ux.modules に未定義キーがある場合エラーを投げる', () => {
@@ -135,6 +160,31 @@ describe('ConfigValidator', () => {
       assert.throws(() => {
         validator.validate(config);
       }, /未定義キー/);
+    });
+
+    test('profile の必須 modules が false の場合エラーを投げる', () => {
+      const config = {
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
+        ux: {
+          profile: 'B',
+          modules: {
+            quickStart: false,
+            readingGuide: false,
+            checklistPack: false,
+            troubleshootingFlow: true,
+            conceptMap: false,
+            figureIndex: true,
+            legalNotice: false,
+            glossary: false
+          }
+        }
+      };
+
+      assert.throws(() => {
+        validator.validate(config);
+      }, /必須モジュール/);
     });
   });
 

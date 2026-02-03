@@ -13,14 +13,22 @@ version: "{{version}}"
 
 {{profileContent}}
 
+## 学習成果
+- （学習成果1を記載してください）
+- （学習成果2を記載してください）
+- （学習成果3を記載してください）
+
 ## 概要
 （本書の概要を記載してください）
 
-## 対象読者
-（対象読者を記載してください）
+## 想定読者
+（想定読者を記載してください）
 
 ## 前提知識
 （前提知識を記載してください）
+
+## 所要時間
+（所要時間の目安を記載してください）
 
 {{module.readingGuide}}
 {{module.quickStart}}
@@ -46,6 +54,9 @@ version: "{{version}}"
 {{module.figureIndex}}
 {{module.glossary}}
 {{module.legalNotice}}
+
+## ライセンス
+本書は CC BY-NC-SA 4.0 で公開されています。商用利用は別途契約が必要です。
 
 ---
 

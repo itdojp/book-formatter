@@ -58,9 +58,20 @@
             "legalNotice": { "type": "boolean" },
             "glossary": { "type": "boolean" }
           },
+          "required": [
+            "quickStart",
+            "readingGuide",
+            "checklistPack",
+            "troubleshootingFlow",
+            "conceptMap",
+            "figureIndex",
+            "legalNotice",
+            "glossary"
+          ],
           "additionalProperties": false
         }
       },
+      "required": ["profile", "modules"],
       "additionalProperties": false
     },
     "repository": {
