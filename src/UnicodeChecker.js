@@ -111,8 +111,10 @@ function classifyCodepoint(cp) {
   }
 
   // Warning (needs human judgment)
-  // Variation Selectors (VS1-16 / VS17-256)
-  if ((cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef)) {
+  // Variation Selector Supplement (VS17-256) is primarily used for ideograph variants.
+  // VS1-16 (U+FE00..U+FE0F) is frequently used for emoji presentation (e.g. U+26A1 U+FE0F),
+  // so it is intentionally excluded here to avoid noisy reports.
+  if (cp >= 0xe0100 && cp <= 0xe01ef) {
     return {
       kind: 'variation-selector',
       severity: 'warning',

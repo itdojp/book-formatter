@@ -23,13 +23,14 @@ describe('UnicodeChecker', () => {
     assert.strictEqual(issues[0].codepoint, 'U+200B');
   });
 
-  test('異体字セレクタ（VS16）を warning として検出する', () => {
+  test('異体字セレクタ（Variation Selector Supplement）を warning として検出する', () => {
     const checker = new UnicodeChecker();
-    const issues = checker.scanText('a\uFE0Fb', 'sample.md');
+    const vs = String.fromCodePoint(0xe0100); // VS17
+    const issues = checker.scanText('a' + vs + 'b', 'sample.md');
 
     assert.strictEqual(issues.length, 1);
     assert.strictEqual(issues[0].severity, 'warning');
-    assert.strictEqual(issues[0].codepoint, 'U+FE0F');
+    assert.strictEqual(issues[0].codepoint, 'U+E0100');
   });
 
   test('CJK互換漢字を warning として検出する', () => {
@@ -52,8 +53,9 @@ describe('UnicodeChecker', () => {
   });
 
   test('allowlist（global）で指定した codepoint を除外する', () => {
-    const checker = new UnicodeChecker({ allowlist: { global: ['U+FE0F'] } });
-    const issues = checker.scanText('a\uFE0Fb', 'sample.md');
+    const checker = new UnicodeChecker({ allowlist: { global: ['U+E0100'] } });
+    const vs = String.fromCodePoint(0xe0100);
+    const issues = checker.scanText('a' + vs + 'b', 'sample.md');
 
     assert.strictEqual(issues.length, 0);
   });
@@ -62,12 +64,13 @@ describe('UnicodeChecker', () => {
     const checker = new UnicodeChecker({
       allowlist: {
         files: {
-          'a.md': ['U+FE0F']
+          'a.md': ['U+E0100']
         }
       }
     });
 
-    assert.strictEqual(checker.scanText('a\uFE0Fb', 'a.md').length, 0);
-    assert.strictEqual(checker.scanText('a\uFE0Fb', 'b.md').length, 1);
+    const vs = String.fromCodePoint(0xe0100);
+    assert.strictEqual(checker.scanText('a' + vs + 'b', 'a.md').length, 0);
+    assert.strictEqual(checker.scanText('a' + vs + 'b', 'b.md').length, 1);
   });
 });
