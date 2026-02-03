@@ -90,23 +90,25 @@ function classifyCodepoint(cp) {
   }
 
   // Common invisible/format characters that frequently slip in.
+  // Note: ZWJ/ZWNJ can be valid in emoji sequences. Keep them as warning to avoid false positives.
   const invisible = new Map([
-    [0x00a0, 'NO-BREAK SPACE (U+00A0) を検出しました（通常の半角スペースへ置換推奨）'],
-    [0x00ad, 'SOFT HYPHEN (U+00AD) を検出しました（不可視の改行制御の可能性）'],
-    [0x180e, 'MONGOLIAN VOWEL SEPARATOR (U+180E) を検出しました（不可視文字）'],
-    [0x200b, 'ZERO WIDTH SPACE (U+200B) を検出しました（不可視文字）'],
-    [0x200c, 'ZERO WIDTH NON-JOINER (U+200C) を検出しました（不可視文字）'],
-    [0x200d, 'ZERO WIDTH JOINER (U+200D) を検出しました（不可視文字）'],
-    [0x2060, 'WORD JOINER (U+2060) を検出しました（不可視文字）'],
-    [0xfeff, 'ZERO WIDTH NO-BREAK SPACE / BOM (U+FEFF) を検出しました（不可視文字）'],
-    [0x2028, 'LINE SEPARATOR (U+2028) を検出しました（改行扱いで表示崩れの可能性）'],
-    [0x2029, 'PARAGRAPH SEPARATOR (U+2029) を検出しました（改行扱いで表示崩れの可能性）']
+    [0x00a0, { severity: 'warning', message: 'NO-BREAK SPACE (U+00A0) を検出しました（通常の半角スペースへ置換推奨）' }],
+    [0x00ad, { severity: 'warning', message: 'SOFT HYPHEN (U+00AD) を検出しました（不可視の改行制御の可能性）' }],
+    [0x180e, { severity: 'error', message: 'MONGOLIAN VOWEL SEPARATOR (U+180E) を検出しました（不可視文字）' }],
+    [0x200b, { severity: 'error', message: 'ZERO WIDTH SPACE (U+200B) を検出しました（不可視文字）' }],
+    [0x200c, { severity: 'warning', message: 'ZERO WIDTH NON-JOINER (U+200C) を検出しました（不可視文字）' }],
+    [0x200d, { severity: 'warning', message: 'ZERO WIDTH JOINER (U+200D) を検出しました（不可視文字）' }],
+    [0x2060, { severity: 'error', message: 'WORD JOINER (U+2060) を検出しました（不可視文字）' }],
+    [0xfeff, { severity: 'warning', message: 'ZERO WIDTH NO-BREAK SPACE / BOM (U+FEFF) を検出しました（不可視文字）' }],
+    [0x2028, { severity: 'error', message: 'LINE SEPARATOR (U+2028) を検出しました（改行扱いで表示崩れの可能性）' }],
+    [0x2029, { severity: 'error', message: 'PARAGRAPH SEPARATOR (U+2029) を検出しました（改行扱いで表示崩れの可能性）' }]
   ]);
-  if (invisible.has(cp)) {
+  const invisibleRule = invisible.get(cp);
+  if (invisibleRule) {
     return {
       kind: 'invisible-character',
-      severity: 'error',
-      message: invisible.get(cp)
+      severity: invisibleRule.severity,
+      message: invisibleRule.message
     };
   }
 
