@@ -123,6 +123,7 @@ npm start validate-config --config ./path/to/config.json
 6. **Phase 6: 品質保証とテスト** (30分)
    - 設定ファイル検証
    - リンクチェック
+   - Unicode品質チェック（不可視文字/互換漢字/異体字セレクタ等）
    - ビルドテスト
 
 7. **Phase 7: 公開前の最終確認** (30分)
@@ -191,7 +192,15 @@ npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-
 
 補足:
 - `--apply-ux-profile` は `--registry` が必須です
+## 品質チェック（ローカル）
 
+```bash
+# リンク（内部リンク/アンカー）を検証
+npm run check-links -- <book-dir>
+
+# Unicode品質（不可視文字/互換漢字/異体字セレクタ等）を検出
+npm run check-unicode -- <book-dir> --output unicode-report.json
+```
 ## CLIコマンド
 
 | コマンド | 説明 | オプション |
