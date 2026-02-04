@@ -4,14 +4,14 @@
   "description": "Style sidebar footer links + make tables/media responsive (overflow-safe)",
   "components": {
     "layouts": {
-      "version": "3.2.1",
+      "version": "3.2.0",
       "files": [
         "layouts/book.html",
         "layouts/default.html"
       ]
     },
     "includes": {
-      "version": "3.2.1",
+      "version": "3.2.0",
       "files": [
         "includes/sidebar-nav.html",
         "includes/page-navigation.html"
