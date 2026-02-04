@@ -37,7 +37,14 @@ class LinkChecker {
   async checkDirectory(directory, options = {}) {
     const {
       pattern = '**/*.md',
-      ignore = ['node_modules/**', '**/node_modules/**'],
+      ignore = [
+        'node_modules/**',
+        '**/node_modules/**',
+        'templates/**',
+        '**/templates/**',
+        'examples/**',
+        '**/examples/**'
+      ],
       checkExternal = false,
       externalTimeoutMs = 10000
     } = options;
@@ -576,7 +583,14 @@ program
   .version('1.0.0')
   .argument('[directory]', 'Directory to check', '.')
   .option('-p, --pattern <pattern>', 'Glob pattern for files', '**/*.md')
-  .option('-i, --ignore <patterns...>', 'Patterns to ignore', ['node_modules/**', '**/node_modules/**'])
+  .option('-i, --ignore <patterns...>', 'Patterns to ignore', [
+    'node_modules/**',
+    '**/node_modules/**',
+    'templates/**',
+    '**/templates/**',
+    'examples/**',
+    '**/examples/**'
+  ])
   .option('-o, --output <file>', 'Save report to file')
   .option('-e, --external', 'Also check external URLs (best-effort; warnings only)')
   .option('--external-timeout-ms <ms>', 'External URL timeout (ms)', '10000')
