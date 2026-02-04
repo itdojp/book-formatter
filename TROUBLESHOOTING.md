@@ -490,7 +490,7 @@ mmdc -i diagram.mmd -o diagram.svg -t neutral -b white
 ```
 
 2. **book-formatter準拠のSVG埋め込み**
-```markdown
+````markdown
 <!-- 修正前: Mermaidコードブロック -->
 ```mermaid
 graph TD
@@ -499,11 +499,11 @@ graph TD
 
 <!-- 修正後: SVG埋め込み -->
 <div class="diagram-container">
-  <img src="/assets/images/diagrams/process-flow.svg" 
+  <img src="/assets/images/diagrams/process-flow.svg"
        alt="Process flow diagram showing start to process steps"
        class="responsive-diagram">
 </div>
-```
+````
 
 3. **レスポンシブCSS対応**
 ```css
