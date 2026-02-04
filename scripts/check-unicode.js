@@ -19,7 +19,8 @@ function loadAllowlistIfExists(allowlistPath) {
   try {
     if (!fs.existsSync(resolved)) return null;
     return fs.readJsonSync(resolved);
-  } catch {
+  } catch (error) {
+    console.warn(chalk.yellow(`Warning: Failed to load allowlist from "${resolved}": ${error.message}`));
     return null;
   }
 }
@@ -40,6 +41,7 @@ class UnicodeQualityRunner {
     this.options = options;
     this.issues = [];
     this.fileIssues = new Map();
+    this.fileErrors = [];
   }
 
   async scanDirectory(directory, scanOptions) {
@@ -71,8 +73,21 @@ class UnicodeQualityRunner {
   }
 
   async scanFile(filePath, baseDir, checker) {
-    const content = await fs.readFile(filePath, 'utf8');
-    const relativeFile = path.relative(baseDir, filePath);
+    const relativeFile = path
+      .relative(baseDir, filePath)
+      .replace(/\\\\/g, '/');
+
+    let content;
+    try {
+      content = await fs.readFile(filePath, 'utf8');
+    } catch (error) {
+      this.fileErrors.push({
+        file: relativeFile,
+        message: error.message
+      });
+      console.warn(chalk.yellow(`Warning: Failed to read "${relativeFile}": ${error.message}`));
+      return;
+    }
 
     const issues = checker.scanText(content, relativeFile);
     if (issues.length === 0) return;
@@ -91,28 +106,60 @@ class UnicodeQualityRunner {
     const totalIssues = this.issues.length;
     const errors = this.issues.filter(i => i.severity === 'error').length;
     const warnings = this.issues.filter(i => i.severity === 'warning').length;
+    const fileReadErrors = this.fileErrors.length;
 
     const report = {
       summary: {
         filesWithIssues: totalFiles,
         totalIssues,
         errors,
-        warnings
+        warnings,
+        fileReadErrors
       },
       issues: this.issues,
-      fileDetails: Object.fromEntries(this.fileIssues)
+      fileDetails: Object.fromEntries(this.fileIssues),
+      fileReadErrors: this.fileErrors
     };
 
     console.log('\n' + chalk.bold('Unicode Check Summary'));
     console.log(chalk.gray('─'.repeat(40)));
     console.log(`Files with issues: ${totalFiles}`);
+    if (fileReadErrors > 0) {
+      console.log(chalk.yellow(`Files failed to read: ${fileReadErrors}`));
+    }
     console.log(`Total issues: ${totalIssues} (errors: ${errors}, warnings: ${warnings})`);
 
     if (totalIssues > 0) {
+      const formatIssueChar = (issue) => {
+        const ch = issue.char;
+        const codepoint = issue.codepoint;
+
+        if (ch == null) return '<null>';
+        if (ch === ' ') return '<space>';
+        if (ch === '\t') return '<TAB>';
+        if (ch === '\r') return '<CR>';
+        if (ch === '\n') return '<LF>';
+
+        if (codepoint === 'U+00A0') return '<NBSP>';
+        if (codepoint === 'U+00AD') return '<SHY>';
+        if (codepoint === 'U+200B') return '<ZWSP>';
+        if (codepoint === 'U+200C') return '<ZWNJ>';
+        if (codepoint === 'U+200D') return '<ZWJ>';
+        if (codepoint === 'U+2060') return '<WORD_JOINER>';
+        if (codepoint === 'U+FEFF') return '<BOM>';
+
+        const cp = ch.codePointAt(0);
+        if (cp !== undefined && (cp < 0x20 || (cp >= 0x7f && cp <= 0x9f))) {
+          return `<${codepoint}>`;
+        }
+
+        return ch;
+      };
+
       console.log();
       for (const issue of this.issues) {
         const color = issue.severity === 'error' ? chalk.red : chalk.yellow;
-        const charDisplay = issue.char === ' ' ? '<space>' : issue.char;
+        const charDisplay = formatIssueChar(issue);
         console.log(color(`${issue.file}:${issue.line}:${issue.column} ${issue.codepoint} ${charDisplay}`));
         console.log(chalk.gray(`  ${issue.kind}: ${issue.message}`));
       }
@@ -131,7 +178,9 @@ function shouldFail(report, failOn) {
   if (failOn === 'none') return false;
   if (failOn === 'warn') return errors + warnings > 0;
   if (failOn === 'error') return errors > 0;
-  return true;
+
+  // Should be unreachable because failOn is validated before calling this function.
+  return false;
 }
 
 const program = new Command();
@@ -175,4 +224,3 @@ program
   });
 
 program.parse();
-

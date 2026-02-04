@@ -55,7 +55,8 @@ function normalizeAllowlist(raw) {
       const normalized = normalizeCodepoint(entry);
       if (normalized) set.add(normalized);
     }
-    files.set(file, set);
+    const normalizedFile = String(file).replace(/\\/g, '/');
+    files.set(normalizedFile, set);
   }
 
   return { global, files };
@@ -68,6 +69,14 @@ function classifyCodepoint(cp) {
       kind: 'replacement-character',
       severity: 'error',
       message: 'REPLACEMENT CHARACTER (U+FFFD) を検出しました（文字化け/欠落の可能性）'
+    };
+  }
+
+  if (cp === 0x0000) {
+    return {
+      kind: 'null-character',
+      severity: 'error',
+      message: 'NULL文字 (U+0000) を検出しました（ファイル破損/処理系の不具合につながる可能性）'
     };
   }
 
@@ -173,7 +182,9 @@ export class UnicodeChecker {
   isAllowed(relativeFile, codepoint) {
     if (!codepoint) return false;
     if (this.allowlist.global.has(codepoint)) return true;
-    const set = this.allowlist.files.get(relativeFile);
+    const key = String(relativeFile || '');
+    const normalizedKey = key.replace(/\\/g, '/');
+    const set = this.allowlist.files.get(normalizedKey) || this.allowlist.files.get(key);
     if (!set) return false;
     return set.has(codepoint);
   }
