@@ -58,9 +58,13 @@ class UnicodeQualityRunner {
       console.log(chalk.gray(`Allowlist: ${path.relative(baseDir, allowlistFile)}`));
     }
 
-    const files = await glob(path.join(baseDir, pattern), {
+    // Use `cwd` + relative patterns so `ignore` reliably matches (e.g. node_modules/**)
+    // even when scanning with an absolute baseDir.
+    const files = await glob(pattern, {
+      cwd: baseDir,
       ignore,
-      windowsPathsNoEscape: true
+      windowsPathsNoEscape: true,
+      absolute: true
     });
 
     console.log(chalk.gray(`Found ${files.length} markdown files`));
