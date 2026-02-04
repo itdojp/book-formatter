@@ -261,8 +261,20 @@ class LinkChecker {
     }
 
     if (decodedPath.startsWith('/')) {
-      // 絶対パス（プロジェクトルートから）
-      targetPath = path.join(baseDir, decodedPath.replace(/^\/+/, ''));
+      // 絶対パス（GitHub Pages の baseurl を含むケースにも対応）
+      // 例: /<repo-name>/assets/... -> ./assets/... として解決
+      const repoName = path.basename(baseDir);
+      const normalized = decodedPath.replace(/^\/+/, '/');
+      const repoPrefix = `/${repoName}`;
+
+      let relativeFromRoot = normalized.replace(/^\/+/, '');
+      if (normalized === repoPrefix || normalized === `${repoPrefix}/`) {
+        relativeFromRoot = '';
+      } else if (normalized.startsWith(`${repoPrefix}/`)) {
+        relativeFromRoot = normalized.slice((`${repoPrefix}/`).length);
+      }
+
+      targetPath = path.join(baseDir, relativeFromRoot);
     } else {
       // 相対パス
       targetPath = path.resolve(sourceDir, decodedPath);
