@@ -1,24 +1,24 @@
 {
-  "version": "3.2.0",
-  "updated": "2026-01-30",
-  "description": "Add canonical navigation + footer + reliable GitHub/contact links",
+  "version": "3.2.1",
+  "updated": "2026-02-04",
+  "description": "Style sidebar footer links + make tables/media responsive (overflow-safe)",
   "components": {
     "layouts": {
-      "version": "3.2.0",
+      "version": "3.2.1",
       "files": [
         "layouts/book.html",
         "layouts/default.html"
       ]
     },
     "includes": {
-      "version": "3.2.0",
+      "version": "3.2.1",
       "files": [
         "includes/sidebar-nav.html",
         "includes/page-navigation.html"
       ]
     },
     "assets": {
-      "version": "3.2.0",
+      "version": "3.2.1",
       "files": [
         "assets/css/main.css",
         "assets/css/mobile-responsive.css",
