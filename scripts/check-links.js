@@ -204,15 +204,24 @@ class LinkChecker {
     // Same-file anchors (#...)
     if (url.startsWith('#')) {
       const anchor = url.slice(1);
-      const valid = await this.validateAnchor(sourceFile, anchor);
-      if (!valid) {
+      try {
+        const valid = await this.validateAnchor(sourceFile, anchor);
+        if (!valid) {
+          return {
+            valid: false,
+            reason: `Anchor #${anchor} not found`,
+            type: 'anchor'
+          };
+        }
+        return { valid: true, type: 'anchor' };
+      } catch (error) {
+        const message = error && error.message ? error.message : String(error);
         return {
           valid: false,
-          reason: `Anchor #${anchor} not found`,
-          type: 'anchor'
+          type: 'error',
+          reason: `Failed to validate anchor #${anchor}: ${message}`
         };
       }
-      return { valid: true, type: 'anchor' };
     }
     
     // 外部URLはスキップ（オプションで検証可能）
@@ -255,7 +264,7 @@ class LinkChecker {
     const urlPath = urlWithoutHash.split('?', 2)[0].trim();
 
     // Decode percent-encoded paths if possible.
-    let decodedPath = urlPath;
+    let decodedPath;
     try {
       decodedPath = decodeURIComponent(urlPath);
     } catch {
@@ -320,12 +329,12 @@ class LinkChecker {
 
       if (!exists) {
         // インデックスファイルの確認
-        if (await fs.pathExists(path.join(targetPath, 'index.md'))) {
-          targetPath = path.join(targetPath, 'index.md');
-          exists = true;
-        } else if (await fs.pathExists(path.join(targetPath, 'index.html'))) {
-          targetPath = path.join(targetPath, 'index.html');
-          exists = true;
+        const indexMd = path.join(targetPath, 'index.md');
+        const indexHtml = path.join(targetPath, 'index.html');
+        if (await fs.pathExists(indexMd)) {
+          targetPath = indexMd;
+        } else if (await fs.pathExists(indexHtml)) {
+          targetPath = indexHtml;
         } else {
           return { 
             valid: false, 
@@ -476,15 +485,19 @@ class LinkChecker {
 
       if (res.ok) return { ok: true };
 
-      // Some servers reject HEAD; retry with GET once.
-      const res2 = await fetch(url, {
-        method: 'GET',
-        redirect: 'follow',
-        signal: controller.signal
-      });
-      if (res2.ok) return { ok: true };
+      // Some servers reject HEAD; retry with GET only for those cases to reduce load.
+      const retryWithGet = new Set([400, 403, 405, 501]);
+      if (retryWithGet.has(res.status)) {
+        const res2 = await fetch(url, {
+          method: 'GET',
+          redirect: 'follow',
+          signal: controller.signal
+        });
+        if (res2.ok) return { ok: true };
+        return { ok: false, reason: `HTTP ${res2.status}` };
+      }
 
-      return { ok: false, reason: `HTTP ${res2.status}` };
+      return { ok: false, reason: `HTTP ${res.status}` };
     } catch (error) {
       return { ok: false, reason: error.name === 'AbortError' ? 'timeout' : error.message };
     } finally {
