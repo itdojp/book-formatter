@@ -6,6 +6,7 @@ import { glob } from 'glob';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import MarkdownIt from 'markdown-it';
+import footnote from 'markdown-it-footnote';
 
 /**
  * リンクチェッカーツール
@@ -22,11 +23,12 @@ class LinkChecker {
     this.md = new MarkdownIt({
       // linkify: bare URLs in plain text become links; markdown-it won't do this inside code blocks.
       linkify: true
-    });
+    }).use(footnote);
 
     // CLI options (set in checkDirectory)
     this.checkExternal = false;
     this.externalTimeoutMs = 10000;
+    this.siteRootDir = null;
   }
 
   /**
@@ -55,6 +57,14 @@ class LinkChecker {
     console.log(chalk.blue(`🔍 Checking links in ${directory}...`));
 
     const baseDir = path.resolve(directory);
+    // Resolve "site root" for absolute links:
+    // - If the repo uses GitHub Pages with /docs as the published root (common), use it.
+    // - Otherwise, treat the repository root as the site root.
+    this.siteRootDir = baseDir;
+    const docsConfig = path.join(baseDir, 'docs', '_config.yml');
+    if (await fs.pathExists(docsConfig)) {
+      this.siteRootDir = path.join(baseDir, 'docs');
+    }
 
     // Markdownファイルを検索
     // Use `cwd` + relative patterns so `ignore` reliably matches (e.g. node_modules/**)
@@ -290,7 +300,8 @@ class LinkChecker {
         relativeFromRoot = normalized.slice((`${repoPrefix}/`).length);
       }
 
-      targetPath = path.join(baseDir, relativeFromRoot);
+      const siteRoot = this.siteRootDir || baseDir;
+      targetPath = path.join(siteRoot, relativeFromRoot);
     } else {
       // 相対パス
       targetPath = path.resolve(sourceDir, decodedPath);
@@ -395,8 +406,22 @@ class LinkChecker {
     }
     normalizedAnchor = normalizedAnchor.toLowerCase();
 
+    const normalizeAnchorSlug = (text) => {
+      return String(text || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s-]/gu, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+    };
+
     const cached = this.anchorCache.get(filePath);
-    if (cached) return cached.has(normalizedAnchor);
+    if (cached) {
+      if (cached.has(normalizedAnchor)) return true;
+      const alt = normalizeAnchorSlug(normalizedAnchor);
+      return alt ? cached.has(alt) : false;
+    }
 
     const content = await fs.readFile(filePath, 'utf8');
 
@@ -463,7 +488,9 @@ class LinkChecker {
     }
 
     this.anchorCache.set(filePath, anchors);
-    return anchors.has(normalizedAnchor);
+    if (anchors.has(normalizedAnchor)) return true;
+    const alt = normalizeAnchorSlug(normalizedAnchor);
+    return alt ? anchors.has(alt) : false;
   }
 
   async checkExternalUrl(url) {
