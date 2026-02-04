@@ -405,12 +405,31 @@ class LinkChecker {
       if (token.type !== 'heading_open') continue;
       const inline = tokens[i + 1];
       if (!inline || inline.type !== 'inline') continue;
-      const slug = slugify(inline.content);
+      const headingText = inline.content || '';
+
+      // kramdown-style explicit IDs can appear in headings like:
+      //   ## Title {#my-id}
+      // If present, the explicit ID should be accepted as a valid anchor.
+      for (const m of headingText.matchAll(/\{#([A-Za-z0-9][A-Za-z0-9_-]*)\}/g)) {
+        const explicit = String(m[1] || '').trim().toLowerCase();
+        if (explicit) anchors.add(explicit);
+      }
+
+      // Also generate a slug from the heading text without the explicit ID suffix,
+      // so links that rely on auto-generated anchors can be validated too.
+      const cleanedHeadingText = headingText.replace(/\s*\{#([A-Za-z0-9][A-Za-z0-9_-]*)\}\s*/g, ' ').trim();
+      const slug = slugify(cleanedHeadingText);
       if (slug) anchors.add(slug);
     }
 
     // Also accept explicit HTML ids.
     for (const match of content.matchAll(/\bid=\"([^\"]+)\"/g)) {
+      const id = String(match[1] || '').trim().toLowerCase();
+      if (id) anchors.add(id);
+    }
+
+    // kramdown attribute list style (e.g. "{: #my-id}") can define IDs separately.
+    for (const match of content.matchAll(/\{\:\s*#([A-Za-z0-9][A-Za-z0-9_-]*)\s*\}/g)) {
       const id = String(match[1] || '').trim().toLowerCase();
       if (id) anchors.add(id);
     }
