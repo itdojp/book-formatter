@@ -15,8 +15,26 @@ export class ConfigValidator {
       'structure',
       'repository',
       'output',
-      'theme'
+      'theme',
+      'ux'
     ];
+
+    this.allowedUxProfiles = new Set(['A', 'B', 'C']);
+    this.allowedUxModules = [
+      'quickStart',
+      'readingGuide',
+      'checklistPack',
+      'troubleshootingFlow',
+      'conceptMap',
+      'figureIndex',
+      'legalNotice',
+      'glossary'
+    ];
+    this.requiredUxModulesByProfile = {
+      A: ['readingGuide', 'quickStart', 'glossary'],
+      B: ['checklistPack', 'troubleshootingFlow', 'figureIndex'],
+      C: ['conceptMap', 'glossary']
+    };
   }
 
   /**
@@ -40,6 +58,9 @@ export class ConfigValidator {
     
     // ナビゲーション設定のチェック
     this.validateNavigation(config);
+
+    // UX 設定のチェック
+    this.validateUx(config);
     
     // リポジトリ情報のチェック
     this.validateRepository(config);
@@ -201,6 +222,53 @@ export class ConfigValidator {
 
     if (repo.branch && typeof repo.branch !== 'string') {
       throw new Error('repository.branch は文字列である必要があります');
+    }
+  }
+
+  /**
+   * UX 設定をバリデーションする
+   * @param {Object} config - 設定オブジェクト
+   */
+  validateUx(config) {
+    if (!config.ux) return;
+
+    if (typeof config.ux !== 'object') {
+      throw new Error('ux はオブジェクトである必要があります');
+    }
+
+    const profile = config.ux.profile;
+    if (!profile || typeof profile !== 'string') {
+      throw new Error('ux.profile は文字列で指定してください');
+    }
+
+    if (!this.allowedUxProfiles.has(profile)) {
+      throw new Error('ux.profile は A/B/C のいずれかである必要があります');
+    }
+
+    if (!config.ux.modules || typeof config.ux.modules !== 'object' || Array.isArray(config.ux.modules)) {
+      throw new Error('ux.modules はオブジェクトである必要があります');
+    }
+
+    for (const [key, value] of Object.entries(config.ux.modules)) {
+      if (!this.allowedUxModules.includes(key)) {
+        throw new Error(`ux.modules に未定義キーがあります: ${key}`);
+      }
+      if (typeof value !== 'boolean') {
+        throw new Error(`ux.modules.${key} は boolean である必要があります`);
+      }
+    }
+
+    for (const key of this.allowedUxModules) {
+      if (!(key in config.ux.modules)) {
+        throw new Error(`ux.modules.${key} が欠落しています`);
+      }
+    }
+
+    const requiredModules = this.requiredUxModulesByProfile[profile] || [];
+    for (const key of requiredModules) {
+      if (config.ux.modules[key] !== true) {
+        throw new Error(`ux.modules.${key} は profile ${profile} の必須モジュールです`);
+      }
     }
   }
 

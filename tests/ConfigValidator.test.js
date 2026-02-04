@@ -1,12 +1,31 @@
-import { test, describe, beforeEach } from 'node:test';
+import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { ConfigValidator } from '../src/ConfigValidator.js';
 
 describe('ConfigValidator', () => {
   let validator;
+  let originalConsole;
 
   beforeEach(() => {
+    // Avoid excessive console output in CI (node:test uses IPC for stdio in some modes).
+    originalConsole = {
+      log: console.log,
+      error: console.error,
+      warn: console.warn
+    };
+    console.log = () => {};
+    console.error = () => {};
+    console.warn = () => {};
+
     validator = new ConfigValidator();
+  });
+
+  afterEach(() => {
+    if (originalConsole) {
+      console.log = originalConsole.log;
+      console.error = originalConsole.error;
+      console.warn = originalConsole.warn;
+    }
   });
 
   describe('validate', () => {
@@ -24,6 +43,31 @@ describe('ConfigValidator', () => {
               title: '第1章'
             }
           ]
+        }
+      };
+
+      assert.doesNotThrow(() => {
+        validator.validate(validConfig);
+      });
+    });
+
+    test('ux 設定が有効な場合にバリデーションが成功する', () => {
+      const validConfig = {
+        title: 'UX書籍',
+        description: 'UX設定を含む',
+        author: '作成者',
+        ux: {
+          profile: 'A',
+          modules: {
+            quickStart: true,
+            readingGuide: true,
+            checklistPack: false,
+            troubleshootingFlow: false,
+            conceptMap: true,
+            figureIndex: false,
+            legalNotice: false,
+            glossary: true
+          }
         }
       };
 
@@ -50,6 +94,97 @@ describe('ConfigValidator', () => {
       assert.throws(() => {
         validator.validate('string');
       }, /設定ファイルが正しくありません/);
+    });
+
+    test('ux.profile が不正な場合エラーを投げる', () => {
+      const config = {
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
+        ux: {
+          profile: 'D',
+          modules: {
+            quickStart: true,
+            readingGuide: true,
+            checklistPack: false,
+            troubleshootingFlow: false,
+            conceptMap: false,
+            figureIndex: false,
+            legalNotice: false,
+            glossary: true
+          }
+        }
+      };
+
+      assert.throws(() => {
+        validator.validate(config);
+      }, /ux\.profile は A\/B\/C/);
+    });
+
+    test('ux.modules が未設定の場合エラーを投げる', () => {
+      const config = {
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
+        ux: {
+          profile: 'A'
+        }
+      };
+
+      assert.throws(() => {
+        validator.validate(config);
+      }, /ux\.modules はオブジェクト/);
+    });
+
+    test('ux.modules に未定義キーがある場合エラーを投げる', () => {
+      const config = {
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
+        ux: {
+          profile: 'B',
+          modules: {
+            quickStart: false,
+            readingGuide: false,
+            checklistPack: true,
+            troubleshootingFlow: true,
+            conceptMap: false,
+            figureIndex: true,
+            legalNotice: false,
+            glossary: false,
+            unknownModule: true
+          }
+        }
+      };
+
+      assert.throws(() => {
+        validator.validate(config);
+      }, /未定義キー/);
+    });
+
+    test('profile の必須 modules が false の場合エラーを投げる', () => {
+      const config = {
+        title: 'タイトル',
+        description: '説明',
+        author: '作成者',
+        ux: {
+          profile: 'B',
+          modules: {
+            quickStart: false,
+            readingGuide: false,
+            checklistPack: false,
+            troubleshootingFlow: true,
+            conceptMap: false,
+            figureIndex: true,
+            legalNotice: false,
+            glossary: false
+          }
+        }
+      };
+
+      assert.throws(() => {
+        validator.validate(config);
+      }, /必須モジュール/);
     });
   });
 

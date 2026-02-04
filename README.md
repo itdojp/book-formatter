@@ -53,7 +53,7 @@ npm start init --output ./my-book-config.json
   "author": "著者名",
   "version": "1.0.0",
   "language": "ja",
-  "license": "MIT",
+  "license": "CC BY-NC-SA 4.0",
   "repository": {
     "url": "https://github.com/username/repository.git",
     "branch": "main"
@@ -123,6 +123,7 @@ npm start validate-config --config ./path/to/config.json
 6. **Phase 6: 品質保証とテスト** (30分)
    - 設定ファイル検証
    - リンクチェック
+   - Unicode品質チェック（不可視文字/互換漢字/異体字セレクタ等）
    - ビルドテスト
 
 7. **Phase 7: 公開前の最終確認** (30分)
@@ -176,6 +177,30 @@ npm start sync-all-books --directory ./books
 npm start sync-all-books --dry-run
 ```
 
+### 7. UXロールアウト（既存書籍向け）
+
+```bash
+# レジストリに基づき ux.profile/modules を付与
+npm start rollout-ux --registry ./book-registry.json --apply-ux-profile
+
+# 共通コアのみを適用（layouts/includes/assets）
+npm start rollout-ux --apply-ux-core --dry-run
+
+# 併用（レジストリは必須）
+npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-profile
+```
+
+補足:
+- `--apply-ux-profile` は `--registry` が必須です
+## 品質チェック（ローカル）
+
+```bash
+# リンク（内部リンク/アンカー）を検証
+npm run check-links -- <book-dir>
+
+# Unicode品質（不可視文字/互換漢字/異体字セレクタ等）を検出
+npm run check-unicode -- <book-dir> --output unicode-report.json
+```
 ## CLIコマンド
 
 | コマンド | 説明 | オプション |
@@ -185,6 +210,7 @@ npm start sync-all-books --dry-run
 | `update-book` | 既存の書籍を更新 | `--config`, `--book`, `--no-backup` |
 | `validate-config` | 設定ファイルをバリデーション | `--config`, `--verbose` |
 | `sync-all-books` | 複数の書籍を一括同期 | `--directory`, `--pattern`, `--dry-run` |
+| `rollout-ux` | 既存書籍へのUX段階適用 | `--directory`, `--pattern`, `--registry`, `--apply-ux-core`, `--apply-ux-profile`, `--dry-run`, `--no-backup` |
 
 ## 設定ファイル仕様
 
@@ -198,8 +224,9 @@ npm start sync-all-books --dry-run
 
 - `version`: バージョン（semantic versioning形式）
 - `language`: 言語コード（デフォルト: "ja"）
-- `license`: ライセンス（デフォルト: "MIT"）
+- `license`: ライセンス（デフォルト: "CC BY-NC-SA 4.0"）
 - `repository`: リポジトリ情報
+- `ux`: UXプロファイル/モジュール設定
 - `structure`: 書籍構造（章、付録）
 
 ### 章の設定
@@ -215,6 +242,26 @@ npm start sync-all-books --dry-run
         "objectives": ["目標1", "目標2"]  // オプション
       }
     ]
+  }
+}
+```
+
+### UX設定
+
+```json
+{
+  "ux": {
+    "profile": "A",
+    "modules": {
+      "quickStart": true,
+      "readingGuide": true,
+      "checklistPack": false,
+      "troubleshootingFlow": false,
+      "conceptMap": true,
+      "figureIndex": false,
+      "legalNotice": false,
+      "glossary": true
+    }
   }
 }
 ```

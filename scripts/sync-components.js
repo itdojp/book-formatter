@@ -4,6 +4,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
 import { Command } from 'commander';
+import { pathToFileURL } from 'url';
 import { FileSystemUtils } from '../src/FileSystemUtils.js';
 
 /**
@@ -15,6 +16,29 @@ class ComponentSync {
     this.fsUtils = new FileSystemUtils();
     this.sharedDir = path.join(process.cwd(), 'shared');
     this.version = null;
+  }
+
+  /**
+   * Map shared component paths to the canonical Jekyll-on-GitHub-Pages layout.
+   *
+   * shared/ uses neutral folders (layouts/includes/assets) but book repos store
+   * them under docs/ with Jekyll conventions (_layouts/_includes/assets).
+   */
+  mapDestRelativePath(sharedRelPath) {
+    const p = String(sharedRelPath).replace(/\\/g, '/');
+
+    if (p.startsWith('layouts/')) {
+      return path.join('docs', '_layouts', path.basename(p));
+    }
+    if (p.startsWith('includes/')) {
+      return path.join('docs', '_includes', path.basename(p));
+    }
+    if (p.startsWith('assets/')) {
+      return path.join('docs', p);
+    }
+
+    // Fallback (keep relative path)
+    return p;
   }
 
   /**
@@ -135,7 +159,8 @@ class ComponentSync {
       }
       
       const sourcePath = path.join(this.sharedDir, file);
-      const destPath = path.join(bookPath, file);
+      const destRel = this.mapDestRelativePath(file);
+      const destPath = path.join(bookPath, destRel);
       
       if (!(await this.fsUtils.exists(sourcePath))) {
         console.log(chalk.yellow(`    ⚠️  ソースファイルが見つかりません: ${file}`));
@@ -147,7 +172,7 @@ class ComponentSync {
       
       // ファイルをコピー
       await fs.copy(sourcePath, destPath, { overwrite: true });
-      console.log(chalk.gray(`    ✅ ${file}`));
+      console.log(chalk.gray(`    ✅ ${destRel}`));
     }
   }
 
@@ -206,7 +231,7 @@ class ComponentSync {
    * 差分を確認（dry run）
    * @param {string} bookPath - 書籍パス
    */
-  async checkDiff(bookPath) {
+  async checkDiff(bookPath, options = {}) {
     console.log(chalk.blue(`\n🔍 差分確認: ${path.basename(bookPath)}`));
     
     const bookConfig = await this.loadBookConfig(bookPath);
@@ -224,16 +249,16 @@ class ComponentSync {
     // 変更されるファイルをリスト
     console.log(chalk.yellow('  📝 変更されるファイル:'));
     
-    const componentsToSync = this.determineComponents(bookConfig, {});
+    const componentsToSync = this.determineComponents(bookConfig, options);
     
     for (const [component, config] of Object.entries(componentsToSync)) {
       if (config === true || (typeof config === 'object' && Object.values(config).some(v => v))) {
         const componentInfo = this.version.components[component];
-        if (componentInfo) {
-          componentInfo.files.forEach(file => {
-            console.log(chalk.gray(`    - ${file}`));
-          });
-        }
+          if (componentInfo) {
+            componentInfo.files.forEach(file => {
+            console.log(chalk.gray(`    - ${this.mapDestRelativePath(file)}`));
+            });
+          }
       }
     }
   }
@@ -297,6 +322,10 @@ program
     }
   });
 
-program.parse();
+const cliPath = process.argv[1];
+const isDirectExecution = cliPath ? import.meta.url === pathToFileURL(cliPath).href : false;
+if (isDirectExecution) {
+  program.parse();
+}
 
 export { ComponentSync };

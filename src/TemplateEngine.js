@@ -255,7 +255,7 @@ npm run build
     // デフォルト値の設定
     processed.version = processed.version || '1.0.0';
     processed.language = processed.language || 'ja';
-    processed.license = processed.license || 'MIT';
+    processed.license = processed.license || 'CC BY-NC-SA 4.0';
     processed.currentDate = new Date().toISOString().split('T')[0];
 
     // パッケージ名の生成
@@ -276,7 +276,27 @@ npm run build
       }
     }
 
+    // UX プロファイルのフラグ
+    if (processed.ux?.profile) {
+      processed.uxProfile = {
+        A: processed.ux.profile === 'A',
+        B: processed.ux.profile === 'B',
+        C: processed.ux.profile === 'C'
+      };
+    }
+
     return processed;
+  }
+
+  /**
+   * 文字列テンプレートをレンダリングする
+   * @param {string} template - テンプレート文字列
+   * @param {Object} data - データ
+   * @returns {string} レンダリング結果
+   */
+  renderString(template, data) {
+    const processedData = this.preprocessData(data);
+    return this.renderTemplate(template, processedData);
   }
 
   /**
