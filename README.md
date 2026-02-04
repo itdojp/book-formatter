@@ -192,7 +192,6 @@ npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-
 
 補足:
 - `--apply-ux-profile` は `--registry` が必須です
-
 ## 品質チェック（ローカル）
 
 ```bash
@@ -202,7 +201,6 @@ npm run check-links -- <book-dir>
 # Unicode品質（不可視文字/互換漢字/異体字セレクタ等）を検出
 npm run check-unicode -- <book-dir> --output unicode-report.json
 ```
-
 ## CLIコマンド
 
 | コマンド | 説明 | オプション |

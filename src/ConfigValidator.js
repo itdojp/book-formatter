@@ -30,6 +30,11 @@ export class ConfigValidator {
       'legalNotice',
       'glossary'
     ];
+    this.requiredUxModulesByProfile = {
+      A: ['readingGuide', 'quickStart', 'glossary'],
+      B: ['checklistPack', 'troubleshootingFlow', 'figureIndex'],
+      C: ['conceptMap', 'glossary']
+    };
   }
 
   /**
@@ -240,24 +245,29 @@ export class ConfigValidator {
       throw new Error('ux.profile は A/B/C のいずれかである必要があります');
     }
 
-    if (config.ux.modules !== undefined) {
-      if (!config.ux.modules || typeof config.ux.modules !== 'object' || Array.isArray(config.ux.modules)) {
-        throw new Error('ux.modules はオブジェクトである必要があります');
-      }
+    if (!config.ux.modules || typeof config.ux.modules !== 'object' || Array.isArray(config.ux.modules)) {
+      throw new Error('ux.modules はオブジェクトである必要があります');
+    }
 
-      for (const [key, value] of Object.entries(config.ux.modules)) {
-        if (!this.allowedUxModules.includes(key)) {
-          throw new Error(`ux.modules に未定義キーがあります: ${key}`);
-        }
-        if (typeof value !== 'boolean') {
-          throw new Error(`ux.modules.${key} は boolean である必要があります`);
-        }
+    for (const [key, value] of Object.entries(config.ux.modules)) {
+      if (!this.allowedUxModules.includes(key)) {
+        throw new Error(`ux.modules に未定義キーがあります: ${key}`);
       }
+      if (typeof value !== 'boolean') {
+        throw new Error(`ux.modules.${key} は boolean である必要があります`);
+      }
+    }
 
-      for (const key of this.allowedUxModules) {
-        if (!(key in config.ux.modules)) {
-          throw new Error(`ux.modules.${key} が欠落しています`);
-        }
+    for (const key of this.allowedUxModules) {
+      if (!(key in config.ux.modules)) {
+        throw new Error(`ux.modules.${key} が欠落しています`);
+      }
+    }
+
+    const requiredModules = this.requiredUxModulesByProfile[profile] || [];
+    for (const key of requiredModules) {
+      if (config.ux.modules[key] !== true) {
+        throw new Error(`ux.modules.${key} は profile ${profile} の必須モジュールです`);
       }
     }
   }
@@ -316,10 +326,6 @@ export class ConfigValidator {
 
     if (!config.repository) {
       results.warnings.push('リポジトリ情報が設定されていません');
-    }
-
-    if (config.ux && !config.ux.modules) {
-      results.warnings.push('ux.modules が設定されていません');
     }
 
     return results;

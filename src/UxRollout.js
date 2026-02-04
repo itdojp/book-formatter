@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import YAML from 'yaml';
 import chalk from 'chalk';
+import { ConfigValidator } from './ConfigValidator.js';
 import { FileSystemUtils } from './FileSystemUtils.js';
 import { ComponentSync } from '../scripts/sync-components.js';
 
@@ -15,6 +16,7 @@ export class UxRollout {
   constructor() {
     this.fsUtils = new FileSystemUtils();
     this.componentSync = new ComponentSync();
+    this.configValidator = new ConfigValidator();
   }
 
   /**
@@ -161,6 +163,14 @@ export class UxRollout {
       modules: entry.modules
     };
 
+    try {
+      // レジストリ由来の ux 設定を事前に検証し、無効な設定を書き込まない。
+      this.configValidator.validateUx({ ux: nextUx });
+    } catch (error) {
+      console.log(chalk.red(`  ❌ レジストリの ux 設定が不正です: ${error.message}`));
+      return { updated: false, skipped: true };
+    }
+
     const currentUx = config.ux || null;
     const isSame = currentUx && JSON.stringify(currentUx) === JSON.stringify(nextUx);
     if (isSame) {
@@ -258,7 +268,7 @@ export class UxRollout {
           backup: options.backup,
           dryRun
         });
-        if (result.updated) updatedCount++;
+        if (result.updated || (dryRun && !result.skipped)) updatedCount++;
         if (result.skipped) skippedCount++;
       }
 
@@ -268,7 +278,7 @@ export class UxRollout {
     }
 
     console.log(chalk.blue('\n📊 ロールアウト結果:'));
-    console.log(chalk.green(`  更新: ${updatedCount}`));
+    console.log(chalk.green(`  ${dryRun ? '更新(予定)' : '更新'}: ${updatedCount}`));
     console.log(chalk.gray(`  スキップ: ${skippedCount}`));
     if (registry && missingRegistry > 0) {
       console.log(chalk.yellow(`  レジストリ未登録: ${missingRegistry}`));
