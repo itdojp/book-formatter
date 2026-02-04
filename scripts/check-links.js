@@ -29,6 +29,7 @@ class LinkChecker {
     this.checkExternal = false;
     this.externalTimeoutMs = 10000;
     this.siteRootDir = null;
+    this.repoName = null;
   }
 
   /**
@@ -59,12 +60,23 @@ class LinkChecker {
     const baseDir = path.resolve(directory);
     // Resolve "site root" for absolute links:
     // - If the repo uses GitHub Pages with /docs as the published root (common), use it.
-    // - Otherwise, treat the repository root as the site root.
+    // - If the checker runs against the docs/ directory directly, keep docs/ as the site root
+    //   but still derive the repository name from the parent directory (for /<repo>/... baseurl links).
+    // - Otherwise, treat the provided directory as the site root.
     this.siteRootDir = baseDir;
-    const docsConfig = path.join(baseDir, 'docs', '_config.yml');
-    if (await fs.pathExists(docsConfig)) {
+    let repoRootDir = baseDir;
+    const docsConfigInDocs = path.join(baseDir, 'docs', '_config.yml');
+    const configInBase = path.join(baseDir, '_config.yml');
+
+    if (await fs.pathExists(docsConfigInDocs)) {
       this.siteRootDir = path.join(baseDir, 'docs');
+      repoRootDir = baseDir;
+    } else if (path.basename(baseDir) === 'docs' && (await fs.pathExists(configInBase))) {
+      this.siteRootDir = baseDir;
+      repoRootDir = path.dirname(baseDir);
     }
+
+    this.repoName = path.basename(repoRootDir);
 
     // Markdownファイルを検索
     // Use `cwd` + relative patterns so `ignore` reliably matches (e.g. node_modules/**)
@@ -289,7 +301,7 @@ class LinkChecker {
     if (decodedPath.startsWith('/')) {
       // 絶対パス（GitHub Pages の baseurl を含むケースにも対応）
       // 例: /<repo-name>/assets/... -> ./assets/... として解決
-      const repoName = path.basename(baseDir);
+      const repoName = this.repoName || path.basename(baseDir);
       const normalized = decodedPath.replace(/^\/+/, '/');
       const repoPrefix = `/${repoName}`;
 
@@ -406,7 +418,7 @@ class LinkChecker {
     }
     normalizedAnchor = normalizedAnchor.toLowerCase();
 
-    const normalizeAnchorSlug = (text) => {
+    const normalizeSlugBase = (text) => {
       return String(text || '')
         .trim()
         .toLowerCase()
@@ -415,6 +427,7 @@ class LinkChecker {
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '');
     };
+    const normalizeAnchorSlug = normalizeSlugBase;
 
     const cached = this.anchorCache.get(filePath);
     if (cached) {
@@ -433,13 +446,7 @@ class LinkChecker {
     const slugify = (text) => {
       // Roughly matches GitHub heading slugs, but keeps Unicode letters/numbers
       // so Japanese headings can be linked.
-      let slug = String(text || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}\s-]/gu, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
+      const slug = normalizeSlugBase(text);
 
       if (slug === '') return '';
 
