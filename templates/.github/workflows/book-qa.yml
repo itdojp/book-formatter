@@ -94,7 +94,12 @@ jobs:
             nav = scan_dir / "_data" / "navigation.yml"
             if not nav.exists():
               return []
-            data = yaml.safe_load(nav.read_text(encoding="utf-8")) or {}
+            try:
+              raw = nav.read_text(encoding="utf-8")
+              data = yaml.safe_load(raw) or {}
+            except yaml.YAMLError as e:
+              print(f"::error file={nav}::Failed to parse navigation YAML: {e}")
+              sys.exit(1)
             paths = []
             for key in ["introduction", "chapters", "additional", "resources", "appendices", "afterword"]:
               for item in (data.get(key) or []):
@@ -173,7 +178,15 @@ jobs:
             "assets/js/search.js",
             "assets/js/code-copy-lightweight.js",
           ]
-          missing_assets = [a for a in required_assets if not (site_dir / a).exists()]
+          missing_assets = [
+            a
+            for a in required_assets
+            if not (
+              (site_dir / a).exists()
+              and (site_dir / a).is_file()
+              and (site_dir / a).stat().st_size > 0
+            )
+          ]
 
           if missing or missing_assets:
             if missing:
