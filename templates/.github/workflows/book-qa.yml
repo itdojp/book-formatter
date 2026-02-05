@@ -18,6 +18,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: itdojp/book-formatter
+          # NOTE: This intentionally tracks the latest book-formatter.
+          # Pin to a tag/SHA if you need fully reproducible checks.
           ref: main
           path: book-formatter
 
@@ -47,4 +49,3 @@ jobs:
 
       - name: Link check (internal + anchors)
         run: node book-formatter/scripts/check-links.js "${{ steps.scan.outputs.dir }}"
-
