@@ -209,10 +209,6 @@ async function runTextlint({ directory, pattern, ignore, failOn, output, maxIssu
     console.log(chalk.gray(`Report saved to ${output}`));
   }
 
-  if (shouldFail(report, failOn)) {
-    process.exitCode = 1;
-  }
-
   return report;
 }
 
@@ -230,36 +226,38 @@ program
     'book-formatter/**',
     '**/book-formatter/**',
     'templates/**',
-    '**/templates/**'
+    '**/templates/**',
+    'examples/**',
+    '**/examples/**'
   ])
   .option('--fail-on <level>', 'Fail on: none|warn|error', 'none')
   .option('--output <file>', 'Save report to file (JSON)')
   .option('--max-issues <n>', 'Max issues to print (0=all)', '200')
   .option('--with-preset', 'Enable preset-ja-technical-writing', false)
-  .option('--prh <paths...>', 'Additional prh dictionary file paths (relative to repo root)', []);
+  .option('--prh <paths...>', 'Additional prh dictionary file paths (relative to repo root)', [])
+  .action(async (directory, opts) => {
+    const failOn = normalizeFailOn(opts.failOn);
+    if (!failOn) {
+      console.error(chalk.red(`Invalid --fail-on value: ${opts.failOn} (expected: none|warn|error)`));
+      process.exit(2);
+    }
 
-program.parse(process.argv);
+    try {
+      const report = await runTextlint({
+        directory,
+        pattern: opts.pattern,
+        ignore: opts.ignore,
+        failOn,
+        output: opts.output,
+        maxIssues: opts.maxIssues,
+        withPreset: Boolean(opts.withPreset),
+        prhRulePaths: opts.prh
+      });
+      process.exit(shouldFail(report, failOn) ? 1 : 0);
+    } catch (error) {
+      console.error(chalk.red(`Error: ${error?.message || error}`));
+      process.exit(1);
+    }
+  });
 
-const directory = program.args[0] || '.';
-const opts = program.opts();
-
-const failOn = normalizeFailOn(opts.failOn);
-if (!failOn) {
-  console.error(chalk.red(`Invalid --fail-on value: ${opts.failOn} (expected: none|warn|error)`));
-  process.exit(2);
-}
-
-runTextlint({
-  directory,
-  pattern: opts.pattern,
-  ignore: opts.ignore,
-  failOn,
-  output: opts.output,
-  maxIssues: opts.maxIssues,
-  withPreset: Boolean(opts.withPreset),
-  prhRulePaths: opts.prh
-}).catch((error) => {
-  console.error(chalk.red(`Error: ${error?.message || error}`));
-  process.exit(1);
-});
-
+program.parse();
