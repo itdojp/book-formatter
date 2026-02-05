@@ -35,7 +35,8 @@ jobs:
                   for line in cfg.read_text(encoding='utf-8').splitlines():
                       if line.strip().startswith('baseurl:'):
                           val = line.split(':',1)[1].strip()
-                          baseurl = val.strip('"\' ')
+                          # Mirror the YAML-parsed path: trim whitespace then drop outer quotes.
+                          baseurl = val.strip().strip('"\'').strip()
                           break
           if not baseurl.startswith('/'): baseurl = '/' + baseurl
           baseurl = baseurl.rstrip('/')
@@ -80,7 +81,7 @@ jobs:
               return paths
           def discover():
               paths=[]
-              for seg in ['introduction','chapters','appendices','afterword']:
+              for seg in ['introduction','chapters','additional','resources','appendices','afterword']:
                   d = Path('docs')/seg
                   if d.is_dir():
                       for child in sorted(d.iterdir()):
