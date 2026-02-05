@@ -1,0 +1,11 @@
+version: 1
+rules:
+  - expected: GitHub
+    pattern: Github
+  - expected: JavaScript
+    pattern: Javascript
+  - expected: TypeScript
+    pattern: Typescript
+  - expected: PostgreSQL
+    pattern: Postgresql
+

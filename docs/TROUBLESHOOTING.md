@@ -32,13 +32,19 @@ This guide documents common pitfalls and fixes when rolling out book-formatter v
   - Re-run the workflow. The job tolerates YAML parsing differences for `baseurl` and builds paths from `_data/navigation.yml` when present.
   - For heavy repo sets, API rate limits may cause failures; stagger runs or reduce frequency.
 
-## Book QA workflow (unicode + internal links)
+## Book QA workflow (unicode + internal links + textlint)
 - Symptom: `book-qa` fails on unicode warnings (e.g. invisible chars, compatibility ideographs, U+2212).
 - Guidance:
   - Prefer fixing the source (replace confusable characters with ASCII, remove invisible chars).
   - If a character is intentional (math notation, domain-specific symbols), add an allowlist file:
     - `.book-formatter/unicode-allowlist.json` (recommended) or `unicode-allowlist.json` at repo root
   - The checker auto-detects these files when running `check-unicode`.
+
+- Symptom: `book-qa` shows textlint(PRH) suggestions in logs.
+- Guidance:
+  - Add a book-local PRH dictionary to tune corrections:
+    - `.book-formatter/prh.yml` (recommended) or `prh.yml` at repo root
+  - The workflow template runs textlint as non-blocking by default. If you want to gate on findings, run `check-textlint` with `--fail-on warn|error`.
 
 ## Redirects and legacy slugs
 - Symptom: Old URLs 404 after restructuring chapters.

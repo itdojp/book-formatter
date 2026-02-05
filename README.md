@@ -200,6 +200,12 @@ npm run check-links -- <book-dir>
 
 # Unicode品質（不可視文字/互換漢字/異体字セレクタ等）を検出
 npm run check-unicode -- <book-dir> --output unicode-report.json
+
+# 文章校正（textlint + PRH辞書）
+npm run check-textlint -- <book-dir> --output textlint-report.json
+
+# 技術文書プリセットも併用（任意）
+npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 ```
 ## CLIコマンド
 
