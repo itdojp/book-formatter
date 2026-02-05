@@ -19,18 +19,20 @@ jobs:
         id: build
         run: |
           python3 - << 'PY'
-          import os, yaml
+          import os, sys, yaml
           from pathlib import Path
           repo = os.environ.get('GITHUB_REPOSITORY','').split('/')[-1]
-          cfg = Path('docs/_config.yml') if Path('docs/_config.yml').exists() else Path('_config.yml')
+          base_dir = Path('docs') if Path('docs').is_dir() else Path('.')
+          cfg = base_dir / '_config.yml'
           baseurl = f'/{repo}'
           if cfg.exists():
               try:
                   data = yaml.safe_load(cfg.read_text(encoding='utf-8')) or {}
                   bu = data.get('baseurl')
                   if isinstance(bu,str) and bu.strip():
-                      baseurl = bu.strip().strip('"\'')
-              except Exception:
+                      baseurl = bu.strip().strip('"\'').strip()
+              except Exception as e:
+                  print(f"::warning file={cfg}::Failed to parse _config.yml as YAML; falling back to naive parse ({e})")
                   # Fallback to naive parse but strip quotes
                   for line in cfg.read_text(encoding='utf-8').splitlines():
                       if line.strip().startswith('baseurl:'):
@@ -58,21 +60,29 @@ jobs:
               return p if p.endswith('/') else p + '/'
 
           def read_nav():
-              y = Path('docs/_data/navigation.yml')
+              y = base_dir / '_data' / 'navigation.yml'
               if not y.exists(): return []
-              data = yaml.safe_load(y.read_text(encoding='utf-8')) or {}
+              try:
+                  data = yaml.safe_load(y.read_text(encoding='utf-8')) or {}
+              except yaml.YAMLError as e:
+                  print(f"::error file={y}::Failed to parse navigation YAML: {e}")
+                  sys.exit(1)
               paths = []
               for key in ['introduction','chapters','additional','resources','appendices','afterword']:
                   for item in (data.get(key) or []):
                       # Some books structure chapters as parts: {part, items:[{title,path},...]}
-                      if isinstance(item, dict) and isinstance(item.get('items'), list):
-                          for sub in (item.get('items') or []):
-                              if not isinstance(sub, dict):
-                                  continue
-                              p = normalize_path(sub.get('path'))
-                              if p:
-                                  paths.append(p)
-                          continue
+                      if isinstance(item, dict):
+                          nested = item.get('items')
+                          if not isinstance(nested, list):
+                              nested = item.get('children')
+                          if isinstance(nested, list):
+                              for sub in (nested or []):
+                                  if not isinstance(sub, dict):
+                                      continue
+                                  p = normalize_path(sub.get('path'))
+                                  if p:
+                                      paths.append(p)
+                              continue
                       if not isinstance(item, dict):
                           continue
                       p = normalize_path(item.get('path'))
@@ -82,7 +92,7 @@ jobs:
           def discover():
               paths=[]
               for seg in ['introduction','chapters','additional','resources','appendices','afterword']:
-                  d = Path('docs')/seg
+                  d = base_dir/seg
                   if d.is_dir():
                       for child in sorted(d.iterdir()):
                           if child.is_dir(): paths.append(f'/{seg}/{child.name}/')
