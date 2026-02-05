@@ -44,7 +44,9 @@ This guide documents common pitfalls and fixes when rolling out book-formatter v
 - Guidance:
   - Add a book-local PRH dictionary to tune corrections:
     - `.book-formatter/prh.yml` (recommended) or `prh.yml` at repo root
-  - The workflow template runs textlint as non-blocking by default. If you want to gate on findings, run `check-textlint` with `--fail-on warn|error`.
+  - The workflow template runs textlint as blocking on error-level findings by default (`--fail-on error`).
+    - If you want to make it non-blocking, change to `--fail-on none`.
+    - If you want to fail on warnings too, change to `--fail-on warn`.
 
 ## Redirects and legacy slugs
 - Symptom: Old URLs 404 after restructuring chapters.
