@@ -633,6 +633,8 @@ program
   .option('-i, --ignore <patterns...>', 'Patterns to ignore', [
     'node_modules/**',
     '**/node_modules/**',
+    'book-formatter/**',
+    '**/book-formatter/**',
     'templates/**',
     '**/templates/**',
     'examples/**',

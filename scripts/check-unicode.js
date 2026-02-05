@@ -195,7 +195,16 @@ program
   .version('1.0.0')
   .argument('[directory]', 'Directory to check', '.')
   .option('-p, --pattern <pattern>', 'Glob pattern for files', '**/*.md')
-  .option('-i, --ignore <patterns...>', 'Patterns to ignore', ['node_modules/**', '**/node_modules/**'])
+  .option('-i, --ignore <patterns...>', 'Patterns to ignore', [
+    'node_modules/**',
+    '**/node_modules/**',
+    'book-formatter/**',
+    '**/book-formatter/**',
+    'templates/**',
+    '**/templates/**',
+    'examples/**',
+    '**/examples/**'
+  ])
   .option('-a, --allowlist <file>', 'Allowlist JSON path (default: auto-detect)')
   .option('-o, --output <file>', 'Save report to file (JSON)')
   .option('--fail-on <level>', 'Fail level: error|warn|none', 'error')
