@@ -32,8 +32,15 @@ This guide documents common pitfalls and fixes when rolling out book-formatter v
   - Re-run the workflow. The job tolerates YAML parsing differences for `baseurl` and builds paths from `_data/navigation.yml` when present.
   - For heavy repo sets, API rate limits may cause failures; stagger runs or reduce frequency.
 
+## Book QA workflow (unicode + internal links)
+- Symptom: `book-qa` fails on unicode warnings (e.g. invisible chars, compatibility ideographs, U+2212).
+- Guidance:
+  - Prefer fixing the source (replace confusable characters with ASCII, remove invisible chars).
+  - If a character is intentional (math notation, domain-specific symbols), add an allowlist file:
+    - `.book-formatter/unicode-allowlist.json` (recommended) or `unicode-allowlist.json` at repo root
+  - The checker auto-detects these files when running `check-unicode`.
+
 ## Redirects and legacy slugs
 - Symptom: Old URLs 404 after restructuring chapters.
 - Fix:
   - Add `redirect_from:` to moved pages, or create minimal stub pages under the old path to preserve inbound links.
-

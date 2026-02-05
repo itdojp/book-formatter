@@ -32,6 +32,12 @@ sed_inplace() {
 # Copy starter (docs/ + root files)
 cp -R templates/starter/. "$DST/"
 
+# Copy GitHub workflows/templates (optional)
+if [ -d templates/.github ]; then
+  mkdir -p "$DST/.github"
+  cp -R templates/.github/. "$DST/.github/"
+fi
+
 # Sync canonical shared components into docs/ (Jekyll conventions)
 mkdir -p "$DST/docs/_layouts" "$DST/docs/_includes" "$DST/docs/assets"
 cp -R shared/layouts/. "$DST/docs/_layouts/"
@@ -51,7 +57,8 @@ Next steps:
 1) Review docs/_config.yml (title/description/author/baseurl/repository)
 2) Update docs/_data/navigation.yml (ToC order)
 3) Add chapters under docs/chapters/, appendices under docs/appendices/
-4) Commit and push to GitHub
+4) Review .github/workflows/ (CI/QA)
+5) Commit and push to GitHub
 EON
 
 if [ "$CREATE" = "--create" ]; then
