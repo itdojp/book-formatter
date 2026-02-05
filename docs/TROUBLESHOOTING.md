@@ -48,6 +48,13 @@ This guide documents common pitfalls and fixes when rolling out book-formatter v
     - If you want to make it non-blocking, change to `--fail-on none`.
     - If you want to fail on warnings too, change to `--fail-on warn`.
 
+- Symptom: `book-qa` fails on Jekyll build / built-site smoke check.
+- Guidance:
+  - The workflow uses `actions/jekyll-build-pages@v1` (github-pages gem) to build the site.
+  - Validate `docs/_config.yml` (YAML syntax, allowed plugins) and fix known pitfalls in this doc ("GitHub Pages build failures (YAML)").
+  - If `docs/_data/navigation.yml` exists, ensure each `path` points to an existing page (or keep it discoverable by directory structure).
+  - If the smoke check reports missing core assets, re-apply the shared assets/core includes from the canonical templates.
+
 ## Redirects and legacy slugs
 - Symptom: Old URLs 404 after restructuring chapters.
 - Fix:
