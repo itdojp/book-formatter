@@ -105,6 +105,75 @@ test('check-layout-risk: wide tables should be reported (and can fail on warn)',
   });
 });
 
+test('check-layout-risk: escaped pipes inside a table cell should not inflate column count', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const md = [
+      '| op | meaning | example |',
+      '| --- | --- | --- |',
+      '| \\|\\|\\|[A]\\|\\|\\| | sync parallel | P \\|\\|\\|[{a,b}]\\|\\|\\| Q |',
+      ''
+    ].join('\n');
+    await fs.writeFile(path.join(tmpRoot, 'table.md'), md, 'utf8');
+
+    const { result, report } = runCheckLayoutRisk(tmpRoot, ['--max-table-cols', '3', '--fail-on', 'warn']);
+
+    assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.equal(report.summary.maxTableCols, 3);
+    assert.equal(report.summary.warnings, 0);
+  });
+});
+
+test('check-layout-risk: long CJK-only text should not be treated as an unbreakable ASCII run', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const md = [
+      '\u3042'.repeat(200),
+      ''
+    ].join('\n');
+    await fs.writeFile(path.join(tmpRoot, 'jp.md'), md, 'utf8');
+
+    const { result, report } = runCheckLayoutRisk(tmpRoot, ['--max-text-line', '80', '--fail-on', 'warn']);
+
+    assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.equal(report.summary.warnings, 0);
+  });
+});
+
+test('check-layout-risk: markdown link destination URL should not count towards unbreakable text runs', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const longUrl = `https://example.com/${'a'.repeat(200)}`;
+    const md = [
+      `[label](${longUrl})`,
+      ''
+    ].join('\n');
+    await fs.writeFile(path.join(tmpRoot, 'link.md'), md, 'utf8');
+
+    const { result, report } = runCheckLayoutRisk(tmpRoot, ['--max-text-line', '80', '--fail-on', 'warn']);
+
+    assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.equal(report.summary.warnings, 0);
+  });
+});
+
+test('check-layout-risk: markdown autolinks should be treated as visible text', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const longUrl = `https://example.com/${'a'.repeat(200)}`;
+    const md = [
+      `<${longUrl}>`,
+      ''
+    ].join('\n');
+    await fs.writeFile(path.join(tmpRoot, 'autolink.md'), md, 'utf8');
+
+    const { result, report } = runCheckLayoutRisk(tmpRoot, ['--max-text-line', '80', '--fail-on', 'warn']);
+
+    assert.equal(result.status, 1, `expected exit code 1, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.ok(report.issues.some((i) => i.kind === 'long_text_line'));
+  });
+});
+
 test('check-layout-risk: large local images should be reported (and can fail on warn)', async () => {
   await withTempDir(async (tmpRoot) => {
     await fs.mkdir(path.join(tmpRoot, 'assets'), { recursive: true });
