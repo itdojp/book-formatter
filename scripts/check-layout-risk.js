@@ -151,8 +151,57 @@ function countTableColumns(rowLine) {
   const s = String(rowLine || '').trim();
   if (!s.includes('|')) return 0;
   const trimmed = s.replace(/^\|/, '').replace(/\|$/, '');
-  const cols = trimmed.split('|');
+  // Treat escaped pipes (\|) as literal content, not column separators.
+  // This keeps column counts stable for notation that contains pipes.
+  const placeholder = '\u0000';
+  const safe = trimmed.replace(/\\\|/g, placeholder);
+  const cols = safe.split('|');
   return cols.length;
+}
+
+function stripNonVisibleMarkdown(rawLine) {
+  let s = String(rawLine || '');
+
+  // Reference-style link definitions like:
+  // [id]: https://example.com/...
+  // This line is not visible content in rendered pages.
+  if (/^\s*\[[^\]]+\]:\s+\S+/.test(s)) return '';
+
+  // Inline images/links show their label/alt text, not the destination URL.
+  // Replace:
+  // - ![alt](url) -> alt
+  // - [text](url) -> text
+  //
+  // Note: This is intentionally best-effort (URLs may contain nested parentheses).
+  s = s.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
+  s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+  // Strip HTML tags that do not directly contribute to visible text length.
+  // (e.g., <img ...> which is handled by the image scan separately)
+  s = s.replace(/<[^>]+>/g, '');
+
+  return s;
+}
+
+function maxAsciiNonWhitespaceRun(s) {
+  const text = String(s || '');
+  let maxLen = 0;
+  let run = 0;
+
+  for (const ch of text) {
+    const code = ch.codePointAt(0);
+    const isAscii = code <= 0x7e;
+    const isWhitespace = /\s/.test(ch);
+
+    if (isAscii && !isWhitespace) {
+      run += 1;
+      if (run > maxLen) maxLen = run;
+    } else {
+      run = 0;
+    }
+  }
+
+  return maxLen;
 }
 
 function clampSnippet(line, maxLen = 120) {
@@ -328,7 +377,9 @@ class LayoutRiskScanner {
         // Text line length scan (outside code fences)
         const textLen = line.length;
         perFile.maxTextLineLen = Math.max(perFile.maxTextLineLen, textLen);
-        if (textLen > this.thresholds.maxTextLineLength) {
+        const visible = stripNonVisibleMarkdown(line);
+        const maxRun = maxAsciiNonWhitespaceRun(visible);
+        if (maxRun > this.thresholds.maxTextLineLength) {
           perFile.longTextLines += 1;
           this.pushIssue({
             severity: 'warning',
@@ -336,8 +387,8 @@ class LayoutRiskScanner {
             file: relativeFile,
             line: lineNo,
             column: 1,
-            message: `Text line length ${textLen} exceeds ${this.thresholds.maxTextLineLength}`,
-            meta: { length: textLen, snippet: clampSnippet(line) }
+            message: `Unbreakable ASCII run length ${maxRun} exceeds ${this.thresholds.maxTextLineLength}`,
+            meta: { length: maxRun, snippet: clampSnippet(visible) }
           });
         }
       } else {
