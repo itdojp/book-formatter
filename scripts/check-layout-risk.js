@@ -176,6 +176,14 @@ function stripNonVisibleMarkdown(rawLine) {
   s = s.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
   s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
+  // Preserve Markdown autolinks (visible text) before stripping HTML tags.
+  // - <https://example.com/...>
+  // - <mailto:user@example.com>
+  // - <user@example.com>
+  s = s.replace(/<(https?:\/\/[^>\s]+)>/gi, '$1');
+  s = s.replace(/<(mailto:[^>\s]+)>/gi, '$1');
+  s = s.replace(/<([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})>/g, '$1');
+
   // Strip HTML tags that do not directly contribute to visible text length.
   // (e.g., <img ...> which is handled by the image scan separately)
   s = s.replace(/<[^>]+>/g, '');
@@ -230,6 +238,7 @@ class LayoutRiskScanner {
       maxTableCols: 0,
       codeBlocks: 0,
       maxTextLineLen: 0,
+      maxTextUnbreakableAsciiRun: 0,
       longTextLines: 0,
       maxCodeLineLen: 0,
       longCodeLines: 0,
@@ -319,6 +328,7 @@ class LayoutRiskScanner {
       maxTableCols: 0,
       codeBlocks: 0,
       maxTextLineLen: 0,
+      maxTextUnbreakableAsciiRun: 0,
       longTextLines: 0,
       maxCodeLineLen: 0,
       longCodeLines: 0,
@@ -379,6 +389,7 @@ class LayoutRiskScanner {
         perFile.maxTextLineLen = Math.max(perFile.maxTextLineLen, textLen);
         const visible = stripNonVisibleMarkdown(line);
         const maxRun = maxAsciiNonWhitespaceRun(visible);
+        perFile.maxTextUnbreakableAsciiRun = Math.max(perFile.maxTextUnbreakableAsciiRun, maxRun);
         if (maxRun > this.thresholds.maxTextLineLength) {
           perFile.longTextLines += 1;
           this.pushIssue({
@@ -521,6 +532,10 @@ class LayoutRiskScanner {
     this.summary.maxTableCols = Math.max(this.summary.maxTableCols, perFile.maxTableCols);
     this.summary.codeBlocks += perFile.codeBlocks;
     this.summary.maxTextLineLen = Math.max(this.summary.maxTextLineLen, perFile.maxTextLineLen);
+    this.summary.maxTextUnbreakableAsciiRun = Math.max(
+      this.summary.maxTextUnbreakableAsciiRun,
+      perFile.maxTextUnbreakableAsciiRun
+    );
     this.summary.longTextLines += perFile.longTextLines;
     this.summary.maxCodeLineLen = Math.max(this.summary.maxCodeLineLen, perFile.maxCodeLineLen);
     this.summary.longCodeLines += perFile.longCodeLines;
@@ -550,7 +565,7 @@ class LayoutRiskScanner {
     console.log(`Issues: ${report.summary.totalIssues} (errors: ${report.summary.errors}, warnings: ${report.summary.warnings})`);
     console.log(`Tables: blocks=${report.summary.tableBlocks}, rows=${report.summary.tableRows}, maxCols=${report.summary.maxTableCols}`);
     console.log(`Code fences: ${report.summary.codeBlocks}, maxCodeLineLen=${report.summary.maxCodeLineLen}, longCodeLines=${report.summary.longCodeLines}`);
-    console.log(`Text: maxLineLen=${report.summary.maxTextLineLen}, longTextLines=${report.summary.longTextLines}`);
+    console.log(`Text: maxLineLen=${report.summary.maxTextLineLen}, maxUnbreakableAsciiRun=${report.summary.maxTextUnbreakableAsciiRun}, longTextLines=${report.summary.longTextLines}`);
     console.log(`Images: total=${report.summary.imagesTotal}, local=${report.summary.imagesLocal}, missing=${report.summary.imagesLocalMissing}, large=${report.summary.imagesLocalOverLarge}`);
     if (report.summary.largestLocalImageBytes > 0) {
       console.log(`Largest local image: ${report.summary.largestLocalImageBytes} bytes`);
@@ -608,7 +623,12 @@ program
     'examples/**',
     '**/examples/**'
   ])
-  .option('--max-text-line <n>', 'Warn when text line length exceeds this value', (v) => Number(v), 160)
+  .option(
+    '--max-text-line <n>',
+    'Warn when unbreakable ASCII run length exceeds this value (best-effort visible text)',
+    (v) => Number(v),
+    160
+  )
   .option('--max-code-line <n>', 'Warn when code line length exceeds this value', (v) => Number(v), 200)
   .option('--max-table-cols <n>', 'Warn when a table has more than this number of columns', (v) => Number(v), 10)
   .option('--large-image-bytes <n>', 'Warn when a local image exceeds this size (bytes)', (v) => Number(v), 1_000_000)

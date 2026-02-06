@@ -157,6 +157,23 @@ test('check-layout-risk: markdown link destination URL should not count towards 
   });
 });
 
+test('check-layout-risk: markdown autolinks should be treated as visible text', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const longUrl = `https://example.com/${'a'.repeat(200)}`;
+    const md = [
+      `<${longUrl}>`,
+      ''
+    ].join('\n');
+    await fs.writeFile(path.join(tmpRoot, 'autolink.md'), md, 'utf8');
+
+    const { result, report } = runCheckLayoutRisk(tmpRoot, ['--max-text-line', '80', '--fail-on', 'warn']);
+
+    assert.equal(result.status, 1, `expected exit code 1, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.ok(report.issues.some((i) => i.kind === 'long_text_line'));
+  });
+});
+
 test('check-layout-risk: large local images should be reported (and can fail on warn)', async () => {
   await withTempDir(async (tmpRoot) => {
     await fs.mkdir(path.join(tmpRoot, 'assets'), { recursive: true });
