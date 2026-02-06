@@ -246,7 +246,7 @@ class LayoutRiskScanner {
   async scanFile(filePath, roots) {
     const relativeFile = path
       .relative(roots.baseDir, filePath)
-      .replace(/\\\\/g, '/');
+      .replace(/\\/g, '/');
 
     let content;
     try {
@@ -367,6 +367,14 @@ class LayoutRiskScanner {
 
     // 2) Image scan (markdown image tokens + HTML <img> in html_inline/html_block)
     const imageSrcs = [];
+    const extractImgSrcFromHtml = (html) => {
+      const raw = String(html || '');
+      // Accept src= in three styles: src="...", src='...', src=unquoted
+      for (const m of raw.matchAll(/<img\b[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+        const src = m[1] || m[2] || m[3];
+        if (src) imageSrcs.push(src);
+      }
+    };
     try {
       const tokens = this.md.parse(content, {});
       for (const token of tokens) {
@@ -377,16 +385,12 @@ class LayoutRiskScanner {
               if (src) imageSrcs.push(src);
             }
             if (child.type === 'html_inline') {
-              for (const m of String(child.content || '').matchAll(/<img\b[^>]*\bsrc\s*=\s*"([^"]+)"/gi)) {
-                imageSrcs.push(m[1]);
-              }
+              extractImgSrcFromHtml(child.content);
             }
           }
         }
         if (token.type === 'html_block') {
-          for (const m of String(token.content || '').matchAll(/<img\b[^>]*\bsrc\s*=\s*"([^"]+)"/gi)) {
-            imageSrcs.push(m[1]);
-          }
+          extractImgSrcFromHtml(token.content);
         }
       }
     } catch (error) {
@@ -429,7 +433,7 @@ class LayoutRiskScanner {
               line: 1,
               column: 1,
               message: `Local image is large (${bytes} bytes > ${this.thresholds.largeImageBytes})`,
-              meta: { src: s, localPath: path.relative(roots.baseDir, localPath).replace(/\\\\/g, '/'), bytes }
+              meta: { src: s, localPath: path.relative(roots.baseDir, localPath).replace(/\\/g, '/'), bytes }
             });
           }
         }
@@ -442,7 +446,7 @@ class LayoutRiskScanner {
           line: 1,
           column: 1,
           message: `Local image not found: ${s}`,
-          meta: { src: s, localPath: path.relative(roots.baseDir, localPath).replace(/\\\\/g, '/') }
+          meta: { src: s, localPath: path.relative(roots.baseDir, localPath).replace(/\\/g, '/') }
         });
       }
     }
@@ -590,7 +594,27 @@ program
 
       process.exit(shouldFail(report, failOn) ? 1 : 0);
     } catch (error) {
-      console.error(chalk.red(`Error: ${error.message}`));
+      const message = error && error.message ? error.message : String(error);
+      console.error(chalk.red(`Error: ${message}`));
+
+      // Best-effort: write an error report so CI can still upload an artifact.
+      if (options.output) {
+        const errorReport = {
+          error: message,
+          stack: error && error.stack ? error.stack : undefined,
+          directory,
+          thresholds,
+          failedAt: new Date().toISOString()
+        };
+
+        try {
+          await fs.writeJson(path.resolve(options.output), errorReport, { spaces: 2 });
+          console.log(chalk.blue(`\nError report saved: ${options.output}`));
+        } catch (writeErr) {
+          const writeMessage = writeErr && writeErr.message ? writeErr.message : String(writeErr);
+          console.error(chalk.red(`Failed to write error report: ${writeMessage}`));
+        }
+      }
       process.exit(1);
     }
   });
