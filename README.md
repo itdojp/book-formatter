@@ -201,6 +201,9 @@ npm run check-links -- <book-dir>
 # Unicode品質（不可視文字/互換漢字/異体字セレクタ等）を検出
 npm run check-unicode -- <book-dir> --output unicode-report.json
 
+# レイアウトリスク（長すぎる行/ワイドな表/大きい画像）をスキャン
+npm run check-layout-risk -- <book-dir> --output layout-risk-report.json
+
 # 文章校正（textlint + PRH辞書）
 npm run check-textlint -- <book-dir> --output textlint-report.json
 
