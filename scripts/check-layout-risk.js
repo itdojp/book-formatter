@@ -343,7 +343,7 @@ class LayoutRiskScanner {
 
     // 1) Line-based scan (code fences, text line lengths, tables)
     const lines = content.split(/\r?\n/);
-    const fenceState = { inFence: false, markerChar: null, markerLen: 0 };
+    const fenceState = { inFence: false, markerChar: null, markerLen: 0, openLine: null };
 
     for (let i = 0; i < lines.length; i++) {
       const lineNo = i + 1;
@@ -355,6 +355,7 @@ class LayoutRiskScanner {
           fenceState.inFence = true;
           fenceState.markerChar = fence.markerChar;
           fenceState.markerLen = fence.markerLen;
+          fenceState.openLine = lineNo;
           perFile.codeBlocks += 1;
           continue;
         }
@@ -407,6 +408,7 @@ class LayoutRiskScanner {
           fenceState.inFence = false;
           fenceState.markerChar = null;
           fenceState.markerLen = 0;
+          fenceState.openLine = null;
           continue;
         }
 
@@ -425,6 +427,19 @@ class LayoutRiskScanner {
           });
         }
       }
+    }
+
+    if (fenceState.inFence) {
+      const marker = (fenceState.markerChar || '`').repeat(fenceState.markerLen || 3);
+      const openLine = fenceState.openLine || 1;
+      this.pushIssue({
+        severity: 'error',
+        kind: 'unclosed_code_fence',
+        file: relativeFile,
+        line: openLine,
+        column: 1,
+        message: `Unclosed code fence (opened with ${marker} at line ${openLine})`
+      });
     }
 
     // 2) Image scan (markdown image tokens + HTML <img> in html_inline/html_block)
