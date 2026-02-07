@@ -13,6 +13,7 @@ import MarkdownIt from 'markdown-it';
  * - Detects potential layout issues that are hard to catch by build/link checks:
  *   - Very long text lines / code lines (horizontal overflow risk)
  *   - Wide tables (many columns)
+ *   - Unclosed fenced code blocks (can break subsequent layout)
  *   - Large local images (slow load / layout shift risk)
  *   - Missing local images referenced via HTML <img> (markdown image links are covered by check-links)
  *
@@ -343,7 +344,7 @@ class LayoutRiskScanner {
 
     // 1) Line-based scan (code fences, text line lengths, tables)
     const lines = content.split(/\r?\n/);
-    const fenceState = { inFence: false, markerChar: null, markerLen: 0, openLine: null };
+    const fenceState = { inFence: false, markerChar: null, markerLen: 0 };
 
     for (let i = 0; i < lines.length; i++) {
       const lineNo = i + 1;
@@ -355,7 +356,6 @@ class LayoutRiskScanner {
           fenceState.inFence = true;
           fenceState.markerChar = fence.markerChar;
           fenceState.markerLen = fence.markerLen;
-          fenceState.openLine = lineNo;
           perFile.codeBlocks += 1;
           continue;
         }
@@ -408,7 +408,6 @@ class LayoutRiskScanner {
           fenceState.inFence = false;
           fenceState.markerChar = null;
           fenceState.markerLen = 0;
-          fenceState.openLine = null;
           continue;
         }
 
@@ -429,19 +428,6 @@ class LayoutRiskScanner {
       }
     }
 
-    if (fenceState.inFence) {
-      const marker = (fenceState.markerChar || '`').repeat(fenceState.markerLen || 3);
-      const openLine = fenceState.openLine || 1;
-      this.pushIssue({
-        severity: 'error',
-        kind: 'unclosed_code_fence',
-        file: relativeFile,
-        line: openLine,
-        column: 1,
-        message: `Unclosed code fence (opened with ${marker} at line ${openLine})`
-      });
-    }
-
     // 2) Image scan (markdown image tokens + HTML <img> in html_inline/html_block)
     const imageSrcs = [];
     const extractImgSrcFromHtml = (html) => {
@@ -454,6 +440,37 @@ class LayoutRiskScanner {
     };
     try {
       const tokens = this.md.parse(content, {});
+
+      // Detect unclosed fenced code blocks using markdown-it token ranges.
+      // This avoids false positives on indented code blocks that may contain literal fence markers.
+      for (const token of tokens) {
+        if (token.type !== 'fence' || !Array.isArray(token.map) || token.map.length < 2) continue;
+
+        const openLine = token.map[0] + 1; // 1-based
+        const closeLineIndex = token.map[1] - 1; // 0-based line index
+        if (closeLineIndex < 0 || closeLineIndex >= lines.length) continue;
+
+        const marker = token.markup || '```';
+        const markerChar = marker[0];
+        const markerLen = marker.length;
+
+        const closeLine = String(lines[closeLineIndex] || '');
+        const m = closeLine.match(/^\s*(`{3,}|~{3,})\s*$/);
+        const isClosed =
+          Boolean(m) && m[1][0] === markerChar && m[1].length >= markerLen;
+
+        if (!isClosed) {
+          this.pushIssue({
+            severity: 'error',
+            kind: 'unclosed_code_fence',
+            file: relativeFile,
+            line: openLine,
+            column: 1,
+            message: `Unclosed code fence (opened with ${marker} at line ${openLine})`
+          });
+        }
+      }
+
       for (const token of tokens) {
         if (token.type === 'inline' && Array.isArray(token.children)) {
           for (const child of token.children) {
@@ -624,7 +641,7 @@ const program = new Command();
 
 program
   .name('check-layout-risk')
-  .description('Scan markdown files for layout risk signals (long lines, wide tables, large images)')
+  .description('Scan markdown files for layout risk signals (long lines, wide tables, unclosed fences, large images)')
   .version('1.0.0')
   .argument('[directory]', 'Directory to check', '.')
   .option('-p, --pattern <pattern>', 'Glob pattern for files', '**/*.md')
