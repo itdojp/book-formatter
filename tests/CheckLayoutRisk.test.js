@@ -87,6 +87,44 @@ test('check-layout-risk: long code lines should be reported as warnings (and can
   });
 });
 
+test('check-layout-risk: unclosed code fences should be an error (fail-on error)', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const md = [
+      '# Title',
+      '',
+      '```txt',
+      'x'.repeat(10),
+      ''
+    ].join('\n');
+    await fs.writeFile(path.join(tmpRoot, 'unclosed.md'), md, 'utf8');
+
+    const { result, report } = runCheckLayoutRisk(tmpRoot, ['--fail-on', 'error']);
+
+    assert.equal(result.status, 1, `expected exit code 1, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.ok(report.issues.some((i) => i.kind === 'unclosed_code_fence'));
+    assert.ok(report.summary.errors >= 1);
+  });
+});
+
+test('check-layout-risk: indented code blocks containing ``` should not be treated as fences (no unclosed_code_fence)', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const md = [
+      '    ```txt',
+      '    x'.repeat(10),
+      ''
+    ].join('\n');
+    await fs.writeFile(path.join(tmpRoot, 'indented.md'), md, 'utf8');
+
+    const { result, report } = runCheckLayoutRisk(tmpRoot, ['--fail-on', 'error']);
+
+    assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.equal(report.summary.errors, 0);
+    assert.ok(!report.issues.some((i) => i.kind === 'unclosed_code_fence'));
+  });
+});
+
 test('check-layout-risk: wide tables should be reported (and can fail on warn)', async () => {
   await withTempDir(async (tmpRoot) => {
     const md = [
