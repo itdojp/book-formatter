@@ -1,5 +1,5 @@
 name: Book Sync
-description: Synchronize all books with the latest book-formatter changes
+# Synchronize all books with the latest book-formatter changes
 
 on:
   push:
