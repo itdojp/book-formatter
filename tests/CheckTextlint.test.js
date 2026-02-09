@@ -69,6 +69,28 @@ test('check-textlint: should flag EOL environment examples (Ubuntu 20.04, Amazon
 
     assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
     assert.ok(report, 'report should be generated');
-    assert.ok(report.summary.errors >= 2, `expected >=2 errors, got ${report.summary.errors}`);
+    assert.equal(report.summary.errors, 2, `expected exactly 2 errors, got ${report.summary.errors}`);
+
+    const messages = (report.issues || []).map((i) => String(i.message || ''));
+    assert.ok(
+      messages.some((m) => m.includes('ubuntu:20.04')),
+      'expected at least one message to mention "ubuntu:20.04"'
+    );
+    assert.ok(
+      messages.some((m) => m.includes('Amazon Linux 2')),
+      'expected at least one message to mention "Amazon Linux 2"'
+    );
+  });
+});
+
+test('check-textlint: should not flag supported environment examples (Amazon Linux 2023)', async () => {
+  await withTempDir(async (tmpRoot) => {
+    await fs.writeFile(path.join(tmpRoot, 'doc.md'), 'FROM amazonlinux:2023\nAmazon Linux 2023\n', 'utf8');
+
+    const { result, report } = runCheckTextlint(tmpRoot, { failOn: 'none' });
+
+    assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.equal(report.summary.errors, 0, `expected 0 errors, got ${report.summary.errors}`);
   });
 });

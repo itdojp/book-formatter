@@ -14,7 +14,7 @@ rules:
     pattern: "Ubuntu 20.04"
   - expected: "ubuntu:22.04 または ubuntu:24.04"
     pattern: "ubuntu:20.04"
-  - expected: "Amazon Linux 2023"
-    pattern: "Amazon Linux 2"
   - expected: "amazonlinux:2023"
     pattern: /amazonlinux:2(?![0-9])/
+  - expected: "Amazon Linux 2023"
+    pattern: /Amazon Linux 2(?![0-9])/
