@@ -14,12 +14,10 @@ on:
         description: 'Target books to sync (comma-separated, or "all")'
         required: false
         default: 'all'
-        type: string
       dry_run:
         description: 'Perform dry run without making changes'
         required: false
-        default: false
-        type: boolean
+        default: 'false'
 
 jobs:
   sync-books:
