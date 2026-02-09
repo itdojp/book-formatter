@@ -61,3 +61,14 @@ test('check-textlint: should fail when --fail-on error and issues exist', async 
   });
 });
 
+test('check-textlint: should flag EOL environment examples (Ubuntu 20.04, Amazon Linux 2)', async () => {
+  await withTempDir(async (tmpRoot) => {
+    await fs.writeFile(path.join(tmpRoot, 'doc.md'), 'FROM ubuntu:20.04\nAmazon Linux 2\n', 'utf8');
+
+    const { result, report } = runCheckTextlint(tmpRoot, { failOn: 'none' });
+
+    assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.ok(report.summary.errors >= 2, `expected >=2 errors, got ${report.summary.errors}`);
+  });
+});
