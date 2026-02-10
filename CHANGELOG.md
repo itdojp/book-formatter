@@ -80,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 🤖 CI/CD integration
 
 ### Technical Details
-- Node.js 18+ required
+- Node.js 20+ required
 - ESM modules
 - Async/await throughout
 - Atomic file operations

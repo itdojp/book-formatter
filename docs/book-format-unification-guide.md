@@ -20,7 +20,7 @@
 
 ## 前提条件
 
-- Node.js 18.0.0以上
+- Node.js 20.0.0以上
 - Git
 - GitHub CLI（`gh`コマンド）
 - Jekyll基本知識
@@ -743,4 +743,3 @@ repository:
 ```liquid
 <script src="{{ '/assets/js/safe-main.js' | relative_url }}"></script>
 ```
-
