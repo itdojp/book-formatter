@@ -341,7 +341,7 @@ DEBUG=book-formatter:* npm start create-book
 
 ## システム要件
 
-- Node.js 18.0.0以上
+- Node.js 20.0.0以上
 - npm 8.0.0以上
 
 ## トラブルシューティング

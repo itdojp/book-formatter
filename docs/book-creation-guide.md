@@ -6,7 +6,7 @@
 
 ## 前提条件
 
-- Node.js 18.0.0以上
+- Node.js 20.0.0以上
 - npm 8.0.0以上
 - Git
 - GitHub アカウント（Pro/Team/Enterprise プラン推奨）
