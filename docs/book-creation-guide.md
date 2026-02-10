@@ -156,7 +156,7 @@ layout: book
 
 **設定ファイル検証**:
 ```bash
-npm start validate-config
+npm start -- validate-config
 ```
 
 **リンクチェック**:
