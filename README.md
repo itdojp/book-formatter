@@ -204,6 +204,9 @@ npm run check-unicode -- <book-dir> --output unicode-report.json
 # レイアウトリスク（長すぎる行/ワイドな表/大きい画像）をスキャン
 npm run check-layout-risk -- <book-dir> --output layout-risk-report.json
 
+# Markdown構造（Front Matter/見出しレベル/コードフェンス言語）を検証
+npm run check-markdown-structure -- <book-dir> --output markdown-structure-report.json
+
 # 文章校正（textlint + PRH辞書）
 npm run check-textlint -- <book-dir> --output textlint-report.json
 

@@ -184,6 +184,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
       
       - name: Install markdownlint
         run: npm install -g markdownlint-cli
@@ -192,6 +195,18 @@ jobs:
         run: |
           echo "📝 Checking markdown files..."
           markdownlint README.md || echo "⚠️  Some markdown issues found"
+
+      - name: Run markdown structure check
+        run: |
+          echo "🧱 Checking markdown structure..."
+          npm run check-markdown-structure -- . --fail-on error --output markdown-structure-report.json
+
+      - name: Upload markdown structure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: markdown-structure-report
+          path: markdown-structure-report.json
 
   summary:
     name: Quality Summary

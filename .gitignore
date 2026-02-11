@@ -37,6 +37,10 @@ logs/
 book-config.json
 *.backup-*
 link-report.json
+unicode-report.json
+layout-risk-report.json
+textlint-report.json
+markdown-structure-report.json
 dashboard-report.md
 
 # Build artifacts
