@@ -17,10 +17,11 @@ function normalizeFailOn(value) {
 function shouldFail(report, failOn) {
   const errors = report.summary.errors;
   const warnings = report.summary.warnings;
+  const fileReadErrors = report.summary.fileReadErrors;
 
   if (failOn === 'none') return false;
-  if (failOn === 'warn') return errors + warnings > 0;
-  if (failOn === 'error') return errors > 0;
+  if (failOn === 'warn') return errors + warnings + fileReadErrors > 0;
+  if (failOn === 'error') return errors + fileReadErrors > 0;
   return false;
 }
 
@@ -151,6 +152,14 @@ class MarkdownStructureRunner {
       content = await fs.readFile(filePath, 'utf8');
     } catch (error) {
       this.fileErrors.push({ file: relativeFile, message: error.message });
+      this.addIssue({
+        file: relativeFile,
+        line: 1,
+        column: 1,
+        kind: 'file_read_error',
+        severity: 'error',
+        message: `Failed to read file: ${error.message}`
+      });
       console.warn(chalk.yellow(`Warning: Failed to read "${relativeFile}": ${error.message}`));
       return;
     }
@@ -308,6 +317,10 @@ program
   .option('-i, --ignore <patterns...>', 'Patterns to ignore', [
     'node_modules/**',
     '**/node_modules/**',
+    'book-formatter/**',
+    '**/book-formatter/**',
+    'examples/**',
+    '**/examples/**',
     '.git/**',
     '**/.git/**',
     '_site/**',
@@ -343,6 +356,28 @@ program
 
       process.exit(shouldFail(report, failOn) ? 1 : 0);
     } catch (error) {
+      if (options.output) {
+        const fatalReport = {
+          summary: {
+            scannedFiles: 0,
+            filesWithIssues: 0,
+            totalIssues: 0,
+            errors: 1,
+            warnings: 0,
+            fileReadErrors: 0
+          },
+          issues: [],
+          fileDetails: {},
+          fileReadErrors: [],
+          fatalError: String(error?.message || error)
+        };
+        try {
+          await fs.writeJson(path.resolve(options.output), fatalReport, { spaces: 2 });
+          console.log(chalk.gray(`Report saved to ${options.output}`));
+        } catch {
+          // Ignore secondary output write errors and keep original failure as primary signal.
+        }
+      }
       console.error(chalk.red(`Error: ${error?.message || error}`));
       process.exit(1);
     }

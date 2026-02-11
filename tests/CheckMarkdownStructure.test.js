@@ -17,11 +17,11 @@ async function withTempDir(fn) {
   }
 }
 
-function runCheckMarkdownStructure(targetDir, { failOn = 'error' } = {}) {
+function runCheckMarkdownStructure(targetDir, { failOn = 'error', args = [] } = {}) {
   const reportPath = path.join(targetDir, 'markdown-structure-report.json');
   const result = spawnSync(
     process.execPath,
-    [SCRIPT_PATH, targetDir, '--fail-on', failOn, '--output', reportPath, '--max-issues', '0'],
+    [SCRIPT_PATH, targetDir, '--fail-on', failOn, '--output', reportPath, '--max-issues', '0', ...args],
     { encoding: 'utf8' }
   );
 
@@ -140,5 +140,19 @@ test('check-markdown-structure: valid markdown should pass', async () => {
     assert.ok(report, 'report should be generated');
     assert.equal(report.summary.errors, 0);
     assert.equal(report.summary.warnings, 0);
+  });
+});
+
+test('check-markdown-structure: file read errors should fail on error', async () => {
+  await withTempDir(async (tmpRoot) => {
+    await fs.mkdir(path.join(tmpRoot, 'unreadable.md'));
+    await fs.writeFile(path.join(tmpRoot, 'ok.md'), '# heading\n', 'utf8');
+
+    const { result, report } = runCheckMarkdownStructure(tmpRoot, { failOn: 'error' });
+
+    assert.equal(result.status, 1, `expected exit code 1, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.ok(report.summary.fileReadErrors >= 1);
+    assert.ok(report.issues.some((i) => i.kind === 'file_read_error'));
   });
 });
