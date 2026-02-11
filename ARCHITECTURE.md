@@ -16,6 +16,7 @@ book-formatter/
 │   └── FileSystemUtils.js   # ファイル操作
 ├── scripts/                  # 管理ツール
 │   ├── check-links.js       # リンクチェッカー
+│   ├── check-markdown-structure.js # Markdown構造チェッカー
 │   ├── dashboard.js         # 監視ダッシュボード
 │   └── sync-components.js   # コンポーネント同期
 ├── shared/                   # 共通コンポーネント
@@ -85,6 +86,14 @@ npm run check-links -- --output report.json
 - 内部リンクの存在確認
 - アンカーの検証
 - 外部リンクのオプション検証
+
+### Markdown構造チェッカー
+
+Front Matter、見出しレベル、コードフェンス言語の構造リスクを検証。
+
+```bash
+npm run check-markdown-structure -- --output markdown-structure-report.json
+```
 
 ### 監視ダッシュボード
 
