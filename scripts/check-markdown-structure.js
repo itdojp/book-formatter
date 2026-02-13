@@ -325,6 +325,8 @@ program
     '**/.git/**',
     '_site/**',
     '**/_site/**',
+    'build/**',
+    '**/build/**',
     'vendor/**',
     '**/vendor/**',
     'templates/**',

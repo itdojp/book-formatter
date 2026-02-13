@@ -156,3 +156,23 @@ test('check-markdown-structure: file read errors should fail on error', async ()
     assert.ok(report.issues.some((i) => i.kind === 'file_read_error'));
   });
 });
+
+test('check-markdown-structure: generated build directory should be ignored by default', async () => {
+  await withTempDir(async (tmpRoot) => {
+    await fs.mkdir(path.join(tmpRoot, 'build', 'ja'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpRoot, 'build', 'ja', 'book.md'),
+      ['# Chapter 1', '', '# Chapter 2', ''].join('\n'),
+      'utf8'
+    );
+    await fs.writeFile(path.join(tmpRoot, 'index.md'), '# Root\n', 'utf8');
+
+    const { result, report } = runCheckMarkdownStructure(tmpRoot, { failOn: 'warn' });
+
+    assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.equal(report.summary.warnings, 0);
+    assert.equal(report.summary.errors, 0);
+    assert.equal(report.summary.scannedFiles, 1);
+  });
+});
