@@ -32,6 +32,8 @@ test('svg-font-normalize: --check fails when changes are needed, --apply fixes t
       '      .sh { font: 600 16px Inter, sans-serif; }',
       '      .sh2 { font: 20px sans-serif; font-weight: 600; }',
       '      .sh3 { font: 400 12px/1.5 sans-serif; }',
+      '      .noSemiFam { font-family: system-ui, sans-serif }',
+      '      .noSemiFont { font:600 10px sans-serif }',
       "      .math { font-family: 'STIX Two Math', serif; }",
       '    </style>',
       '  </defs>',
@@ -70,6 +72,8 @@ test('svg-font-normalize: --check fails when changes are needed, --apply fixes t
     assert.match(updated, /font:\s*600\s+16px\s+-apple-system,\s*BlinkMacSystemFont,/);
     assert.match(updated, /font:\s*20px\s+-apple-system,\s*BlinkMacSystemFont,/);
     assert.match(updated, /font:\s*400\s+12px\/1\.5\s+-apple-system,\s*BlinkMacSystemFont,/);
+    assert.match(updated, /noSemiFam\s*\{\s*font-family:\s*-apple-system,\s*BlinkMacSystemFont,/);
+    assert.match(updated, /noSemiFont\s*\{\s*font:\s*600\s+10px\s+-apple-system,\s*BlinkMacSystemFont,/);
 
     // Math stacks must be preserved.
     assert.match(updated, /font-family:\s*'STIX Two Math',\s*serif/);

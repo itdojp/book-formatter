@@ -115,8 +115,8 @@ function rewriteSvgFonts(svgText) {
   let changed = false;
   let changes = 0;
 
-  const cssRe = /(font-family\s*:\s*)([^;}{]+?)(\s*;)/gi;
-  const fontRe = /(font\s*:\s*)([^;}{]+?)(\s*;)/gi;
+  const cssRe = /(font-family\s*:\s*)([^;}{]+?)(\s*)([;}])/gi;
+  const fontRe = /(font\s*:\s*)([^;}{]+?)(\s*)([;}])/gi;
   // Robust attribute matchers:
   // - Handles valid values.
   // - Also handles a common invalid pattern where a double-quoted attribute value
@@ -127,20 +127,20 @@ function rewriteSvgFonts(svgText) {
   const attrSingleRe =
     /(font-family\s*=\s*)'([\s\S]*?)'(?=\s+[a-zA-Z_:][-a-zA-Z0-9_:]*=|\s*\/?>)/gi;
 
-  const rewrittenCss = svgText.replace(cssRe, (full, prefix, value, suffix) => {
+  const rewrittenCss = svgText.replace(cssRe, (full, prefix, value, ws, terminator) => {
     const replacement = maybeReplaceFontFamily(value);
     if (!replacement) return full;
     changed = true;
     changes += 1;
-    return `${prefix}${replacement}${suffix}`;
+    return `${prefix}${replacement}${ws}${terminator}`;
   });
 
-  const rewrittenFont = rewrittenCss.replace(fontRe, (full, prefix, value, suffix) => {
+  const rewrittenFont = rewrittenCss.replace(fontRe, (full, prefix, value, ws, terminator) => {
     const replacement = maybeReplaceFontShorthand(value);
     if (!replacement) return full;
     changed = true;
     changes += 1;
-    return `${prefix}${replacement}${suffix}`;
+    return `${prefix}${replacement}${ws}${terminator}`;
   });
 
   let rewritten = rewrittenFont;
