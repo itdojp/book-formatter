@@ -8,9 +8,13 @@ import { Command } from 'commander';
 
 // Keep the font stacks aligned with book-formatter's CSS variables.
 // shared/assets/css/main.css defines the canonical values.
+//
+// NOTE: This script rewrites SVG files, including inline `style="..."` attributes.
+// To avoid breaking XML/HTML attribute quoting, the stacks below intentionally use
+// single quotes for font family names that include spaces (instead of double quotes).
 const SANS_STACK =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
-const MONO_STACK = '"Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro", monospace';
+  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'";
+const MONO_STACK = "'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace";
 
 function normalizeFontValue(value) {
   return String(value || '')
@@ -21,8 +25,12 @@ function normalizeFontValue(value) {
 
 const SANS_REPLACE = new Set(
   [
+    'sans-serif',
     'Inter, Helvetica, sans-serif',
     'Inter, Helvetica, Arial, sans-serif',
+    'Inter, sans-serif',
+    "'Inter', sans-serif",
+    '"Inter", sans-serif',
     "Inter, 'Helvetica Neue', Arial, sans-serif",
     "'Inter', 'Helvetica Neue', Arial, sans-serif",
     "'Inter', 'Helvetica Neue', Helvetica, sans-serif",
@@ -32,6 +40,10 @@ const SANS_REPLACE = new Set(
     "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     'system-ui, sans-serif',
     'Arial, sans-serif',
+    "'Noto Sans JP', sans-serif",
+    "'Hiragino Sans', 'Yu Gothic', sans-serif",
+    "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif",
+    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"',
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
   ].map(normalizeFontValue)
 );
@@ -41,6 +53,8 @@ const MONO_REPLACE = new Set(
     'monospace',
     'Courier, monospace',
     "'Courier New', monospace",
+    "'Monaco', 'Menlo', monospace",
+    '"Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro", monospace',
     "'SF Mono', monospace",
     "'SF Mono', 'Monaco', 'Consolas', monospace"
   ].map(normalizeFontValue)
@@ -63,27 +77,87 @@ function maybeReplaceFontFamily(originalValue) {
   return null;
 }
 
+function maybeReplaceFontShorthand(originalValue) {
+  const rawValue = String(originalValue || '');
+  if (!rawValue.trim()) return null;
+
+  // Preserve a trailing !important (rare in SVGs but valid CSS).
+  const importantMatch = rawValue.match(/\s*!important\s*$/i);
+  const importantSuffix = importantMatch ? importantMatch[0] : '';
+  const baseValue = importantMatch ? rawValue.slice(0, importantMatch.index) : rawValue;
+
+  // `font` shorthand grammar ends with: <font-size>[/<line-height>]? <font-family>
+  // We locate the first <font-size> token (with a unit) and treat everything after
+  // the optional line-height as the font-family part.
+  const sizeRe = /\b\d+(?:\.\d+)?(?:px|pt|em|rem|%)\b/i;
+  const sizeMatch = sizeRe.exec(baseValue);
+  if (!sizeMatch) return null;
+
+  let familyStart = sizeMatch.index + sizeMatch[0].length;
+
+  // Optional: /<line-height>
+  const afterSize = baseValue.slice(familyStart);
+  const lineHeightRe = /^\s*\/\s*(?:[0-9.]+(?:px|pt|em|rem|%)?|normal)\b/i;
+  const lhMatch = lineHeightRe.exec(afterSize);
+  if (lhMatch) familyStart += lhMatch[0].length;
+
+  const familyRaw = baseValue.slice(familyStart).trim();
+  if (!familyRaw) return null;
+
+  const replacementFamily = maybeReplaceFontFamily(familyRaw);
+  if (!replacementFamily) return null;
+
+  const prefix = baseValue.slice(0, familyStart).trimEnd();
+  return `${prefix} ${replacementFamily}${importantSuffix}`;
+}
+
 function rewriteSvgFonts(svgText) {
   let changed = false;
   let changes = 0;
 
-  const cssRe = /(font-family\s*:\s*)([^;}{\n]+)(\s*;)/gi;
-  const attrRe = /(font-family\s*=\s*)(["'])([\s\S]*?)\2/gi;
+  const cssRe = /(font-family\s*:\s*)([^;}{]+?)(\s*)([;}])/gi;
+  const fontRe = /(font\s*:\s*)([^;}{]+?)(\s*)([;}])/gi;
+  // Robust attribute matchers:
+  // - Handles valid values.
+  // - Also handles a common invalid pattern where a double-quoted attribute value
+  //   contains unescaped double quotes (we locate the closing quote by looking
+  //   ahead to the next attribute or tag close).
+  const attrDoubleRe =
+    /(font-family\s*=\s*)"([\s\S]*?)"(?=\s+[a-zA-Z_:][-a-zA-Z0-9_:]*=|\s*\/?>)/gi;
+  const attrSingleRe =
+    /(font-family\s*=\s*)'([\s\S]*?)'(?=\s+[a-zA-Z_:][-a-zA-Z0-9_:]*=|\s*\/?>)/gi;
 
-  const rewrittenCss = svgText.replace(cssRe, (full, prefix, value, suffix) => {
+  const rewrittenCss = svgText.replace(cssRe, (full, prefix, value, ws, terminator) => {
     const replacement = maybeReplaceFontFamily(value);
     if (!replacement) return full;
     changed = true;
     changes += 1;
-    return `${prefix}${replacement}${suffix}`;
+    return `${prefix}${replacement}${ws}${terminator}`;
   });
 
-  const rewritten = rewrittenCss.replace(attrRe, (full, prefix, quote, value) => {
+  const rewrittenFont = rewrittenCss.replace(fontRe, (full, prefix, value, ws, terminator) => {
+    const replacement = maybeReplaceFontShorthand(value);
+    if (!replacement) return full;
+    changed = true;
+    changes += 1;
+    return `${prefix}${replacement}${ws}${terminator}`;
+  });
+
+  let rewritten = rewrittenFont;
+  rewritten = rewritten.replace(attrDoubleRe, (full, prefix, value) => {
     const replacement = maybeReplaceFontFamily(value);
     if (!replacement) return full;
     changed = true;
     changes += 1;
-    return `${prefix}${quote}${replacement}${quote}`;
+    // Always emit double-quoted attributes so the replacement can safely include apostrophes.
+    return `${prefix}"${replacement}"`;
+  });
+  rewritten = rewritten.replace(attrSingleRe, (full, prefix, value) => {
+    const replacement = maybeReplaceFontFamily(value);
+    if (!replacement) return full;
+    changed = true;
+    changes += 1;
+    return `${prefix}"${replacement}"`;
   });
 
   return { changed, changes, text: rewritten };
