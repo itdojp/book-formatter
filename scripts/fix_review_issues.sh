@@ -110,9 +110,48 @@ for pr in "${PRS[@]}"; do
 
   pr_url="https://github.com/${owner}/${repo}/pull/${num}"
   title="$(gh_retry pr view "$pr_url" --json title --jq .title 2>/dev/null || true)"
-  review_count="$(python3 - <<'PY' "$reviews_json"\nimport json,sys\np=sys.argv[1]\ntry:\n  data=json.load(open(p,'r',encoding='utf-8'))\n  print(len(data) if isinstance(data,list) else 0)\nexcept Exception:\n  print(0)\nPY)"
-  inline_count="$(python3 - <<'PY' "$review_comments_json"\nimport json,sys\np=sys.argv[1]\ntry:\n  data=json.load(open(p,'r',encoding='utf-8'))\n  print(len(data) if isinstance(data,list) else 0)\nexcept Exception:\n  print(0)\nPY)"
-  issue_count="$(python3 - <<'PY' "$issue_comments_json"\nimport json,sys\np=sys.argv[1]\ntry:\n  data=json.load(open(p,'r',encoding='utf-8'))\n  print(len(data) if isinstance(data,list) else 0)\nexcept Exception:\n  print(0)\nPY)"
+  review_count="$(
+    python3 - "$reviews_json" <<'PY'
+import json
+import sys
+
+p = sys.argv[1]
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    print(len(data) if isinstance(data, list) else 0)
+except Exception:
+    print(0)
+PY
+  )"
+  inline_count="$(
+    python3 - "$review_comments_json" <<'PY'
+import json
+import sys
+
+p = sys.argv[1]
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    print(len(data) if isinstance(data, list) else 0)
+except Exception:
+    print(0)
+PY
+  )"
+  issue_count="$(
+    python3 - "$issue_comments_json" <<'PY'
+import json
+import sys
+
+p = sys.argv[1]
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    print(len(data) if isinstance(data, list) else 0)
+except Exception:
+    print(0)
+PY
+  )"
 
   {
     printf "## %s\n\n" "$pr_url"

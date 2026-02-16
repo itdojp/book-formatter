@@ -73,7 +73,7 @@ if [ "${#REPOS[@]}" -eq 0 ]; then
   die "No repositories specified"
 fi
 
-require_cmd curl git awk sed
+require_cmd curl git awk sed tr
 
 RUN_DIR="$(run_dir check_pages)"
 REPORT="$RUN_DIR/report.tsv"
@@ -92,6 +92,13 @@ trim_quotes() {
   local s=${1:-}
   s="${s#\"}"; s="${s%\"}"
   s="${s#\'}"; s="${s%\'}"
+  printf '%s' "$s"
+}
+
+trim_ws() {
+  local s=${1:-}
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
   printf '%s' "$s"
 }
 
@@ -138,7 +145,9 @@ normalize_path() {
     p="/$p"
   fi
   # Keep file-like paths; otherwise ensure trailing slash.
-  case "${p,,}" in
+  local lower
+  lower="$(printf '%s' "$p" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
     *.md|*.html|*.htm|*.pdf|*.txt) printf '%s\n' "$p" ;;
     *) [[ "$p" == */ ]] && printf '%s\n' "$p" || printf '%s/\n' "$p" ;;
   esac
@@ -172,11 +181,13 @@ for repo_dir in "${REPOS[@]}"; do
   pages_url="https://${owner}.github.io"
   baseurl="/${repo_name}"
   if [ -f "$cfg" ]; then
-    v="$(read_config_value "$cfg" url | tr -d '\r' | xargs || true)"
+    v="$(read_config_value "$cfg" url | tr -d '\r' || true)"
+    v="$(trim_ws "$v")"
     if [ -n "$v" ]; then
       pages_url="$(trim_quotes "$v")"
     fi
-    v="$(read_config_value "$cfg" baseurl | tr -d '\r' | xargs || true)"
+    v="$(read_config_value "$cfg" baseurl | tr -d '\r' || true)"
+    v="$(trim_ws "$v")"
     if [ -n "$v" ]; then
       baseurl="$(trim_quotes "$v")"
     fi
@@ -208,7 +219,12 @@ for repo_dir in "${REPOS[@]}"; do
 
   # Always include index.
   paths=("/" "${paths[@]}")
-  mapfile -t paths < <(printf '%s\n' "${paths[@]}" | dedup_keep_order)
+  paths_dedup=()
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    paths_dedup+=("$p")
+  done < <(printf '%s\n' "${paths[@]}" | dedup_keep_order)
+  paths=("${paths_dedup[@]}")
 
   # Decide which paths to probe.
   probe_paths=()
@@ -220,35 +236,40 @@ for repo_dir in "${REPOS[@]}"; do
     probe_paths+=("${paths[$(( ${#paths[@]} - 1 ))]}")
   fi
 
-  # Probe top + assets.
-  urls=()
-  urls+=("$pages_base")
+  # Probe top + assets + navigation pages while keeping the source path for reporting.
+  url_path_pairs=()
+  url_path_pairs+=("${pages_base}"$'\t'"/")
   for a in "${COMMON_ASSETS[@]}"; do
-    urls+=("${pages_base}${a}")
+    url_path_pairs+=("${pages_base}${a}"$'\t'"$a")
   done
 
-  # Probe navigation pages.
   for p in "${probe_paths[@]}"; do
     # Avoid duplicate of root when joining.
     if [ "$p" = "/" ]; then
-      urls+=("$pages_base")
+      url_path_pairs+=("${pages_base}"$'\t'"/")
       continue
     fi
-    urls+=("${pages_url}${baseurl}${p}")
+    url_path_pairs+=("${pages_url}${baseurl}${p}"$'\t'"$p")
   done
 
-  # De-dup URLs while keeping order.
-  mapfile -t urls < <(printf '%s\n' "${urls[@]}" | dedup_keep_order)
+  # De-dup while keeping order.
+  pairs_dedup=()
+  while IFS= read -r pair; do
+    [ -n "$pair" ] || continue
+    pairs_dedup+=("$pair")
+  done < <(printf '%s\n' "${url_path_pairs[@]}" | dedup_keep_order)
+  url_path_pairs=("${pairs_dedup[@]}")
 
-  for u in "${urls[@]}"; do
+  for pair in "${url_path_pairs[@]}"; do
+    u="${pair%%$'\t'*}"
+    p="${pair#*$'\t'}"
     if [ "$DRY_RUN" -eq 1 ]; then
-      printf "%s\t%s\t%s\t%s\t%s\n" "$repo_dir" "$pages_base" "-" "$u" "DRY_RUN" >> "$REPORT"
+      printf "%s\t%s\t%s\t%s\t%s\n" "$repo_dir" "$pages_base" "$p" "$u" "DRY_RUN" >> "$REPORT"
       continue
     fi
     code="$(curl_code "$u")"
-    printf "%s\t%s\t%s\t%s\t%s\n" "$repo_dir" "$pages_base" "-" "$u" "$code" >> "$REPORT"
+    printf "%s\t%s\t%s\t%s\t%s\n" "$repo_dir" "$pages_base" "$p" "$u" "$code" >> "$REPORT"
   done
 done
 
 log INFO "Report: $REPORT"
-

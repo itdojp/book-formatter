@@ -93,6 +93,74 @@ RUN_DIR="$(run_dir rollout_unification)"
 REPORT="$RUN_DIR/report.tsv"
 printf "repo_dir\towner_repo\tstatus\tpr_url\tmessage\n" > "$REPORT"
 
+is_expected_sync_path() {
+  local p=${1:-}
+  case "$p" in
+    docs/_layouts/*|docs/_includes/*|docs/assets/*|book-config.json) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+collect_changed_paths() {
+  # Usage: collect_changed_paths <repo_dir>
+  # Prints changed paths (tracked unstaged/staged + untracked), de-duplicated while preserving order.
+  local repo_dir=${1:-}
+  local p q seen
+  local -a paths out
+  paths=()
+  out=()
+
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    paths+=("$p")
+  done < <(git -C "$repo_dir" diff --name-only)
+
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    paths+=("$p")
+  done < <(git -C "$repo_dir" diff --cached --name-only)
+
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    paths+=("$p")
+  done < <(git -C "$repo_dir" ls-files --others --exclude-standard)
+
+  for p in "${paths[@]}"; do
+    seen=0
+    for q in "${out[@]}"; do
+      if [ "$q" = "$p" ]; then
+        seen=1
+        break
+      fi
+    done
+    if [ "$seen" -eq 0 ]; then
+      out+=("$p")
+    fi
+  done
+
+  printf '%s\n' "${out[@]}"
+}
+
+preview_paths() {
+  # Usage: preview_paths <max> <paths...>
+  local max=${1:-5}
+  shift || true
+  local -a arr head
+  arr=("$@")
+
+  if [ "${#arr[@]}" -le "$max" ]; then
+    local IFS=", "
+    printf '%s' "${arr[*]}"
+    return 0
+  fi
+
+  head=("${arr[@]:0:$max}")
+  local more=$(( ${#arr[@]} - max ))
+  local IFS=", "
+  printf '%s' "${head[*]}"
+  printf ' (and %s more)' "$more"
+}
+
 for repo_dir in "${REPOS[@]}"; do
   if [ -z "$repo_dir" ] || [ ! -d "$repo_dir/.git" ]; then
     log WARN "Skip (not a git repo): $repo_dir"
@@ -127,17 +195,51 @@ for repo_dir in "${REPOS[@]}"; do
 
   (cd "$ROOT_DIR" && node "$SYNC_SCRIPT" --book "$repo_dir") >/dev/null
 
-  if git -C "$repo_dir" diff --quiet; then
+  changed_paths=()
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    changed_paths+=("$p")
+  done < <(collect_changed_paths "$repo_dir")
+
+  if [ "${#changed_paths[@]}" -eq 0 ]; then
     log INFO "No changes: $repo_dir"
     printf "%s\t%s\tNOOP\t\t%s\n" "$repo_dir" "$owner_repo" "already up to date" >> "$REPORT"
     continue
   fi
 
+  unexpected_paths=()
+  for p in "${changed_paths[@]}"; do
+    if ! is_expected_sync_path "$p"; then
+      unexpected_paths+=("$p")
+    fi
+  done
+  if [ "${#unexpected_paths[@]}" -gt 0 ]; then
+    msg="unexpected paths: $(preview_paths 5 "${unexpected_paths[@]}")"
+    log ERROR "Refuse to commit unexpected changes: $repo_dir"
+    log ERROR "$msg"
+    printf "%s\t%s\tERROR\t\t%s\n" "$repo_dir" "$owner_repo" "$msg" >> "$REPORT"
+    continue
+  fi
+
   # Stage only expected paths (avoid accidental adds).
+  git -C "$repo_dir" add -u docs/_layouts docs/_includes docs/assets book-config.json 2>/dev/null || true
   git -C "$repo_dir" add docs/_layouts docs/_includes docs/assets book-config.json 2>/dev/null || true
+
+  # Defensive check: ensure sync didn't leave anything untracked/unstaged.
+  if ! git -C "$repo_dir" diff --quiet; then
+    log ERROR "Unstaged changes remain; refusing to commit: $repo_dir"
+    printf "%s\t%s\tERROR\t\t%s\n" "$repo_dir" "$owner_repo" "unstaged changes remain" >> "$REPORT"
+    continue
+  fi
+  if [ -n "$(git -C "$repo_dir" ls-files --others --exclude-standard)" ]; then
+    log ERROR "Untracked files remain; refusing to commit: $repo_dir"
+    printf "%s\t%s\tERROR\t\t%s\n" "$repo_dir" "$owner_repo" "untracked files remain" >> "$REPORT"
+    continue
+  fi
   if git -C "$repo_dir" diff --cached --quiet; then
-    # Fallback: stage modified files only.
-    git -C "$repo_dir" add -u
+    log WARN "No staged changes after sync: $repo_dir"
+    printf "%s\t%s\tSKIP\t\t%s\n" "$repo_dir" "$owner_repo" "no staged changes" >> "$REPORT"
+    continue
   fi
 
   git -C "$repo_dir" commit -m "chore: sync shared components (book-formatter)" >/dev/null
@@ -159,4 +261,3 @@ for repo_dir in "${REPOS[@]}"; do
 done
 
 log INFO "Report: $REPORT"
-

@@ -8,6 +8,11 @@ set -euo pipefail
 #
 # NOTE: Keep this file dependency-light (bash + coreutils + curl/gh/git when used).
 
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BOOK_FORMATTER_REPO_ROOT="$(cd "$LIB_DIR/.." && pwd)"
+# Override when running from outside a repo clone.
+BOOK_FORMATTER_REPORT_ROOT="${BOOK_FORMATTER_REPORT_ROOT:-$BOOK_FORMATTER_REPO_ROOT/tmp-reports}"
+
 log() {
   local level=${1:-INFO}
   shift || true
@@ -35,9 +40,9 @@ utc_ts() {
 
 run_dir() {
   # Usage: run_dir <tag>
-  # Creates: tmp-reports/<tag>/<timestamp>/
+  # Creates: <repo>/tmp-reports/<tag>/<timestamp>-<pid>-<rand>/
   local tag=${1:-run}
-  local dir="tmp-reports/${tag}/$(utc_ts)"
+  local dir="${BOOK_FORMATTER_REPORT_ROOT}/${tag}/$(utc_ts)-$$-${RANDOM}"
   mkdir -p "$dir"
   printf '%s' "$dir"
 }
@@ -104,7 +109,7 @@ _is_retryable_gh_error() {
 
 gh_retry() {
   # Usage: gh_retry <gh args...>
-  require_cmd gh
+  require_cmd gh mktemp
 
   local max_attempts=${GH_RETRY_MAX_ATTEMPTS:-6}
   local base_sleep=${GH_RETRY_SLEEP_BASE_SEC:-2}
@@ -112,19 +117,27 @@ gh_retry() {
 
   local attempt=1
   while true; do
-    local out rc
-    out="$(gh "$@" 2>&1)" || rc=$?
-    rc=${rc:-0}
-    if [ "$rc" -eq 0 ]; then
-      # Preserve stdout for callers (logs go to stderr).
-      printf '%s' "$out"
+    local tmp_out tmp_err rc out err combined
+    tmp_out="$(mktemp)"
+    tmp_err="$(mktemp)"
+    rc=0
+    if gh "$@" >"$tmp_out" 2>"$tmp_err"; then
+      # Preserve stdout for callers; keep stderr noise out of artifacts.
+      cat "$tmp_out"
+      rm -f "$tmp_out" "$tmp_err"
       return 0
     fi
+    rc=$?
 
-    if _is_retryable_gh_error "$out"; then
+    out="$(cat "$tmp_out" 2>/dev/null || true)"
+    err="$(cat "$tmp_err" 2>/dev/null || true)"
+    rm -f "$tmp_out" "$tmp_err"
+    combined="${out}"$'\n'"${err}"
+
+    if _is_retryable_gh_error "$combined"; then
       if [ "$attempt" -ge "$max_attempts" ]; then
         log ERROR "gh retry exceeded (attempt $attempt/$max_attempts): gh $*"
-        log ERROR "gh output: $out"
+        log ERROR "gh output: $combined"
         return "$rc"
       fi
 
@@ -140,7 +153,7 @@ gh_retry() {
     fi
 
     log ERROR "gh failed (non-retryable): gh $*"
-    log ERROR "gh output: $out"
+    log ERROR "gh output: $combined"
     return "$rc"
   done
 }
@@ -223,4 +236,3 @@ git_owner_repo_from_remote() {
 
   printf '%s' "$url"
 }
-
