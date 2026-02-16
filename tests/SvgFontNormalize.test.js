@@ -29,11 +29,15 @@ test('svg-font-normalize: --check fails when changes are needed, --apply fixes t
       '    <style>',
       '      .t { font-family: system-ui, sans-serif; }',
       '      .m { font-family: monospace; }',
+      '      .sh { font: 600 16px Inter, sans-serif; }',
+      '      .sh2 { font: 20px sans-serif; font-weight: 600; }',
+      '      .sh3 { font: 400 12px/1.5 sans-serif; }',
       "      .math { font-family: 'STIX Two Math', serif; }",
       '    </style>',
       '  </defs>',
       '  <text x="0" y="10" class="t">Hello</text>',
       '  <text x="0" y="20" style="font-family: monospace;">code</text>',
+      '  <text x="0" y="25" style="font: 500 10px Inter, sans-serif; fill: #000;">inline</text>',
       "  <text x=\"0\" y=\"30\" font-family='system-ui, sans-serif'>attr</text>",
       '  <text x="0" y="40" font-family="-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif" font-size="12">broken</text>',
       '</svg>',
@@ -63,6 +67,9 @@ test('svg-font-normalize: --check fails when changes are needed, --apply fixes t
     // Sans + mono stacks should be normalized.
     assert.match(updated, /font-family:\s*-apple-system,\s*BlinkMacSystemFont,/);
     assert.match(updated, /font-family:\s*'Monaco',\s*'Menlo'/);
+    assert.match(updated, /font:\s*600\s+16px\s+-apple-system,\s*BlinkMacSystemFont,/);
+    assert.match(updated, /font:\s*20px\s+-apple-system,\s*BlinkMacSystemFont,/);
+    assert.match(updated, /font:\s*400\s+12px\/1\.5\s+-apple-system,\s*BlinkMacSystemFont,/);
 
     // Math stacks must be preserved.
     assert.match(updated, /font-family:\s*'STIX Two Math',\s*serif/);
@@ -71,4 +78,3 @@ test('svg-font-normalize: --check fails when changes are needed, --apply fixes t
     assert.doesNotMatch(updated, /"Segoe UI"/);
   });
 });
-

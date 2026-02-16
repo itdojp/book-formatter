@@ -25,8 +25,12 @@ function normalizeFontValue(value) {
 
 const SANS_REPLACE = new Set(
   [
+    'sans-serif',
     'Inter, Helvetica, sans-serif',
     'Inter, Helvetica, Arial, sans-serif',
+    'Inter, sans-serif',
+    "'Inter', sans-serif",
+    '"Inter", sans-serif',
     "Inter, 'Helvetica Neue', Arial, sans-serif",
     "'Inter', 'Helvetica Neue', Arial, sans-serif",
     "'Inter', 'Helvetica Neue', Helvetica, sans-serif",
@@ -73,11 +77,46 @@ function maybeReplaceFontFamily(originalValue) {
   return null;
 }
 
+function maybeReplaceFontShorthand(originalValue) {
+  const rawValue = String(originalValue || '');
+  if (!rawValue.trim()) return null;
+
+  // Preserve a trailing !important (rare in SVGs but valid CSS).
+  const importantMatch = rawValue.match(/\s*!important\s*$/i);
+  const importantSuffix = importantMatch ? importantMatch[0] : '';
+  const baseValue = importantMatch ? rawValue.slice(0, importantMatch.index) : rawValue;
+
+  // `font` shorthand grammar ends with: <font-size>[/<line-height>]? <font-family>
+  // We locate the first <font-size> token (with a unit) and treat everything after
+  // the optional line-height as the font-family part.
+  const sizeRe = /\b\d+(?:\.\d+)?(?:px|pt|em|rem|%)\b/i;
+  const sizeMatch = sizeRe.exec(baseValue);
+  if (!sizeMatch) return null;
+
+  let familyStart = sizeMatch.index + sizeMatch[0].length;
+
+  // Optional: /<line-height>
+  const afterSize = baseValue.slice(familyStart);
+  const lineHeightRe = /^\s*\/\s*(?:[0-9.]+(?:px|pt|em|rem|%)?|normal)\b/i;
+  const lhMatch = lineHeightRe.exec(afterSize);
+  if (lhMatch) familyStart += lhMatch[0].length;
+
+  const familyRaw = baseValue.slice(familyStart).trim();
+  if (!familyRaw) return null;
+
+  const replacementFamily = maybeReplaceFontFamily(familyRaw);
+  if (!replacementFamily) return null;
+
+  const prefix = baseValue.slice(0, familyStart).trimEnd();
+  return `${prefix} ${replacementFamily}${importantSuffix}`;
+}
+
 function rewriteSvgFonts(svgText) {
   let changed = false;
   let changes = 0;
 
   const cssRe = /(font-family\s*:\s*)([^;}{]+?)(\s*;)/gi;
+  const fontRe = /(font\s*:\s*)([^;}{]+?)(\s*;)/gi;
   // Robust attribute matchers:
   // - Handles valid values.
   // - Also handles a common invalid pattern where a double-quoted attribute value
@@ -96,7 +135,15 @@ function rewriteSvgFonts(svgText) {
     return `${prefix}${replacement}${suffix}`;
   });
 
-  let rewritten = rewrittenCss;
+  const rewrittenFont = rewrittenCss.replace(fontRe, (full, prefix, value, suffix) => {
+    const replacement = maybeReplaceFontShorthand(value);
+    if (!replacement) return full;
+    changed = true;
+    changes += 1;
+    return `${prefix}${replacement}${suffix}`;
+  });
+
+  let rewritten = rewrittenFont;
   rewritten = rewritten.replace(attrDoubleRe, (full, prefix, value) => {
     const replacement = maybeReplaceFontFamily(value);
     if (!replacement) return full;
