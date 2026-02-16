@@ -459,9 +459,9 @@ Mathematical notation requirements:
 - Greek letters: α, β, γ, δ, ε, λ, μ, π, σ, τ, φ, ψ, ω
 
 Font specification for mathematical content:
-- Primary: 'Inter', 'Helvetica Neue', system-ui
+- Primary: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif
 - Mathematical: 'Latin Modern Math', 'STIX Two Math', fallback
-- Monospace: 'SF Mono', 'Monaco', 'Consolas', monospace
+- Monospace: "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro", monospace
 ```
 
 #### 専門分野別図表パターン

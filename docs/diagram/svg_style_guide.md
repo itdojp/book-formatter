@@ -55,8 +55,12 @@
 
 ### 基本設定
 ```css
-font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
 ```
+
+- 書籍本文と同一のフォントスタックを使用する（book-formatter の `--font-sans` と整合）
+- SVG を `<img>` で読み込む場合でも統一されるよう、SVG内の `<style>` にはフォントスタックを明示する
+- 既存SVGの棚卸しは、book-formatter のスクリプトで実施できる（`node scripts/svg-font-inventory.js`）
 
 ### サイズ階層
 ```
@@ -108,7 +112,7 @@ font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
     <style>
       .bg { fill: var(--svg-bg); }
       .bg-alt { fill: var(--svg-bg-alt); }
-      .text { fill: var(--svg-text); font-family: system-ui, sans-serif; }
+      .text { fill: var(--svg-text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif; }
       .text-sm { font-size: 12px; }
       .text-md { font-size: 14px; font-weight: 500; }
       .border { stroke: var(--svg-border); fill: none; stroke-width: 1; }
@@ -537,7 +541,7 @@ document.documentElement.setAttribute('data-theme', savedTheme);
 }
 
 .transition-label {
-  font-family: 'SF Mono', monospace;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro", monospace;
   font-size: 11px;
   text-anchor: middle;
   fill: var(--svg-text);
@@ -565,7 +569,7 @@ algorithm_ch8_02_dijkstra_execution_step3.svg
 ```css
 /* 統一スタイルシート */
 .academic-diagram {
-  font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   background: var(--svg-bg);
 }
 
@@ -595,7 +599,7 @@ algorithm_ch8_02_dijkstra_execution_step3.svg
 }
 
 .academic-diagram .formal {
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro", monospace;
   font-size: 11px;
 }
 ```
@@ -634,7 +638,7 @@ algorithm_ch8_02_dijkstra_execution_step3.svg
 }
 
 .mixed-text {
-  font-family: 'Inter', 'Hiragino Sans', 'Yu Gothic UI', system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Hiragino Sans", "Yu Gothic UI", sans-serif;
   font-variant-numeric: tabular-nums; /* 数字の幅統一 */
 }
 
