@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=./lib.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
+
 # Usage: ./scripts/scaffold-new-book.sh <owner> <repo> [--create]
 OWNER=${1:-}
 REPO=${2:-}
 CREATE=${3:-}
 if [ -z "$OWNER" ] || [ -z "$REPO" ]; then
-  echo "Usage: $0 <owner> <repo> [--create]" >&2; exit 1; fi
+  die "Usage: $0 <owner> <repo> [--create]"
+fi
 
 WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
 DST="$WORK/$REPO"
 mkdir -p "$DST"
 
@@ -62,5 +68,6 @@ Next steps:
 EON
 
 if [ "$CREATE" = "--create" ]; then
-  gh repo create "$OWNER/$REPO" --public --source "$DST" --remote origin --push
+  require_cmd gh
+  gh_retry repo create "$OWNER/$REPO" --public --source "$DST" --remote origin --push >/dev/null
 fi

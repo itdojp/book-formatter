@@ -213,6 +213,26 @@ npm run check-textlint -- <book-dir> --output textlint-report.json
 # 技術文書プリセットも併用（任意）
 npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 ```
+
+## メンテナンススクリプト（運用者向け）
+
+ロールアウト/点検用途の補助スクリプトを `scripts/` に配置しています。共通のエラーハンドリング（429/secondary rate limit 等のリトライ、ログ、HTTPコード取得、レポート退避）は `scripts/lib.sh` に集約しています。
+
+実行時のレポート類は `tmp-reports/<script>/<timestamp>/` に自動退避します（`tmp-*` は `.gitignore` 対象）。
+
+主なスクリプト:
+- `scripts/check_pages.sh`: 公開GitHub Pagesのトップ/共通アセット/ナビ由来ページのHTTPステータスを点検
+- `scripts/add_nav_check_workflow.sh`: `Nav + Pages Link Check` ワークフローを各書籍へ追加（ローカルclone前提）
+- `scripts/rollout_unification.sh`: shared components（layouts/includes/assets）を各書籍へ同期（ローカルclone前提）
+- `scripts/rollout_codeowners.sh`: `.book-formatter/**` のCODEOWNERSを各書籍へ追加（ローカルclone前提）
+- `scripts/rollout_fix_config_yaml.sh`: `docs/_config.yml` の `url/baseurl/repository` を監査/正規化（監査がデフォルト）
+- `scripts/fix_review_issues.sh`: PRレビュー本文/インラインコメントをJSONとして収集し退避（API 429耐性あり）
+- `scripts/fix_root_links.sh`: `"/..."` のroot絶対リンクを監査/（任意で）`relative_url` へ置換
+- `scripts/cleanup_defaults_and_root_index.sh`: テンプレ由来のプレースホルダや二重indexの検出（監査のみ）
+
+リトライ関連の環境変数（例）:
+- `GH_RETRY_MAX_ATTEMPTS`, `GH_RETRY_SLEEP_BASE_SEC`, `GH_RETRY_SLEEP_MAX_SEC`
+- `CURL_RETRY_MAX_ATTEMPTS`
 ## CLIコマンド
 
 | コマンド | 説明 | オプション |
