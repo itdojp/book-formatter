@@ -133,7 +133,7 @@ For text in rectangular container:
 ### フォント指定
 ```
 Use system fonts only:
-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"
 
 Size hierarchy:
 - H1 (titles): 16px, font-weight: 600
@@ -459,7 +459,7 @@ Mathematical notation requirements:
 - Greek letters: α, β, γ, δ, ε, λ, μ, π, σ, τ, φ, ψ, ω
 
 Font specification for mathematical content:
-- Primary: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif
+- Primary: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"
 - Mathematical: 'Latin Modern Math', 'STIX Two Math', fallback
 - Monospace: "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro", monospace
 ```
