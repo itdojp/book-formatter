@@ -178,12 +178,18 @@
             var cb = document.getElementById('sidebar-toggle-checkbox');
             if (!cb) return;
 
-            // Reset sidebar checkbox on page load to prevent stuck open state.
-            cb.checked = false;
+	            // Reset sidebar checkbox on page load to prevent stuck open state.
+	            cb.checked = false;
 
-            function normalizePath(p) {
-                return String(p || '').replace(/index\.html$/, '').replace(/\/+$/, '/');
-            }
+	            function normalizePath(p) {
+	                var path = String(p || '').replace(/index\.html$/, '');
+	                // Remove trailing slashes for non-root paths so `/foo` and `/foo/` compare equal.
+	                if (path.length > 1) {
+	                    path = path.replace(/\/+$/, '');
+	                }
+	                // Ensure we always return at least '/'.
+	                return path || '/';
+	            }
 
             function findActiveTocLink() {
                 var current = normalizePath(window.location.pathname);
@@ -200,9 +206,10 @@
                 return actives[0];
             }
 
-            function ensureActiveTocVisible() {
-                var active = findActiveTocLink();
-                if (!active) return;
+	            function ensureActiveTocVisible() {
+	                if (!cb.checked) return;
+	                var active = findActiveTocLink();
+	                if (!active) return;
 
                 var sidebar = active.closest('.book-sidebar') || document.getElementById('sidebar');
                 if (!sidebar) return;
@@ -210,14 +217,15 @@
                 try {
                     var linkRect = active.getBoundingClientRect();
                     var sidebarRect = sidebar.getBoundingClientRect();
-                    var margin = 8;
-                    var top = sidebarRect.top + margin;
-                    var bottom = sidebarRect.bottom - margin;
-                    var outOfView = linkRect.bottom < top || linkRect.top > bottom;
+	                    var margin = 8;
+	                    var top = sidebarRect.top + margin;
+	                    var bottom = sidebarRect.bottom - margin;
+	                    // Scroll when any part of the active link is outside the visible bounds.
+	                    var outOfView = linkRect.top < top || linkRect.bottom > bottom;
 
-                    if (outOfView && typeof active.scrollIntoView === 'function') {
-                        active.scrollIntoView({ block: 'center', behavior: 'auto' });
-                    }
+	                    if (outOfView && typeof active.scrollIntoView === 'function') {
+	                        active.scrollIntoView({ block: 'center', behavior: 'auto' });
+	                    }
                 } catch (_) {}
             }
 
