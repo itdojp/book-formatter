@@ -174,10 +174,59 @@
     <script defer src="{{ '/assets/js/theme.js' | relative_url }}"></script>
     <script defer src="{{ '/assets/js/search.js' | relative_url }}"></script>
     <script>
-        // Reset sidebar checkbox on page load to prevent stuck open state
         document.addEventListener('DOMContentLoaded', function() {
             var cb = document.getElementById('sidebar-toggle-checkbox');
-            if (cb) cb.checked = false;
+            if (!cb) return;
+
+            // Reset sidebar checkbox on page load to prevent stuck open state.
+            cb.checked = false;
+
+            function normalizePath(p) {
+                return String(p || '').replace(/index\.html$/, '').replace(/\/+$/, '/');
+            }
+
+            function findActiveTocLink() {
+                var current = normalizePath(window.location.pathname);
+                var actives = document.querySelectorAll('a.toc-link.active');
+                if (!actives || actives.length === 0) return null;
+
+                for (var i = 0; i < actives.length; i++) {
+                    try {
+                        var a = actives[i];
+                        var pathname = normalizePath(new URL(a.href, window.location.origin).pathname);
+                        if (pathname === current) return a;
+                    } catch (_) {}
+                }
+                return actives[0];
+            }
+
+            function ensureActiveTocVisible() {
+                var active = findActiveTocLink();
+                if (!active) return;
+
+                var sidebar = active.closest('.book-sidebar') || document.getElementById('sidebar');
+                if (!sidebar) return;
+
+                try {
+                    var linkRect = active.getBoundingClientRect();
+                    var sidebarRect = sidebar.getBoundingClientRect();
+                    var margin = 8;
+                    var top = sidebarRect.top + margin;
+                    var bottom = sidebarRect.bottom - margin;
+                    var outOfView = linkRect.bottom < top || linkRect.top > bottom;
+
+                    if (outOfView && typeof active.scrollIntoView === 'function') {
+                        active.scrollIntoView({ block: 'center', behavior: 'auto' });
+                    }
+                } catch (_) {}
+            }
+
+            // When the drawer is opened, scroll the active TOC item into view if it's out of view.
+            cb.addEventListener('change', function() {
+                if (!cb.checked) return;
+                // Wait a tick for CSS to apply and the sidebar to become visible.
+                setTimeout(ensureActiveTocVisible, 0);
+            });
         });
     </script>
 </body>
