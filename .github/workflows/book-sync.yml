@@ -114,7 +114,9 @@ jobs:
                 # Commit changes
                 git config user.name "github-actions[bot]"
                 git config user.email "github-actions[bot]@users.noreply.github.com"
-                git add -A
+                # Stage changes safely (avoid accidentally staging unrelated/untracked files).
+                git add -u
+                git ls-files --others --exclude-standard -z | xargs -0 -r git add --
                 git commit -m "chore: update book structure with latest book-formatter
 
 - Updated by book-formatter sync workflow
