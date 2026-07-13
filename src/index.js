@@ -65,7 +65,7 @@ program
   .description('既存の書籍を更新します')
   .option('-c, --config <path>', '設定ファイルのパス', './book-config.json')
   .option('-b, --book <path>', '書籍のパス', './book')
-  .option('--no-backup', 'バックアップを作成しません')
+  .option('--no-backup', 'バックアップを作成しません', false)
   .action(async (options) => {
     try {
       console.log(chalk.blue('📚 書籍を更新しています...'));
@@ -83,9 +83,7 @@ program
       }
 
       // 書籍の更新
-      await bookGenerator.updateBook(options.config, options.book, {
-        backup: options.backup
-      });
+      await bookGenerator.updateBook(options.config, options.book);
       
       console.log(chalk.green('✅ 書籍の更新が完了しました!'));
       

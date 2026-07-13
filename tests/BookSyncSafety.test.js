@@ -61,6 +61,8 @@ test('book-sync: 検証後にdry-runとwriteを分離し、write tokenをfail-cl
   assert.match(source, /collaborators\/\$REQUESTING_ACTOR\/permission/);
   assert.match(source, /does not have write access to itdojp\/\$book/);
   assert.match(source, /already has an open pull request/);
+  assert.match(source, /scripts\/sync-components\.js --book/);
+  assert.doesNotMatch(source, /src\/index\.js update-book/);
   assert.match(source, /git diff --cached --check/);
   assert.match(source, /compensating prior remote changes/);
   assert.match(source, /gh pr close/);

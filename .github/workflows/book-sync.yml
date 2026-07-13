@@ -92,10 +92,11 @@ jobs:
                 echo "::error::No book-config.json found in $book."
                 exit 1
               fi
-              node ../book-formatter/src/index.js update-book \
-                --config ./book-config.json \
-                --book . \
-                --no-backup
+              book_path="$PWD"
+              (
+                cd ../book-formatter
+                node scripts/sync-components.js --book "$book_path"
+              )
               if [[ -z "$(git status --porcelain)" ]]; then
                 echo "No changes needed for $book"
               else
@@ -197,10 +198,11 @@ jobs:
             echo "Preparing: $book"
             (
               cd "$book"
-              node ../book-formatter/src/index.js update-book \
-                --config ./book-config.json \
-                --book . \
-                --no-backup
+              book_path="$PWD"
+              (
+                cd ../book-formatter
+                node scripts/sync-components.js --book "$book_path"
+              )
               git diff --check
             )
           done

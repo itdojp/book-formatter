@@ -109,11 +109,8 @@ export class BookGenerator {
    * 既存の書籍を更新する
    * @param {string} configPath - 設定ファイルのパス
    * @param {string} bookPath - 書籍のパス
-   * @param {Object} options - 更新オプション
-   * @param {boolean} options.backup - 更新前にバックアップを作成するか
    */
-  async updateBook(configPath, bookPath, options = {}) {
-    const { backup = true } = options;
+  async updateBook(configPath, bookPath) {
     try {
       const config = await this.loadConfig(configPath);
       this.validator.validate(config);
@@ -124,9 +121,7 @@ export class BookGenerator {
       }
       
       // 既存ファイルのバックアップ
-      if (backup) {
-        await this.fsUtils.createBackup(bookPath);
-      }
+      await this.fsUtils.createBackup(bookPath);
       
       // 構造の更新
       await this.updateBookStructure(config, bookPath);

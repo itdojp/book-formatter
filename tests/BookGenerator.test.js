@@ -277,21 +277,6 @@ language: "ja"
       
       assert.strictEqual(bookConfig.title, '更新されたテスト書籍');
       assert.strictEqual(bookConfig.version, '2.0.0');
-
-      const defaultBackups = (await fs.readdir(tempDir))
-        .filter((entry) => entry.startsWith('existing-book.backup-'));
-      assert.strictEqual(defaultBackups.length, 1);
-    });
-
-    test('backup=falseの場合は同期用バックアップを作成しない', async () => {
-      const bookPath = path.join(tempDir, 'no-backup-book');
-      await bookGenerator.createBook(testConfigPath, bookPath);
-
-      await bookGenerator.updateBook(testConfigPath, bookPath, { backup: false });
-
-      const backups = (await fs.readdir(tempDir))
-        .filter((entry) => entry.startsWith('no-backup-book.backup-'));
-      assert.deepStrictEqual(backups, []);
     });
 
     test('存在しない書籍パスの場合エラーを投げる', async () => {

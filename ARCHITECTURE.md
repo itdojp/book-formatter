@@ -123,7 +123,7 @@ cross-repository用の`BOOK_SYNC_TOKEN`が必要。workflow-level concurrencyに
 **動作:**
 1. 明示した対象書籍リスト（最大3冊）をchecked-in allowlistと照合し、dry-run/write条件をfail-closedで検証
 2. write時は全対象についてtokenと実行者のwrite権限・`book-config.json`・既存open PRを事前検査
-3. book-formatter によるローカルpreview、または確認済みwrite更新
+3. `shared/version.json`管理下の共通コンポーネントだけをローカルcloneへ同期し、差分をpreview
 4. write時のみ一意なbranchとプルリクエストを作成し、batch途中の失敗時は作成済みPR/branchを補償削除
 
 `BOOK_SYNC_TOKEN`には対象リポジトリのContents/Pull requestsへのwrite権限と、
@@ -136,6 +136,9 @@ remote変更前に停止する。
 同期対象を追加・削除する場合は、`config/book-sync-allowlist.json`をレビュー可能なPRで
 更新する。write実行者自身にも各対象リポジトリのwrite権限が必要であり、shared tokenの
 権限だけでは実行できない。
+
+book syncは`sync-components.js`を使用し、章本文・付録・書籍固有の`index.md`は更新しない。
+生成器の`update-book`はこのworkflowから呼び出さない。
 
 ### quality-check.yml
 
