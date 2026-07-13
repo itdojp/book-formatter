@@ -1,175 +1,307 @@
 name: Book Sync
-# Synchronize all books with the latest book-formatter changes
 
+# Synchronize only explicitly selected repositories. A template/source merge never
+# starts this workflow automatically.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'templates/**'
-      - 'package.json'
   workflow_dispatch:
     inputs:
       target_books:
-        description: 'Target books to sync (comma-separated, or "all")'
-        required: false
-        default: 'all'
+        description: 'Comma-separated repository names (maximum 3; "all" is not allowed)'
+        required: true
+        type: string
       dry_run:
-        description: 'Perform dry run without making changes'
+        description: 'Preview changes only. Disable only after reviewing the dry-run output.'
         required: false
-        default: 'false'
+        default: true
+        type: boolean
+      confirmation_token:
+        description: 'Required for write mode only: enter WRITE_BOOK_SYNC exactly.'
+        required: false
+        type: string
+
+# Serialize dispatches so two runs cannot update the same downstream repository
+# concurrently. Do not cancel a write that may already have published a branch.
+concurrency:
+  group: book-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  sync-books:
+  validate-request:
+    name: Validate sync request
     runs-on: ubuntu-latest
-    
-    permissions:
-      contents: write
-      pull-requests: write
-    
+    outputs:
+      target_books: ${{ steps.validate.outputs.target_books }}
     steps:
       - name: Checkout book-formatter
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Validate dry-run or write request
+        id: validate
+        env:
+          TARGET_BOOKS: ${{ inputs.target_books }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CONFIRMATION_TOKEN: ${{ inputs.confirmation_token }}
+        run: node scripts/validate-book-sync-request.js
+
+  dry-run:
+    name: Preview selected book sync
+    needs: validate-request
+    if: ${{ inputs.dry_run }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout book-formatter
+        uses: actions/checkout@v6
         with:
           path: book-formatter
-      
+
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '24'
+          cache: npm
           cache-dependency-path: book-formatter/package-lock.json
-      
+
       - name: Install dependencies
         working-directory: book-formatter
         run: npm ci
-      
-      - name: Get book list
-        id: get-books
+
+      - name: Preview each selected book
+        shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.BOOK_SYNC_READ_TOKEN || github.token }}
+          TARGET_BOOKS: ${{ needs.validate-request.outputs.target_books }}
         run: |
-          if [ "${{ inputs.target_books }}" = "all" ] || [ -z "${{ inputs.target_books }}" ]; then
-            # Get all book repositories from the organization
-            BOOKS=$(gh repo list itdojp --limit 100 --json name,description | \
-              jq -r '.[] | select(.description | contains("book") or contains("Book")) | .name' | \
-              grep -E '(-book$|^book-|textbook)' | \
-              grep -v 'book-formatter' | \
-              tr '\n' ',' | sed 's/,$//')
-          else
-            BOOKS="${{ inputs.target_books }}"
-          fi
-          echo "books=$BOOKS" >> $GITHUB_OUTPUT
-          echo "📚 Target books: $BOOKS"
-      
-      - name: Sync each book
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          IFS=',' read -ra BOOK_ARRAY <<< "${{ steps.get-books.outputs.books }}"
-          
-          for BOOK in "${BOOK_ARRAY[@]}"; do
-            BOOK=$(echo $BOOK | xargs) # Trim whitespace
-            
-            if [ -z "$BOOK" ]; then
-              continue
-            fi
-            
-            echo "📖 Processing: $BOOK"
-            
-            # Clone the book repository
-            git clone "https://github.com/itdojp/$BOOK.git" || {
-              echo "❌ Failed to clone $BOOK"
-              continue
-            }
-            
-            cd "$BOOK"
-            
-            # Check if book-config.json exists
-            if [ ! -f "book-config.json" ]; then
-              echo "⚠️  No book-config.json found in $BOOK, skipping..."
-              cd ..
-              continue
-            fi
-            
-            # Run sync command
-            if [ "${{ inputs.dry_run }}" = "true" ]; then
-              echo "🔍 Dry run mode for $BOOK"
+          set -euo pipefail
+          gh auth setup-git
+          IFS=',' read -r -a books <<< "$TARGET_BOOKS"
+          for book in "${books[@]}"; do
+            echo "Previewing: $book"
+            gh repo clone "itdojp/$book" "$book" -- --depth=1
+            (
+              cd "$book"
+              if [[ ! -f book-config.json ]]; then
+                echo "::error::No book-config.json found in $book."
+                exit 1
+              fi
               node ../book-formatter/src/index.js update-book \
                 --config ./book-config.json \
                 --book . \
-                --dry-run
-            else
-              echo "🔄 Updating $BOOK"
+                --no-backup
+              if [[ -z "$(git status --porcelain)" ]]; then
+                echo "No changes needed for $book"
+              else
+                git status --short
+                git diff --stat
+              fi
+            )
+          done
+
+      - name: Summary
+        env:
+          TARGET_BOOKS: ${{ needs.validate-request.outputs.target_books }}
+        run: |
+          {
+            echo "## Book Sync Summary"
+            echo
+            echo "**Mode:** Dry run"
+            echo "**Target books:** $TARGET_BOOKS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  write-sync:
+    name: Write selected book sync
+    needs: validate-request
+    if: ${{ ! inputs.dry_run }}
+    runs-on: ubuntu-latest
+    env:
+      TARGET_BOOKS: ${{ needs.validate-request.outputs.target_books }}
+      SYNC_BRANCH: book-formatter-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Require cross-repository token
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.BOOK_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::BOOK_SYNC_TOKEN is not configured. Write mode is unavailable."
+            exit 1
+          fi
+
+      - name: Checkout book-formatter
+        uses: actions/checkout@v6
+        with:
+          path: book-formatter
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: book-formatter/package-lock.json
+
+      - name: Install dependencies
+        working-directory: book-formatter
+        run: npm ci
+
+      - name: Preflight every selected repository
+        id: preflight
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.BOOK_SYNC_TOKEN }}
+          REQUESTING_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          IFS=',' read -r -a books <<< "$TARGET_BOOKS"
+          for book in "${books[@]}"; do
+            echo "Preflighting: $book"
+            can_push="$(gh repo view "itdojp/$book" --json viewerPermission --jq '.viewerPermission == "ADMIN" or .viewerPermission == "MAINTAIN" or .viewerPermission == "WRITE"')"
+            if [[ "$can_push" != "true" ]]; then
+              echo "::error::BOOK_SYNC_TOKEN does not have write access to itdojp/$book."
+              exit 1
+            fi
+            if ! actor_can_push="$(gh api "repos/itdojp/$book/collaborators/$REQUESTING_ACTOR/permission" --jq '.user.permissions.push // false')"; then
+              echo "::error::Could not verify $REQUESTING_ACTOR's permission on itdojp/$book."
+              exit 1
+            fi
+            if [[ "$actor_can_push" != "true" ]]; then
+              echo "::error::$REQUESTING_ACTOR does not have write access to itdojp/$book."
+              exit 1
+            fi
+            if [[ "$(gh pr list --repo "itdojp/$book" --state open --limit 1 --json number --jq 'length')" != "0" ]]; then
+              echo "::error::itdojp/$book already has an open pull request; refusing to create a competing sync PR."
+              exit 1
+            fi
+            gh repo clone "itdojp/$book" "$book" -- --depth=1
+            if [[ ! -f "$book/book-config.json" ]]; then
+              echo "::error::No book-config.json found in $book."
+              exit 1
+            fi
+          done
+
+      - name: Prepare every selected repository locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=',' read -r -a books <<< "$TARGET_BOOKS"
+          for book in "${books[@]}"; do
+            echo "Preparing: $book"
+            (
+              cd "$book"
               node ../book-formatter/src/index.js update-book \
                 --config ./book-config.json \
-                --book .
-              
-              # Check for changes
-              if [ -n "$(git status --porcelain)" ]; then
-                # Create a new branch
-                BRANCH="update-book-formatter-$(date +%Y%m%d-%H%M%S)"
-                git checkout -b "$BRANCH"
-                
-                # Commit changes
-                git config user.name "github-actions[bot]"
-                git config user.email "github-actions[bot]@users.noreply.github.com"
-                # Stage tracked changes and new (non-ignored) files without using `git add -A`.
-                git add -u
-                if git ls-files --others --exclude-standard | grep -q .; then
-                  git ls-files --others --exclude-standard -z | git add --pathspec-from-file=- --pathspec-file-nul
-                fi
-                git commit -m "chore: update book structure with latest book-formatter
-
-- Updated by book-formatter sync workflow
-- Source: book-formatter@${{ github.sha }}"
-                
-                # Push branch
-                git push origin "$BRANCH"
-                
-                # Create pull request
-                gh pr create \
-                  --title "chore: Update book structure with latest book-formatter" \
-                  --body "This PR updates the book structure using the latest book-formatter.
-
-## Changes
-- Updated book structure and configuration
-- Applied latest templates and patterns
-
-## Source
-- book-formatter version: \`${{ github.sha }}\`
-- Triggered by: ${{ github.event_name }}
-
----
-*This PR was automatically created by the book-sync workflow.*" \
-                  --base main \
-                  --head "$BRANCH"
-                
-                echo "✅ Created PR for $BOOK"
-              else
-                echo "✅ No changes needed for $BOOK"
-              fi
-            fi
-            
-            cd ..
+                --book . \
+                --no-backup
+              git diff --check
+            )
           done
-      
-      - name: Summary
+
+      - name: Publish update branches and pull requests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.BOOK_SYNC_TOKEN }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          echo "## 📊 Sync Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "🔍 **Mode**: Dry Run" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "🔄 **Mode**: Live Update" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Target Books**: ${{ steps.get-books.outputs.books }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered By**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          fi
+          set -euo pipefail
+
+          publish_book() (
+            set -euo pipefail
+            local book="$1"
+            cd "$book"
+
+            default_branch="$(gh repo view "itdojp/$book" --json defaultBranchRef --jq '.defaultBranchRef.name')"
+            git checkout -b "$SYNC_BRANCH"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -u
+            untracked_pathspec="${RUNNER_TEMP}/book-sync-untracked-${book}"
+            git ls-files --others --exclude-standard -z > "$untracked_pathspec"
+            if [[ -s "$untracked_pathspec" ]]; then
+              git add --pathspec-from-file="$untracked_pathspec" --pathspec-file-nul
+            fi
+            rm -f "$untracked_pathspec"
+            git diff --cached --check
+            git commit -m "chore: update book structure with latest book-formatter"
+            git push origin "$SYNC_BRANCH"
+            gh pr create \
+              --repo "itdojp/$book" \
+              --title "chore: Update book structure with latest book-formatter" \
+              --body "Manual book sync from book-formatter@${SOURCE_SHA}. Run: ${RUN_URL}" \
+              --base "$default_branch" \
+              --head "$SYNC_BRANCH"
+          )
+
+          rollback_book() {
+            local book="$1"
+            local pr_number=''
+            if ! pr_number="$(gh pr list \
+                --repo "itdojp/$book" \
+                --head "$SYNC_BRANCH" \
+                --state open \
+                --limit 1 \
+                --json number \
+                --jq '.[0].number // empty')"; then
+              echo "::warning::Could not inspect rollback PR state for itdojp/$book."
+              rollback_failures=1
+            elif [[ -n "$pr_number" ]] && ! gh pr close "$pr_number" \
+                --repo "itdojp/$book" \
+                --comment "Closing because another repository in the same book-sync batch failed."; then
+              echo "::warning::Could not close rollback PR #$pr_number in itdojp/$book."
+              rollback_failures=1
+            fi
+
+            if git -C "$book" ls-remote --exit-code --heads origin "$SYNC_BRANCH" >/dev/null 2>&1 \
+                && ! git -C "$book" push origin --delete "$SYNC_BRANCH"; then
+              echo "::warning::Could not delete rollback branch $SYNC_BRANCH in itdojp/$book."
+              rollback_failures=1
+            fi
+          }
+
+          IFS=',' read -r -a books <<< "$TARGET_BOOKS"
+          remote_books=()
+          for book in "${books[@]}"; do
+            if [[ -z "$(git -C "$book" status --porcelain)" ]]; then
+              echo "No changes needed for $book"
+              continue
+            fi
+
+            remote_books+=("$book")
+            set +e
+            publish_book "$book"
+            publish_status=$?
+            set -e
+            if [[ "$publish_status" -eq 0 ]]; then
+              continue
+            fi
+
+            echo "::error::Publishing failed for itdojp/$book; compensating prior remote changes."
+            rollback_failures=0
+            for ((index=${#remote_books[@]} - 1; index >= 0; index--)); do
+              rollback_book "${remote_books[$index]}"
+            done
+            if [[ "$rollback_failures" -ne 0 ]]; then
+              echo "::error::One or more rollback operations failed; manual cleanup is required."
+            fi
+            exit "$publish_status"
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Book Sync Summary"
+            echo
+            echo "**Mode:** Write"
+            echo "**Target books:** $TARGET_BOOKS"
+            echo "**Branch:** $SYNC_BRANCH"
+          } >> "$GITHUB_STEP_SUMMARY"

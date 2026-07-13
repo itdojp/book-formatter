@@ -84,7 +84,10 @@ describe('GitHubPagesHandler', () => {
       
       const workflowContent = await fs.readFile(workflowPath, 'utf8');
       assert(workflowContent.includes('Deploy to GitHub Pages'));
-      assert(workflowContent.includes('actions/deploy-pages@v4'));
+      assert(workflowContent.includes('actions/checkout@v6'));
+      assert(workflowContent.includes('actions/configure-pages@v6'));
+      assert(workflowContent.includes('actions/upload-pages-artifact@v5'));
+      assert(workflowContent.includes('actions/deploy-pages@v5'));
     });
   });
 
