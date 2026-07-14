@@ -5,6 +5,10 @@ import path from 'path';
 import os from 'os';
 import { GitHubPagesHandler } from '../src/GitHubPagesHandler.js';
 
+// npm test invokes this file directly. Node.js 24's file-isolated test runner can
+// intermittently fail while deserializing this fs-heavy suite's worker result;
+// direct invocation still uses node:test and preserves every assertion.
+
 describe('GitHubPagesHandler', () => {
   let gitHubPagesHandler;
   let errorHandler;
