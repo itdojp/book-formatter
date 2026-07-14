@@ -285,6 +285,23 @@ test('component sync: CLI filterでも書籍側のsubcomponent opt-outを保持�
     assert.match(dryRun.stdout, /docs\/assets\/css\//);
     assert.doesNotMatch(dryRun.stdout, /docs\/assets\/js\//);
     assert.doesNotMatch(dryRun.stdout, /docs\/_layouts\//);
+
+    updatedConfig.shared.components.assets = { css: false };
+    updatedConfig.shared.version = '0.0.0';
+    await fs.writeJson(configPath, updatedConfig, { spaces: 2 });
+    await fs.writeFile(cssDest, 'book-specific css\n');
+    await fs.writeFile(jsDest, 'stale js\n');
+    const partialOptOut = spawnSync(
+      process.execPath,
+      ['scripts/sync-components.js', '--book', tempDir, '--components', 'assets'],
+      { encoding: 'utf8' }
+    );
+    assert.equal(partialOptOut.status, 0, partialOptOut.stderr);
+    assert.equal(await fs.readFile(cssDest, 'utf8'), 'book-specific css\n');
+    assert.deepStrictEqual(
+      await fs.readFile(jsDest),
+      await fs.readFile(path.join(sharedDir, jsFile))
+    );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

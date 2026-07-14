@@ -120,10 +120,16 @@ class ComponentSync {
       templates: false
     };
     
-    // 書籍の設定を優先
-    const configured = bookConfig.shared?.components
-      ? { ...defaults, ...bookConfig.shared.components }
-      : defaults;
+    // 書籍の設定を優先する。assetsの部分指定ではschemaの下位既定値を保持する。
+    const bookComponents = bookConfig.shared?.components || {};
+    const configured = { ...defaults, ...bookComponents };
+    if (
+      bookComponents.assets
+      && typeof bookComponents.assets === 'object'
+      && !Array.isArray(bookComponents.assets)
+    ) {
+      configured.assets = { ...defaults.assets, ...bookComponents.assets };
+    }
 
     // CLIオプションは同期対象を上位component単位で限定するだけで、
     // 書籍側のopt-out（例: assets.js=false、layouts=false）は上書きしない。
