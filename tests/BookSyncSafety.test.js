@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import test from 'node:test';
 import { parse } from 'yaml';
+import fs from 'fs-extra';
 import {
   MAX_TARGET_BOOKS,
   WRITE_CONFIRMATION_TOKEN,
@@ -62,7 +63,10 @@ test('book-sync: 検証後にdry-runとwriteを分離し、write tokenをfail-cl
   assert.match(source, /\.permission == "admin" or \.permission == "write"/);
   assert.match(source, /does not have write access to itdojp\/\$book/);
   assert.match(source, /already has an open pull request/);
-  assert.match(source, /scripts\/sync-components\.js --book/);
+  assert.match(source, /scripts\/sync-components\.js \\\n\s+--book/);
+  assert.match(source, /--components layouts includes assets/);
+  assert.match(source, /scripts\/validate-book-sync-paths\.js/);
+  assert.match(source, /git add --pathspec-from-file="\$approved_pathspec" --pathspec-file-nul/);
   assert.doesNotMatch(source, /src\/index\.js update-book/);
   assert.match(source, /git diff --cached --check/);
   assert.match(source, /compensating prior remote changes/);
@@ -150,6 +154,106 @@ test('book-sync validator CLI: checked-in allowlistを読みcanonical outputだ�
     });
     assert.equal(rejected.status, 1);
     assert.match(rejected.stderr, /not in the book sync allowlist/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('component sync: 同一内容への再同期ではlastSyncだけを書き換えない', async () => {
+  const tempDir = mkdtempSync(path.join('tests', 'tmp-component-sync-'));
+
+  try {
+    const sharedDir = path.resolve('shared');
+    const sharedVersion = await fs.readJson(path.join(sharedDir, 'version.json'));
+    const initialConfig = {
+      title: 'Component sync no-op fixture',
+      shared: {
+        version: sharedVersion.version,
+        lastSync: '2026-01-01T00:00:00.000Z',
+        components: { templates: true, schemas: true }
+      }
+    };
+    const configPath = path.join(tempDir, 'book-config.json');
+    await fs.writeJson(configPath, initialConfig, { spaces: 2 });
+
+    const layoutFiles = sharedVersion.components.layouts.files;
+    for (const file of layoutFiles) {
+      const sourcePath = path.join(sharedDir, file);
+      const destPath = path.join(tempDir, 'docs', '_layouts', path.basename(file));
+      await fs.ensureDir(path.dirname(destPath));
+      await fs.copy(sourcePath, destPath);
+    }
+
+    const before = readFileSync(configPath, 'utf8');
+    const noOp = spawnSync(
+      process.execPath,
+      ['scripts/sync-components.js', '--book', tempDir, '--components', 'layouts'],
+      { encoding: 'utf8' }
+    );
+    assert.equal(noOp.status, 0, noOp.stderr);
+    assert.equal(readFileSync(configPath, 'utf8'), before);
+    assert.equal(await fs.pathExists(path.join(tempDir, 'templates')), false);
+    assert.equal(await fs.pathExists(path.join(tempDir, 'schemas')), false);
+
+    const staleDest = path.join(tempDir, 'docs', '_layouts', path.basename(layoutFiles[0]));
+    await fs.writeFile(staleDest, 'stale layout\n');
+    const changed = spawnSync(
+      process.execPath,
+      ['scripts/sync-components.js', '--book', tempDir, '--components', 'layouts'],
+      { encoding: 'utf8' }
+    );
+    assert.equal(changed.status, 0, changed.stderr);
+
+    assert.deepStrictEqual(
+      await fs.readFile(staleDest),
+      await fs.readFile(path.join(sharedDir, layoutFiles[0]))
+    );
+    const updatedConfig = await fs.readJson(configPath);
+    assert.equal(updatedConfig.shared.version, sharedVersion.version);
+    assert.notEqual(updatedConfig.shared.lastSync, initialConfig.shared.lastSync);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('book-sync path guard: 許可pathだけをNUL pathspecへ出力し、想定外pathを拒否する', async () => {
+  const tempDir = mkdtempSync(path.join('tests', 'tmp-book-sync-paths-'));
+  const repoDir = path.join(tempDir, 'book');
+  const outputPath = path.join(tempDir, 'approved-paths');
+  const runGit = (...args) => spawnSync('git', args, { cwd: repoDir, encoding: 'utf8' });
+
+  try {
+    await fs.ensureDir(path.join(repoDir, 'docs', 'assets'));
+    await fs.writeFile(path.join(repoDir, 'book-config.json'), '{}\n');
+    await fs.writeFile(path.join(repoDir, 'docs', 'assets', 'existing.css'), 'body {}\n');
+    assert.equal(runGit('init').status, 0);
+    assert.equal(runGit('config', 'user.name', 'Book Sync Test').status, 0);
+    assert.equal(runGit('config', 'user.email', 'book-sync@example.invalid').status, 0);
+    assert.equal(runGit('add', '.').status, 0);
+    assert.equal(runGit('commit', '-m', 'fixture').status, 0);
+
+    await fs.writeFile(path.join(repoDir, 'book-config.json'), '{"shared":{}}\n');
+    await fs.writeFile(path.join(repoDir, 'docs', 'assets', 'new.css'), 'a {}\n');
+    const approved = spawnSync(
+      process.execPath,
+      ['scripts/validate-book-sync-paths.js', '--repo', repoDir, '--output', outputPath],
+      { encoding: 'utf8' }
+    );
+    assert.equal(approved.status, 0, approved.stderr);
+    assert.deepStrictEqual(
+      (await fs.readFile(outputPath, 'utf8')).split('\0').filter(Boolean).sort(),
+      ['book-config.json', 'docs/assets/new.css']
+    );
+
+    await fs.ensureDir(path.join(repoDir, 'manuscript'));
+    await fs.writeFile(path.join(repoDir, 'manuscript', 'chapter.md'), '# unexpected\n');
+    const rejected = spawnSync(
+      process.execPath,
+      ['scripts/validate-book-sync-paths.js', '--repo', repoDir, '--output', outputPath],
+      { encoding: 'utf8' }
+    );
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, /Refusing unexpected sync path\(s\): manuscript\/chapter\.md/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

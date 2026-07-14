@@ -15,9 +15,11 @@ const EXPECTED_ACTION_MAJORS = new Map([
   ['actions/github-script', 'v9'],
   ['actions/cache', 'v6'],
   ['actions/stale', 'v10'],
+  ['actions/jekyll-build-pages', 'v1'],
   ['github/codeql-action', 'v4'],
   ['davidanson/markdownlint-cli2-action', 'v24'],
-  ['softprops/action-gh-release', 'v3']
+  ['softprops/action-gh-release', 'v3'],
+  ['ruby/setup-ruby', 'v1']
 ]);
 
 const FORBIDDEN_ACTIONS = new Set([
@@ -85,7 +87,7 @@ function findActionMajorProblems(rootDir) {
       const [, reference, version] = match;
       const key = actionKey(reference);
       const expectedMajor = EXPECTED_ACTION_MAJORS.get(key);
-      if (FORBIDDEN_ACTIONS.has(key) || (expectedMajor && !usesExpectedMajor(version, expectedMajor))) {
+      if (FORBIDDEN_ACTIONS.has(key) || !expectedMajor || !usesExpectedMajor(version, expectedMajor)) {
         const line = content.slice(0, match.index).split('\n').length;
         problems.push({
           file: path.relative(rootDir, filePath),

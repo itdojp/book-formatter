@@ -98,12 +98,29 @@ test('check-node24-actions: exact semver in the approved major passes', async ()
     await fs.mkdir(workflowDir, { recursive: true });
     await fs.writeFile(
       path.join(workflowDir, 'quality.yml'),
-      'steps:\n  - uses: actions/checkout@v6.0.1\n  - uses: actions/upload-artifact@v7.0.1\n',
+      'steps:\n  - uses: actions/checkout@v6.0.1\n  - uses: actions/upload-artifact@v7.0.1\n  - uses: actions/jekyll-build-pages@v1\n  - uses: ruby/setup-ruby@v1.314.0\n',
       'utf8'
     );
 
     const result = runCheck(tempRoot);
     assert.equal(result.status, 0, `expected success\n${result.stderr}`);
+  });
+});
+
+test('check-node24-actions: 未承認の外部actionはfail-closedで拒否する', async () => {
+  await withTempDir(async (tempRoot) => {
+    const workflowDir = path.join(tempRoot, '.github', 'workflows');
+    await fs.mkdir(workflowDir, { recursive: true });
+    await fs.writeFile(
+      path.join(workflowDir, 'quality.yml'),
+      'steps:\n  - uses: example/unknown-action@v1\n',
+      'utf8'
+    );
+
+    const result = runCheck(tempRoot);
+    assert.equal(result.status, 1, `expected failure\n${result.stderr}`);
+    assert.match(result.stderr, /example\/unknown-action@v1/);
+    assert.match(result.stderr, /no Node\.js 24-compatible release is approved/);
   });
 });
 

@@ -95,7 +95,9 @@ jobs:
               book_path="$PWD"
               (
                 cd ../book-formatter
-                node scripts/sync-components.js --book "$book_path"
+                node scripts/sync-components.js \
+                  --book "$book_path" \
+                  --components layouts includes assets
               )
               if [[ -z "$(git status --porcelain)" ]]; then
                 echo "No changes needed for $book"
@@ -201,9 +203,19 @@ jobs:
               book_path="$PWD"
               (
                 cd ../book-formatter
-                node scripts/sync-components.js --book "$book_path"
+                node scripts/sync-components.js \
+                  --book "$book_path" \
+                  --components layouts includes assets
               )
               git diff --check
+
+              approved_pathspec="${RUNNER_TEMP}/book-sync-paths-${book}"
+              (
+                cd ../book-formatter
+                node scripts/validate-book-sync-paths.js \
+                  --repo "$book_path" \
+                  --output "$approved_pathspec"
+              )
             )
           done
 
@@ -221,17 +233,21 @@ jobs:
             local book="$1"
             cd "$book"
 
+            approved_pathspec="${RUNNER_TEMP}/book-sync-paths-${book}"
+            if [[ ! -s "$approved_pathspec" ]]; then
+              echo "No changes needed for $book"
+              return 0
+            fi
+
             default_branch="$(gh repo view "itdojp/$book" --json defaultBranchRef --jq '.defaultBranchRef.name')"
             git checkout -b "$SYNC_BRANCH"
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -u
-            untracked_pathspec="${RUNNER_TEMP}/book-sync-untracked-${book}"
-            git ls-files --others --exclude-standard -z > "$untracked_pathspec"
-            if [[ -s "$untracked_pathspec" ]]; then
-              git add --pathspec-from-file="$untracked_pathspec" --pathspec-file-nul
+            git add --pathspec-from-file="$approved_pathspec" --pathspec-file-nul
+            if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+              echo "::error::Unstaged or untracked changes remain in $book after allowlisted staging."
+              exit 1
             fi
-            rm -f "$untracked_pathspec"
             git diff --cached --check
             git commit -m "chore: update book structure with latest book-formatter"
             git push origin "$SYNC_BRANCH"
@@ -272,7 +288,7 @@ jobs:
           IFS=',' read -r -a books <<< "$TARGET_BOOKS"
           remote_books=()
           for book in "${books[@]}"; do
-            if [[ -z "$(git -C "$book" status --porcelain)" ]]; then
+            if [[ ! -s "${RUNNER_TEMP}/book-sync-paths-${book}" ]]; then
               echo "No changes needed for $book"
               continue
             fi
