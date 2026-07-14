@@ -172,7 +172,7 @@ jobs:
               echo "::error::BOOK_SYNC_TOKEN does not have write access to itdojp/$book."
               exit 1
             fi
-            if ! actor_can_push="$(gh api "repos/itdojp/$book/collaborators/$REQUESTING_ACTOR/permission" --jq '.permission == "admin" or .permission == "write"')"; then
+            if ! actor_can_push="$(gh api "repos/itdojp/$book/collaborators/$REQUESTING_ACTOR/permission" --jq '.permission == "admin" or .permission == "maintain" or .permission == "write"')"; then
               echo "::error::Could not verify $REQUESTING_ACTOR's permission on itdojp/$book."
               exit 1
             fi
