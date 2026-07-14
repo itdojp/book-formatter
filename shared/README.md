@@ -56,9 +56,9 @@ npm run sync-components -- --book practical-auth-book
 npm run sync-components -- --all
 ```
 
-### 2. 自動同期（GitHub Actions）
+### 2. 手動同期（GitHub Actions）
 
-共通コンポーネントが更新されると、GitHub Actions により自動的にすべての書籍プロジェクトに同期されます。
+`Book Sync` workflowは`workflow_dispatch`専用です。既定のdry-runで対象差分を確認し、write実行時は最大3冊の明示的な対象リスト、確認token、権限を持つcross-repository tokenを要求します。template更新だけでは書籍repositoryへ自動同期しません。
 
 ### 3. 選択的な同期
 

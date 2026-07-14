@@ -120,21 +120,24 @@ class ComponentSync {
       templates: false
     };
     
-    // CLIオプションを明示した場合は、書籍側設定より優先して対象を限定する
+    // 書籍の設定を優先
+    const configured = bookConfig.shared?.components
+      ? { ...defaults, ...bookConfig.shared.components }
+      : defaults;
+
+    // CLIオプションは同期対象を上位component単位で限定するだけで、
+    // 書籍側のopt-out（例: assets.js=false、layouts=false）は上書きしない。
     if (options.components) {
       const specified = {};
       options.components.forEach(comp => {
-        specified[comp] = true;
+        specified[comp] = Object.prototype.hasOwnProperty.call(configured, comp)
+          ? configured[comp]
+          : true;
       });
       return specified;
     }
 
-    // 書籍の設定を優先
-    if (bookConfig.shared?.components) {
-      return { ...defaults, ...bookConfig.shared.components };
-    }
-    
-    return defaults;
+    return configured;
   }
 
   /**
@@ -297,7 +300,11 @@ class ComponentSync {
         const componentInfo = this.version.components[component];
           if (componentInfo) {
             componentInfo.files.forEach(file => {
-            console.log(chalk.gray(`    - ${this.mapDestRelativePath(file)}`));
+              if (typeof config === 'object') {
+                const subComponent = path.basename(path.dirname(file));
+                if (config[subComponent] === false) return;
+              }
+              console.log(chalk.gray(`    - ${this.mapDestRelativePath(file)}`));
             });
           }
       }

@@ -228,6 +228,68 @@ test('component sync: 同一内容への再同期ではlastSyncだけを書き�
   }
 });
 
+test('component sync: CLI filterでも書籍側のsubcomponent opt-outを保持する', async () => {
+  const tempDir = mkdtempSync(path.join('tests', 'tmp-component-opt-out-'));
+
+  try {
+    const sharedDir = path.resolve('shared');
+    const sharedVersion = await fs.readJson(path.join(sharedDir, 'version.json'));
+    const configPath = path.join(tempDir, 'book-config.json');
+    await fs.writeJson(configPath, {
+      title: 'Component opt-out fixture',
+      shared: {
+        version: '0.0.0',
+        lastSync: '2026-01-01T00:00:00.000Z',
+        components: {
+          layouts: false,
+          assets: { css: true, js: false }
+        }
+      }
+    }, { spaces: 2 });
+
+    const cssFile = sharedVersion.components.assets.files.find((file) => file.startsWith('assets/css/'));
+    const jsFile = sharedVersion.components.assets.files.find((file) => file.startsWith('assets/js/'));
+    const layoutFile = sharedVersion.components.layouts.files[0];
+    const cssDest = path.join(tempDir, 'docs', cssFile);
+    const jsDest = path.join(tempDir, 'docs', jsFile);
+    const layoutDest = path.join(tempDir, 'docs', '_layouts', path.basename(layoutFile));
+    await fs.ensureDir(path.dirname(cssDest));
+    await fs.ensureDir(path.dirname(jsDest));
+    await fs.ensureDir(path.dirname(layoutDest));
+    await fs.writeFile(cssDest, 'stale css\n');
+    await fs.writeFile(jsDest, 'book-specific js\n');
+    await fs.writeFile(layoutDest, 'book-specific layout\n');
+
+    const changed = spawnSync(
+      process.execPath,
+      ['scripts/sync-components.js', '--book', tempDir, '--components', 'layouts', 'assets'],
+      { encoding: 'utf8' }
+    );
+    assert.equal(changed.status, 0, changed.stderr);
+    assert.deepStrictEqual(
+      await fs.readFile(cssDest),
+      await fs.readFile(path.join(sharedDir, cssFile))
+    );
+    assert.equal(await fs.readFile(jsDest, 'utf8'), 'book-specific js\n');
+    assert.equal(await fs.readFile(layoutDest, 'utf8'), 'book-specific layout\n');
+
+    const updatedConfig = await fs.readJson(configPath);
+    updatedConfig.shared.version = '0.0.0';
+    await fs.writeJson(configPath, updatedConfig, { spaces: 2 });
+    const dryRun = spawnSync(
+      process.execPath,
+      ['scripts/sync-components.js', '--book', tempDir, '--dry-run', '--components', 'layouts', 'assets'],
+      { encoding: 'utf8' }
+    );
+    assert.equal(dryRun.status, 0, dryRun.stderr);
+    assert.match(dryRun.stdout, /docs\/assets\/css\//);
+    assert.doesNotMatch(dryRun.stdout, /docs\/assets\/js\//);
+    assert.doesNotMatch(dryRun.stdout, /docs\/_layouts\//);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('book-sync path guard: 許可pathだけをNUL pathspecへ出力し、想定外pathを拒否する', async () => {
   const tempDir = mkdtempSync(path.join('tests', 'tmp-book-sync-paths-'));
   const repoDir = path.join(tempDir, 'book');
