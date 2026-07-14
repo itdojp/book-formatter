@@ -327,7 +327,7 @@ program
       if (options.dryRun) {
         // Dry runモード
         if (options.book) {
-          await sync.checkDiff(options.book);
+          await sync.checkDiff(options.book, options);
         } else if (options.all) {
           const bookConfigs = await sync.fsUtils.listDirectory(options.directory, {
             pattern: '**/book-config.json',
@@ -339,7 +339,7 @@ program
             .filter(dir => !dir.includes('book-formatter'));
           
           for (const book of books) {
-            await sync.checkDiff(book);
+            await sync.checkDiff(book, options);
           }
         } else {
           console.error(chalk.red('❌ --book または --all を指定してください'));

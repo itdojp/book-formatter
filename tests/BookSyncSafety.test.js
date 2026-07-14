@@ -211,6 +211,18 @@ test('component sync: 同一内容への再同期ではlastSyncだけを書き�
     const updatedConfig = await fs.readJson(configPath);
     assert.equal(updatedConfig.shared.version, sharedVersion.version);
     assert.notEqual(updatedConfig.shared.lastSync, initialConfig.shared.lastSync);
+
+    updatedConfig.shared.version = '0.0.0';
+    await fs.writeJson(configPath, updatedConfig, { spaces: 2 });
+    const dryRun = spawnSync(
+      process.execPath,
+      ['scripts/sync-components.js', '--book', tempDir, '--dry-run', '--components', 'layouts'],
+      { encoding: 'utf8' }
+    );
+    assert.equal(dryRun.status, 0, dryRun.stderr);
+    assert.match(dryRun.stdout, /docs\/_layouts\/book\.html/);
+    assert.doesNotMatch(dryRun.stdout, /templates\//);
+    assert.doesNotMatch(dryRun.stdout, /schemas\//);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
