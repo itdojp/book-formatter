@@ -86,14 +86,21 @@ class ComponentSync {
     const componentsToSync = this.determineComponents(bookConfig, options);
     
     // 各コンポーネントを同期
+    let componentsChanged = false;
     for (const [component, config] of Object.entries(componentsToSync)) {
       if (config === true || (typeof config === 'object' && Object.values(config).some(v => v))) {
-        await this.syncComponent(component, bookPath, config);
+        componentsChanged = (await this.syncComponent(component, bookPath, config)) || componentsChanged;
       }
     }
-    
-    // バージョン情報を更新
-    await this.updateBookVersion(bookPath);
+
+    // 実ファイルまたは共有component versionが変わった場合だけ同期時刻を更新する。
+    // これにより、同一内容への再同期でtimestampだけのPRが作られることを防ぐ。
+    const versionChanged = bookConfig.shared?.version !== this.version.version;
+    if (componentsChanged || versionChanged) {
+      await this.updateBookVersion(bookPath);
+    } else {
+      console.log(chalk.green('  ✅ 変更はありません'));
+    }
     
     console.log(chalk.green(`✅ 同期完了: ${path.basename(bookPath)}`));
     return true;
@@ -113,21 +120,30 @@ class ComponentSync {
       templates: false
     };
     
-    // 書籍の設定を優先
-    if (bookConfig.shared?.components) {
-      return { ...defaults, ...bookConfig.shared.components };
+    // 書籍の設定を優先する。assetsの部分指定ではschemaの下位既定値を保持する。
+    const bookComponents = bookConfig.shared?.components || {};
+    const configured = { ...defaults, ...bookComponents };
+    if (
+      bookComponents.assets
+      && typeof bookComponents.assets === 'object'
+      && !Array.isArray(bookComponents.assets)
+    ) {
+      configured.assets = { ...defaults.assets, ...bookComponents.assets };
     }
-    
-    // オプションで上書き
+
+    // CLIオプションは同期対象を上位component単位で限定するだけで、
+    // 書籍側のopt-out（例: assets.js=false、layouts=false）は上書きしない。
     if (options.components) {
       const specified = {};
       options.components.forEach(comp => {
-        specified[comp] = true;
+        specified[comp] = Object.prototype.hasOwnProperty.call(configured, comp)
+          ? configured[comp]
+          : true;
       });
       return specified;
     }
-    
-    return defaults;
+
+    return configured;
   }
 
   /**
@@ -142,12 +158,13 @@ class ComponentSync {
     const componentInfo = this.version.components[component];
     if (!componentInfo) {
       console.log(chalk.yellow(`  ⚠️  不明なコンポーネント: ${component}`));
-      return;
+      return false;
     }
     
     // ファイルリストを取得
     const files = componentInfo.files || [];
     
+    let changed = false;
     for (const file of files) {
       // サブコンポーネントの設定を確認
       if (typeof config === 'object') {
@@ -166,14 +183,47 @@ class ComponentSync {
         console.log(chalk.yellow(`    ⚠️  ソースファイルが見つかりません: ${file}`));
         continue;
       }
+
+      if (await this.filesAreEqual(sourcePath, destPath)) {
+        console.log(chalk.gray(`    ↔ 変更なし: ${destRel}`));
+        continue;
+      }
       
       // ディレクトリを作成
       await this.fsUtils.ensureDir(path.dirname(destPath));
       
       // ファイルをコピー
       await fs.copy(sourcePath, destPath, { overwrite: true });
+      changed = true;
       console.log(chalk.gray(`    ✅ ${destRel}`));
     }
+
+    return changed;
+  }
+
+  /**
+   * 2つのファイルがbyte単位で同一か確認する。
+   * @param {string} sourcePath - 同期元ファイル
+   * @param {string} destPath - 同期先ファイル
+   */
+  async filesAreEqual(sourcePath, destPath) {
+    if (!(await this.fsUtils.exists(destPath))) {
+      return false;
+    }
+
+    const [sourceStat, destStat] = await Promise.all([
+      fs.stat(sourcePath),
+      fs.stat(destPath)
+    ]);
+    if (sourceStat.size !== destStat.size) {
+      return false;
+    }
+
+    const [source, dest] = await Promise.all([
+      fs.readFile(sourcePath),
+      fs.readFile(destPath)
+    ]);
+    return source.equals(dest);
   }
 
   /**
@@ -256,7 +306,11 @@ class ComponentSync {
         const componentInfo = this.version.components[component];
           if (componentInfo) {
             componentInfo.files.forEach(file => {
-            console.log(chalk.gray(`    - ${this.mapDestRelativePath(file)}`));
+              if (typeof config === 'object') {
+                const subComponent = path.basename(path.dirname(file));
+                if (config[subComponent] === false) return;
+              }
+              console.log(chalk.gray(`    - ${this.mapDestRelativePath(file)}`));
             });
           }
       }
@@ -286,7 +340,7 @@ program
       if (options.dryRun) {
         // Dry runモード
         if (options.book) {
-          await sync.checkDiff(options.book);
+          await sync.checkDiff(options.book, options);
         } else if (options.all) {
           const bookConfigs = await sync.fsUtils.listDirectory(options.directory, {
             pattern: '**/book-config.json',
@@ -298,7 +352,7 @@ program
             .filter(dir => !dir.includes('book-formatter'));
           
           for (const book of books) {
-            await sync.checkDiff(book);
+            await sync.checkDiff(book, options);
           }
         } else {
           console.error(chalk.red('❌ --book または --all を指定してください'));

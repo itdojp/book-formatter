@@ -5,6 +5,10 @@ import path from 'path';
 import os from 'os';
 import { GitHubPagesHandler } from '../src/GitHubPagesHandler.js';
 
+// npm test invokes this file directly. Node.js 24's file-isolated test runner can
+// intermittently fail while deserializing this fs-heavy suite's worker result;
+// direct invocation still uses node:test and preserves every assertion.
+
 describe('GitHubPagesHandler', () => {
   let gitHubPagesHandler;
   let errorHandler;
@@ -84,7 +88,10 @@ describe('GitHubPagesHandler', () => {
       
       const workflowContent = await fs.readFile(workflowPath, 'utf8');
       assert(workflowContent.includes('Deploy to GitHub Pages'));
-      assert(workflowContent.includes('actions/deploy-pages@v4'));
+      assert(workflowContent.includes('actions/checkout@v6'));
+      assert(workflowContent.includes('actions/configure-pages@v6'));
+      assert(workflowContent.includes('actions/upload-pages-artifact@v5'));
+      assert(workflowContent.includes('actions/deploy-pages@v5'));
     });
   });
 

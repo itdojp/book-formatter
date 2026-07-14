@@ -1,5 +1,5 @@
 name: Quality Check
-description: Run quality checks on book-formatter and generated books
+# Run quality checks on book-formatter and generated books.
 
 on:
   push:
@@ -15,14 +15,14 @@ jobs:
     
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22, 24]
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
@@ -35,10 +35,16 @@ jobs:
       
       - name: Run tests
         run: npm test
+
+      - name: Run build smoke check
+        run: npm run build
+
+      - name: Verify Node.js 24-compatible Actions
+        run: npm run check:node24-actions
       
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.node-version }}
           path: |
@@ -51,12 +57,12 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
       
       - name: Install dependencies
@@ -65,34 +71,44 @@ jobs:
       - name: Validate template syntax
         run: |
           echo "🔍 Validating template files..."
-          node -e "
-          const { TemplateEngine } = require('./src/TemplateEngine.js');
+          node --input-type=module -e "
+          import { TemplateEngine } from './src/TemplateEngine.js';
           const engine = new TemplateEngine();
           const templates = engine.getAvailableTemplates();
           console.log('✅ Found ' + templates.length + ' templates');
           console.log('Templates:', templates.join(', '));
           "
-      
-      - name: Test template rendering
-        run: |
-          echo "🧪 Testing template rendering..."
-          node scripts/test-templates.js || echo "⚠️  Template test script not found, skipping..."
 
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Run npm audit
-        run: npm audit --production
-        continue-on-error: true
-      
+        run: npm audit --audit-level=moderate
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+
       - name: Run CodeQL analysis
-        uses: github/codeql-action/analyze@v3
-        continue-on-error: true
+        uses: github/codeql-action/analyze@v4
 
   book-generation-test:
     name: Book Generation Test
@@ -100,12 +116,12 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Setup Ruby (for Jekyll build)
@@ -167,7 +183,7 @@ jobs:
       
       - name: Upload generated book
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: generated-test-book
           path: test-book/
@@ -178,12 +194,12 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm ci
@@ -203,7 +219,7 @@ jobs:
 
       - name: Upload markdown structure report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: markdown-structure-report
           path: markdown-structure-report.json

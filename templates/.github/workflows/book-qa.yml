@@ -13,10 +13,10 @@ jobs:
 
     steps:
       - name: Checkout book
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout book-formatter (latest)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: itdojp/book-formatter
           # NOTE: This intentionally tracks the latest book-formatter.
@@ -25,9 +25,9 @@ jobs:
           path: book-formatter
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: book-formatter/package-lock.json
 
@@ -59,7 +59,7 @@ jobs:
 
       - name: Upload layout risk report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: layout-risk-report
           path: ${{ runner.temp }}/layout-risk-report.json
@@ -70,14 +70,14 @@ jobs:
 
       - name: Upload markdown structure report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: markdown-structure-report
           path: ${{ runner.temp }}/markdown-structure-report.json
           if-no-files-found: ignore
 
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Build (Jekyll; GitHub Pages compatible)
         uses: actions/jekyll-build-pages@v1

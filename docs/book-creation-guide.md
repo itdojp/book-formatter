@@ -6,7 +6,7 @@
 
 ## 前提条件
 
-- Node.js 20.0.0以上
+- Node.js 20.0.0以上（CI検証対象は22/24、推奨は24 LTS）
 - npm 8.0.0以上
 - Git
 - GitHub アカウント（Pro/Team/Enterprise プラン推奨）
@@ -247,11 +247,11 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
