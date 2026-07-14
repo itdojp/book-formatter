@@ -59,6 +59,7 @@ test('book-sync: 検証後にdry-runとwriteを分離し、write tokenをfail-cl
   assert.equal(dryRunToken, '${{ secrets.BOOK_SYNC_READ_TOKEN || github.token }}');
   assert.match(source, /BOOK_SYNC_TOKEN is not configured/);
   assert.match(source, /collaborators\/\$REQUESTING_ACTOR\/permission/);
+  assert.match(source, /\.permission == "admin" or \.permission == "write"/);
   assert.match(source, /does not have write access to itdojp\/\$book/);
   assert.match(source, /already has an open pull request/);
   assert.match(source, /scripts\/sync-components\.js --book/);
