@@ -38,7 +38,8 @@
   "author": "ITDO Inc.",
   "license": "MIT",
   "engines": {
-    "node": ">=20.18.0"
+    "node": "^20.19.0 || ^22.13.0 || >=24.0.0",
+    "npm": ">=8.0.0"
   },
   "dependencies": {
     "@textlint/textlint-plugin-markdown": "^15.8.0",
