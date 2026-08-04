@@ -364,7 +364,8 @@ DEBUG=book-formatter:* npm start create-book
 
 ## システム要件
 
-- Node.js 20.0.0以上
+- CLI実行: Node.js 20.18.0以上
+- リポジトリのlint・全QA: Node.js 20.19.0以上、22.13.0以上、または24.0.0以上
 - npm 8.0.0以上
 
 ## トラブルシューティング
