@@ -142,7 +142,7 @@ describe('UxRollout', () => {
     );
     assert.doesNotMatch(
       responsiveCss,
-      /@media \(max-width: 1024px\)[\s\S]*?\/\* Overlay sidebar \*\/[\s\S]*?\n {2}\.book-sidebar\s*\{/
+      /^[\t ]*\.book-sidebar[\t ]*\{/m
     );
     assert.match(
       responsiveCss,
