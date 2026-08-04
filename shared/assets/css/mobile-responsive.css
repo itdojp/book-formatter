@@ -44,7 +44,7 @@ html {
   }
   
   /* Overlay sidebar */
-  .book-sidebar {
+  .book-layout .book-sidebar {
     position: fixed;
     top: var(--header-height);
     left: 0;
