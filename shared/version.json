@@ -1,7 +1,7 @@
 {
-  "version": "3.2.2",
-  "updated": "2026-02-04",
-  "description": "Fix theme/script safety + improve accessibility (focus-visible, copy button) + align sidebar width variable",
+  "version": "3.2.3",
+  "updated": "2026-08-04",
+  "description": "Keep the responsive sidebar closed by default despite the later base sidebar rule",
   "components": {
     "layouts": {
       "version": "3.2.0",
@@ -18,7 +18,7 @@
       ]
     },
     "assets": {
-      "version": "3.2.2",
+      "version": "3.2.3",
       "files": [
         "assets/css/main.css",
         "assets/css/mobile-responsive.css",
