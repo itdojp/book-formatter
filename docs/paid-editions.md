@@ -125,7 +125,8 @@ artifact checkは次を拒否する。
 
 directory指定時は既知のtext artifact extensionだけを検査する。PDF、EPUB、
 画像などのbinary内容と、adapterが大きく書き換えた本文はtarget-specific checkerで
-検査する。
+検査する。binary/未知extensionのfileを`--artifact`へ直接指定した場合は、検査済みと
+誤認しないようusage errorとして拒否する。
 
 ## JSON report
 

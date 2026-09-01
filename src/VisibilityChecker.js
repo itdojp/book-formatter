@@ -683,6 +683,12 @@ async function inspectArtifactPath(artifactPath) {
   }
 
   if (rootStat.isFile()) {
+    const extension = path.extname(requestedPath).toLowerCase();
+    if (!ARTIFACT_TEXT_EXTENSIONS.has(extension)) {
+      throw new VisibilityValidationError(
+        `Artifact file extension is not supported for text scanning: ${extension || '(none)'}`
+      );
+    }
     return [{ absolutePath: requestedPath, reportPath: path.basename(requestedPath) }];
   }
   if (!rootStat.isDirectory()) {
@@ -717,7 +723,7 @@ async function inspectArtifactPath(artifactPath) {
   return files;
 }
 
-function findRawProtectedDelimiter(content, allowFrontMatter) {
+function findRawProtectedDelimiter(content, allowFrontMatter, allowMarkdownFences) {
   const lines = normalizeArtifactBody(content, false).split('\n');
   let fence = null;
   const frontMatterClosingIndex = allowFrontMatter
@@ -730,14 +736,16 @@ function findRawProtectedDelimiter(content, allowFrontMatter) {
 
   for (let index = contentStartIndex; index < lines.length; index += 1) {
     const line = lines[index];
-    if (fence) {
+    if (allowMarkdownFences && fence) {
       if (isStandardFenceClose(line, fence)) fence = null;
       continue;
     }
-    const open = detectStandardFenceOpen(line);
-    if (open && !open.invalidInfoString) {
-      fence = open;
-      continue;
+    if (allowMarkdownFences) {
+      const open = detectStandardFenceOpen(line);
+      if (open && !open.invalidInfoString) {
+        fence = open;
+        continue;
+      }
     }
     const delimiter = parseStandardCalloutDelimiter(line);
     if (
@@ -758,6 +766,7 @@ async function scanArtifact(artifactPath, protectedFragments) {
     const content = await fs.readFile(file.absolutePath, 'utf8');
     const fileExtension = path.extname(file.reportPath).toLowerCase();
     const allowFrontMatter = fileExtension === '.md';
+    const allowMarkdownFences = fileExtension === '.md';
     const rawMarkerContent = HTML_MARKUP_EXTENSIONS.has(fileExtension)
       ? stripHtmlCodeElementContents(content)
       : content;
@@ -772,10 +781,16 @@ async function scanArtifact(artifactPath, protectedFragments) {
     ];
     const renderedDelimiterLine =
       readerVisibleCandidates
-        .map((candidate) => findRawProtectedDelimiter(candidate, false))
+        .map((candidate) =>
+          findRawProtectedDelimiter(candidate, false, allowMarkdownFences)
+        )
         .find((line) => line !== null) ?? null;
     const delimiterLine =
-      findRawProtectedDelimiter(rawMarkerContent, allowFrontMatter) ||
+      findRawProtectedDelimiter(
+        rawMarkerContent,
+        allowFrontMatter,
+        allowMarkdownFences
+      ) ||
       renderedDelimiterLine;
     if (delimiterLine !== null) {
       findings.push({

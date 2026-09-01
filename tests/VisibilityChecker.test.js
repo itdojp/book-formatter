@@ -246,6 +246,20 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const visibleFenceTextArtifact = await createArtifact(
+      '```text\n:::paid\nstill visible in plain text\n```\n',
+      'visible-fence.txt'
+    );
+    const visibleFenceTextReport = await checkBookVisibility(SAMPLE_BOOK, 'free', {
+      artifactPath: visibleFenceTextArtifact
+    });
+    assert.strictEqual(visibleFenceTextReport.summary.safe, false);
+    assert.ok(
+      visibleFenceTextReport.findings.some(
+        (finding) => finding.code === 'raw_protected_marker_in_artifact'
+      )
+    );
+
     const cases = [
       ['free', `# leak\n\n${PAID_BLOCK_TEXT}\n`],
       ['sample', `# leak\n\n${PAID_BLOCK_TEXT}\n`],
@@ -612,6 +626,12 @@ describe('VisibilityChecker', () => {
         artifactPath: path.join(linkedParent, 'safe.md')
       }),
       /must not traverse a symbolic link/
+    );
+
+    const binaryArtifact = await createArtifact('%PDF-1.7\n', 'edition.pdf');
+    await assert.rejects(
+      checkBookVisibility(SAMPLE_BOOK, 'free', { artifactPath: binaryArtifact }),
+      /extension is not supported for text scanning/
     );
   });
 
