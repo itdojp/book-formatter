@@ -219,6 +219,10 @@ npm run validate:book-registry
 npm run check-visibility -- examples/standard-book --edition free \
   --output tmp-reports/visibility/free.json
 
+# adapter skeletonのbuild planを検証し、manifestを表示（書き込みなし）
+npm start build -- --book examples/standard-book \
+  --target web-mdbook --edition free --dry-run
+
 # 文章校正（textlint + PRH辞書）
 npm run check-textlint -- <book-dir> --output textlint-report.json
 
@@ -227,6 +231,7 @@ npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 ```
 
 標準書籍metadataは[標準書籍フォーマット](docs/standard-book-format.md)、有償本文と内部本文の分離は[Edition visibilityと有償本文の混入防止](docs/paid-editions.md)を参照してください。
+出力先adapterの責務、有限target、manifest version 1は[Adapter開発契約](adapters/README.md)を参照してください。
 
 ## メンテナンススクリプト（運用者向け）
 
@@ -257,6 +262,7 @@ npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 | `validate-config` | 設定ファイルをバリデーション | `--config`, `--verbose` |
 | `sync-all-books` | 複数の書籍を一括同期 | `--directory`, `--pattern`, `--dry-run` |
 | `rollout-ux` | 既存書籍へのUX段階適用 | `--directory`, `--pattern`, `--registry`, `--apply-ux-core`, `--apply-ux-profile`, `--dry-run`, `--no-backup` |
+| `build` | 標準書籍をadapter向けに検証しmanifestを生成 | `--book`, `--target`, `--edition`, `--out-dir`, `--dry-run` |
 
 ## 設定ファイル仕様
 

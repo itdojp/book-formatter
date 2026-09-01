@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test --test-concurrency=1 tests/BookGenerator.test.js tests/BookRegistry.test.js tests/ConfigValidator.test.js tests/StandardBookFormat.test.js tests/VisibilityChecker.test.js tests/UxRollout.test.js tests/UnicodeChecker.test.js tests/CheckLinks.test.js tests/CheckTextlint.test.js tests/CheckLayoutRisk.test.js tests/CheckMarkdownStructure.test.js tests/SvgFontNormalize.test.js tests/Node24Actions.test.js tests/BookSyncSafety.test.js && node tests/GitHubPagesHandler.test.js",
+    "test": "node --test --test-concurrency=1 tests/AdapterBuild.test.js tests/BookGenerator.test.js tests/BookRegistry.test.js tests/ConfigValidator.test.js tests/StandardBookFormat.test.js tests/VisibilityChecker.test.js tests/UxRollout.test.js tests/UnicodeChecker.test.js tests/CheckLinks.test.js tests/CheckTextlint.test.js tests/CheckLayoutRisk.test.js tests/CheckMarkdownStructure.test.js tests/SvgFontNormalize.test.js tests/Node24Actions.test.js tests/BookSyncSafety.test.js && node tests/GitHubPagesHandler.test.js",
     "format": "prettier --write .",
     "lint": "eslint src/ tests/",
     "build": "node scripts/build.js",
