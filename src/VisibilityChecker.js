@@ -85,6 +85,22 @@ const HTML_BLOCK_ELEMENTS = new Set([
   'tr',
   'ul'
 ]);
+const HTML_VOID_ELEMENTS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr'
+]);
 
 export class VisibilityValidationError extends Error {
   constructor(message) {
@@ -295,6 +311,11 @@ function stripHtmlCodeElementContents(
       hasHiddenHtmlAttribute(tag, openingTag) &&
       !/\/\s*>$/u.test(tag)
     ) {
+      if (HTML_VOID_ELEMENTS.has(openingTag[1].toLowerCase())) {
+        ranges.push([index, endIndex + 1]);
+        index = endIndex;
+        continue;
+      }
       const closingEnd = findMatchingHtmlClosingTag(source, endIndex + 1, openingTag[1]);
       if (closingEnd === null) break;
       ranges.push([index, closingEnd]);

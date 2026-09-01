@@ -634,6 +634,15 @@ describe('VisibilityChecker', () => {
     });
     assert.strictEqual(nestedHiddenReport.summary.safe, false);
 
+    const hiddenVoidLeak = await createArtifact(
+      '<p>Premium <img hidden alt="noise">only details</p>\n',
+      'hidden-void.html'
+    );
+    const hiddenVoidReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: hiddenVoidLeak
+    });
+    assert.strictEqual(hiddenVoidReport.summary.safe, false);
+
     const blockBoundaryBook = await copySampleBook();
     await fs.writeFile(
       path.join(blockBoundaryBook, 'manuscript/01-introduction.md'),
