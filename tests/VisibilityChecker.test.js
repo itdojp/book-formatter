@@ -207,7 +207,8 @@ describe('VisibilityChecker', () => {
       ['sample', `# leak\n\n${INTERNAL_BLOCK_TEXT}\n`],
       ['free', 'この文書はdocument-level `paid` visibilityの例です。有償editionの構成と検査方法を説明しますが、実際の販売情報は含みません。'],
       ['free', ':::paid\nremoved too late\n:::\n'],
-      ['free', '  :::internal\nindented marker remained\n  :::\n']
+      ['free', '  :::internal\nindented marker remained\n  :::\n'],
+      ['free', '<p>:::paid</p>\n']
     ];
     for (const [editionId, content] of cases) {
       const artifactPath = await createArtifact(content);
@@ -370,6 +371,25 @@ describe('VisibilityChecker', () => {
     assert.strictEqual(renderedInlineReport.summary.safe, false);
     assert.ok(
       renderedInlineReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
+    const adjacentInlineBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(adjacentInlineBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\nAPI key is `PAID_SECRET`.\n:::\n'
+    );
+    const adjacentInlineLeak = await createArtifact(
+      '<p>API key is <code>PAID_SECRET</code>.</p>\n',
+      'adjacent-inline.html'
+    );
+    const adjacentInlineReport = await checkBookVisibility(adjacentInlineBook, 'free', {
+      artifactPath: adjacentInlineLeak
+    });
+    assert.strictEqual(adjacentInlineReport.summary.safe, false);
+    assert.ok(
+      adjacentInlineReport.findings.some(
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );

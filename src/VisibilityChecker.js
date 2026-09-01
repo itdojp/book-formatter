@@ -85,7 +85,7 @@ function stripValidFrontMatter(value) {
     : normalizedValue;
 }
 
-function stripHtmlTags(value) {
+function stripHtmlTags(value, separator = '') {
   const source = String(value || '');
   let result = '';
   let inTag = false;
@@ -96,7 +96,7 @@ function stripHtmlTags(value) {
     if (!inTag) {
       if (character === '<' && /[A-Za-z!/?]/u.test(source[index + 1] || '')) {
         inTag = true;
-        result += ' ';
+        result += separator;
       } else {
         result += character;
       }
@@ -111,7 +111,7 @@ function stripHtmlTags(value) {
       quote = character;
     } else if (character === '>') {
       inTag = false;
-      result += ' ';
+      result += separator;
     }
   }
 
@@ -121,7 +121,12 @@ function stripHtmlTags(value) {
 function createArtifactComparables(value) {
   const readerBody = stripValidFrontMatter(value);
   const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(readerBody);
-  return [readerBody, decodedBody, stripHtmlTags(decodedBody)]
+  return [
+    readerBody,
+    decodedBody,
+    stripHtmlTags(decodedBody),
+    stripHtmlTags(decodedBody, ' ')
+  ]
     .map((candidate) => normalizeComparableText(candidate))
     .filter(Boolean);
 }
@@ -447,7 +452,11 @@ async function scanArtifact(artifactPath, protectedFragments) {
   for (const file of files) {
     const content = await fs.readFile(file.absolutePath, 'utf8');
     const artifactComparables = createArtifactComparables(content);
-    const delimiterLine = findRawProtectedDelimiter(content);
+    const readerVisibleContent = stripHtmlTags(
+      MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(stripValidFrontMatter(content))
+    );
+    const delimiterLine =
+      findRawProtectedDelimiter(content) || findRawProtectedDelimiter(readerVisibleContent);
     if (delimiterLine !== null) {
       findings.push({
         code: 'raw_protected_marker_in_artifact',
