@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'fs-extra';
 import MarkdownIt from 'markdown-it';
 import markdownItFootnote from 'markdown-it-footnote';
+import YAML from 'yaml';
 
 import {
   detectStandardFenceOpen,
@@ -308,10 +309,12 @@ function stripHtmlCodeElementContents(
     if (
       stripNonRendered &&
       openingTag &&
-      hasHiddenHtmlAttribute(tag, openingTag) &&
-      !/\/\s*>$/u.test(tag)
+      hasHiddenHtmlAttribute(tag, openingTag)
     ) {
-      if (HTML_VOID_ELEMENTS.has(openingTag[1].toLowerCase())) {
+      if (
+        HTML_VOID_ELEMENTS.has(openingTag[1].toLowerCase()) ||
+        /\/\s*>$/u.test(tag)
+      ) {
         ranges.push([index, endIndex + 1]);
         index = endIndex;
         continue;
@@ -654,7 +657,22 @@ function parseVisibilityRegions(content, sourcePath) {
       });
       contentStartIndex = lines.length;
     } else {
-      contentStartIndex = closingIndex + 1;
+      const frontMatter = YAML.parseDocument(lines.slice(1, closingIndex).join('\n'), {
+        strict: true,
+        uniqueKeys: true
+      });
+      if (frontMatter.errors.length > 0) {
+        findings.push({
+          code: 'invalid_front_matter',
+          severity: 'error',
+          file: sourcePath,
+          line: 1,
+          message: 'YAML front matter is invalid; visibility boundaries cannot be determined.'
+        });
+        contentStartIndex = lines.length;
+      } else {
+        contentStartIndex = closingIndex + 1;
+      }
     }
   }
 

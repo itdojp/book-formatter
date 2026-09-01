@@ -169,6 +169,22 @@ describe('VisibilityChecker', () => {
     const yamlEndReport = await checkBookVisibility(yamlEndBook, 'free');
     assert.strictEqual(yamlEndReport.summary.safe, true);
 
+    const invalidFrontMatterBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(invalidFrontMatterBook, 'manuscript/01-introduction.md'),
+      '---\ntitle: [\n:::paid\n---\n\n# 公開章\n'
+    );
+    const invalidFrontMatterReport = await checkBookVisibility(
+      invalidFrontMatterBook,
+      'free'
+    );
+    assert.strictEqual(invalidFrontMatterReport.summary.safe, false);
+    assert.ok(
+      invalidFrontMatterReport.findings.some(
+        (finding) => finding.code === 'invalid_front_matter'
+      )
+    );
+
     const mutations = [
       ['  :::paid\nsecret\n:::\n', 'invalid_callout_delimiter'],
       [':::future\nsecret\n:::\n', 'unknown_callout_type'],
@@ -642,6 +658,17 @@ describe('VisibilityChecker', () => {
       artifactPath: hiddenVoidLeak
     });
     assert.strictEqual(hiddenVoidReport.summary.safe, false);
+
+    const hiddenSelfClosingVoidLeak = await createArtifact(
+      '<p>Premium <img hidden alt="noise" />only details</p>\n',
+      'hidden-self-closing-void.xhtml'
+    );
+    const hiddenSelfClosingVoidReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: hiddenSelfClosingVoidLeak }
+    );
+    assert.strictEqual(hiddenSelfClosingVoidReport.summary.safe, false);
 
     const blockBoundaryBook = await copySampleBook();
     await fs.writeFile(
