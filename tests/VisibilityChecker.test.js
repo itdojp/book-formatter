@@ -712,6 +712,17 @@ describe('VisibilityChecker', () => {
     );
     assert.strictEqual(noscriptInterruptionReport.summary.safe, false);
 
+    const datalistInterruptionLeak = await createArtifact(
+      '<p>Premium<datalist>noise</datalist> only details</p>\n',
+      'datalist-interruption.html'
+    );
+    const datalistInterruptionReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: datalistInterruptionLeak }
+    );
+    assert.strictEqual(datalistInterruptionReport.summary.safe, false);
+
     const titleInterruptionLeak = await createArtifact(
       '<p>Premium<title>noise</title> only details</p>\n',
       'title-interruption.html'
@@ -1149,6 +1160,39 @@ describe('VisibilityChecker', () => {
       checkBookVisibility(SAMPLE_BOOK, 'free', { artifactPath: binaryArtifact }),
       /extension is not supported for text scanning/
     );
+  });
+
+  test('artifact textをUTF-8としてfail-closedで検証する', async () => {
+    const utf16WithBom = await createArtifact(
+      Buffer.from('\uFEFF<p>Premium only details</p>\n', 'utf16le'),
+      'utf16-with-bom.html'
+    );
+    await assert.rejects(
+      checkBookVisibility(SAMPLE_BOOK, 'free', { artifactPath: utf16WithBom }),
+      (error) =>
+        error instanceof VisibilityValidationError &&
+        /must be valid UTF-8: utf16-with-bom\.html/u.test(error.message)
+    );
+
+    const utf16WithoutBom = await createArtifact(
+      Buffer.from('<p>Premium only details</p>\n', 'utf16le'),
+      'utf16-without-bom.html'
+    );
+    await assert.rejects(
+      checkBookVisibility(SAMPLE_BOOK, 'free', { artifactPath: utf16WithoutBom }),
+      (error) =>
+        error instanceof VisibilityValidationError &&
+        /must not contain NUL bytes: utf16-without-bom\.html/u.test(error.message)
+    );
+
+    const utf8WithBom = await createArtifact(
+      Buffer.from('\uFEFF<p>公開可能な本文です。</p>\n', 'utf8'),
+      'utf8-with-bom.html'
+    );
+    const report = await checkBookVisibility(SAMPLE_BOOK, 'free', {
+      artifactPath: utf8WithBom
+    });
+    assert.strictEqual(report.summary.safe, true);
   });
 
   test('検査対象text fileがないartifact directoryをfail-closedで拒否する', async () => {

@@ -123,7 +123,8 @@ artifact checkは次を拒否する。
 - HTML imageのreader-visibleな`alt` text fragment
 - 指定artifact path自体、その親path component、artifact tree内のsymbolic link
 
-directory指定時は既知のtext artifact extensionだけを検査し、検査対象が0件なら失敗する。PDF、EPUB、
+directory指定時は既知のUTF-8 text artifact extensionだけを検査し、検査対象が0件なら失敗する。
+UTF-8として不正なbyte列とNUL byteはfail-closedで拒否する。PDF、EPUB、
 画像などのbinary内容と、adapterが大きく書き換えた本文はtarget-specific checkerで
 検査する。binary/未知extensionのfileを`--artifact`へ直接指定した場合は、検査済みと
 誤認しないようusage errorとして拒否する。

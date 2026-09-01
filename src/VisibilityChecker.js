@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { TextDecoder } from 'node:util';
 
 import fs from 'fs-extra';
 import MarkdownIt from 'markdown-it';
@@ -49,6 +50,14 @@ const ARTIFACT_TEXT_EXTENSIONS = new Set([
   '.yml'
 ]);
 const HTML_MARKUP_EXTENSIONS = new Set(['.html', '.htm', '.md', '.xhtml']);
+const HTML_NON_RENDERED_ELEMENTS = new Set([
+  'datalist',
+  'noscript',
+  'script',
+  'style',
+  'template',
+  'title'
+]);
 const MIN_INDEPENDENT_FRAGMENT_CODE_POINTS = 8;
 const HTML_BLOCK_ELEMENTS = new Set([
   'address',
@@ -368,7 +377,7 @@ function collectHtmlNonRenderedRanges(source) {
     const hasAttribute = (name) =>
       node.attrs?.some((attribute) => attribute.name.toLowerCase() === name);
     const isNonRendered =
-      ['noscript', 'script', 'style', 'template', 'title'].includes(tagName) ||
+      HTML_NON_RENDERED_ELEMENTS.has(tagName) ||
       hasAttribute('hidden') ||
       (tagName === 'dialog' && !hasAttribute('open'));
     const location = node.sourceCodeLocation;
@@ -450,7 +459,8 @@ function stripHtmlCodeElementContents(
       stripNonRendered &&
       xmlMode &&
       openingTag &&
-      (hasHiddenHtmlAttribute(tag, openingTag) ||
+      (HTML_NON_RENDERED_ELEMENTS.has(openingTag[1].toLowerCase()) ||
+        hasHiddenHtmlAttribute(tag, openingTag) ||
         (openingTag[1].toLowerCase() === 'dialog' &&
           !hasHtmlAttribute(tag, openingTag, 'open')))
     ) {
@@ -1182,7 +1192,20 @@ async function scanArtifact(artifactPath, protectedFragments) {
   const findings = [];
 
   for (const file of files) {
-    const content = await fs.readFile(file.absolutePath, 'utf8');
+    const bytes = await fs.readFile(file.absolutePath);
+    let content;
+    try {
+      content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      throw new VisibilityValidationError(
+        `Artifact text file must be valid UTF-8: ${file.reportPath}`
+      );
+    }
+    if (content.includes('\0')) {
+      throw new VisibilityValidationError(
+        `Artifact text file must not contain NUL bytes: ${file.reportPath}`
+      );
+    }
     const fileExtension = path.extname(file.reportPath).toLowerCase();
     const allowFrontMatter = fileExtension === '.md';
     const allowMarkdownFences = fileExtension === '.md';
