@@ -262,6 +262,14 @@ describe('WebMdbookAdapter', () => {
       ['[danger](java&NewLine;script:alert(3))', /Unsupported external link/],
       ['[danger](java&#13;script:alert(4))', /Unsupported external link/],
       ['\\\\[danger](javascript:alert(5))', /Unsupported external link/],
+      [
+        '```text\n[open](javascript:example)\n```\n[danger](javascript:alert(6))',
+        /Unsupported external link/
+      ],
+      [
+        '    [open](javascript:example)\n[danger](javascript:alert(7))',
+        /Unsupported external link/
+      ],
       [`${'> '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
       [`${'>   '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
       [
@@ -313,6 +321,19 @@ describe('WebMdbookAdapter', () => {
     assert.ok(inlineCodeChapter.includes('`![image](data:image/png;base64,AAAA)`'));
     assert.ok(inlineCodeChapter.includes('URL scheme名 javascript: / data:'));
     assert.ok(inlineCodeChapter.includes('&lbrack;example]: javascript:example'));
+
+    for (const [index, inertCode] of [
+      `\n## Indented code example\n\n    [open](javascript:example) ${'['.repeat(129)}\n`,
+      `\n## Nested indented code example\n\n- nested code\n\n      [open](javascript:example) ${'['.repeat(129)}\n`
+    ].entries()) {
+      const inertCodeBook = await copySampleBook();
+      const inertCodeOutput = await temporaryDirectory(`tmp-web-mdbook-inert-code-${index}-`);
+      await appendWorkflow(inertCodeBook, inertCode);
+      await assert.doesNotReject(
+        () => build(inertCodeBook, inertCodeOutput),
+        `inert code case ${index}`
+      );
+    }
 
     const unsafeSvgCases = [
       ['<svg><script>blocked</script></svg>', /active element <script>/],
