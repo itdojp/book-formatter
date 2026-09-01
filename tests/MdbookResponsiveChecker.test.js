@@ -86,7 +86,10 @@ describe('MdbookResponsiveChecker', () => {
       path.join(root, 'book/index.html'),
       path.join(root, 'book/chapter.html')
     );
-    await fs.writeFile(path.join(root, 'book/toc.html'), '<html><body>support page</body></html>\n');
+    await fs.writeFile(
+      path.join(root, 'book/toc.html'),
+      '<html><body class="sidebar-iframe-inner">support page</body></html>\n'
+    );
     let receivedPages = [];
     const report = await checkMdbookResponsive(root, {
       chrome: 'synthetic-chrome',
@@ -115,6 +118,20 @@ describe('MdbookResponsiveChecker', () => {
         browserProbeRunner: async () => Array.from({ length: 12 }, () => ({}))
       }),
       /Browser probe coverage mismatch: expected 24, observed 12/
+    );
+  });
+
+  test('generated content pageのresponsive DOM driftをsupport page扱いせず拒否する', async () => {
+    const root = await fixture();
+    const index = await fs.readFile(path.join(root, 'book/index.html'), 'utf8');
+    await fs.writeFile(
+      path.join(root, 'book/chapter.html'),
+      index.replace('id="mdbook-content"', 'id="missing-mdbook-content"')
+    );
+
+    await assert.rejects(
+      checkMdbookResponsive(root, { staticOnly: true }),
+      /Built mdBook content page lacks responsive IDs in chapter\.html: mdbook-content/
     );
   });
 

@@ -33,6 +33,10 @@ const REQUIRED_RESPONSIVE_IDS = Object.freeze([
   'mdbook-content'
 ]);
 
+const MDBOOK_SUPPORT_HTML = Object.freeze({
+  'toc.html': 'sidebar-iframe-inner'
+});
+
 export class MdbookResponsiveError extends Error {
   constructor(message) {
     super(message);
@@ -114,15 +118,21 @@ function parseHtmlContract(source) {
   const document = parseHtml(source);
   const ids = new Set();
   const destinations = [];
+  const bodyClasses = new Set();
   visit(document, (node) => {
     const id = attribute(node, 'id');
     if (id) ids.add(id);
+    if (node.tagName === 'body') {
+      for (const name of (attribute(node, 'class') || '').split(/\s+/u).filter(Boolean)) {
+        bodyClasses.add(name);
+      }
+    }
     for (const name of ['href', 'src']) {
       const destination = attribute(node, name);
       if (destination) destinations.push(destination);
     }
   });
-  return { ids, destinations };
+  return { ids, destinations, bodyClasses };
 }
 
 function decodeUrlPart(value, sourcePath) {
@@ -142,10 +152,27 @@ async function inspectBuiltLinks(buildRoot) {
   for (const file of htmlFiles) {
     contractByPath.set(file, parseHtmlContract(await fs.readFile(file, 'utf8')));
   }
-  const responsiveHtmlFiles = htmlFiles.filter((file) => {
-    const ids = contractByPath.get(file).ids;
-    return REQUIRED_RESPONSIVE_IDS.every((id) => ids.has(id));
-  });
+  const responsiveHtmlFiles = [];
+  for (const file of htmlFiles) {
+    const relativePath = path.relative(buildRoot, file).split(path.sep).join('/');
+    const contract = contractByPath.get(file);
+    const supportClass = MDBOOK_SUPPORT_HTML[relativePath];
+    if (supportClass) {
+      if (!contract.bodyClasses.has(supportClass)) {
+        throw new MdbookResponsiveError(
+          `Built mdBook support page lacks ${supportClass}: ${relativePath}`
+        );
+      }
+      continue;
+    }
+    const missingIds = REQUIRED_RESPONSIVE_IDS.filter((id) => !contract.ids.has(id));
+    if (missingIds.length > 0) {
+      throw new MdbookResponsiveError(
+        `Built mdBook content page lacks responsive IDs in ${relativePath}: ${missingIds.join(', ')}`
+      );
+    }
+    responsiveHtmlFiles.push(file);
+  }
   if (responsiveHtmlFiles.length === 0) {
     throw new MdbookResponsiveError('Built mdBook does not contain a responsive content page.');
   }
