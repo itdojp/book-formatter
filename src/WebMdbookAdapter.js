@@ -58,7 +58,11 @@ function escapeMarkdownLabel(value) {
   if (!source.trim() || hasControl) {
     throw new WebMdbookAdapterError('SUMMARY title must be non-empty single-line display text.');
   }
-  return source.replace(/([\\[\]])/g, '\\$1');
+  return source
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/([\\[\]])/g, '\\$1');
 }
 
 function tomlString(value) {

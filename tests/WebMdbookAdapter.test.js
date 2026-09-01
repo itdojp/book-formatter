@@ -285,4 +285,18 @@ describe('WebMdbookAdapter', () => {
 
     await assert.rejects(build(bookDirectory, outputRoot), /single-line display text/);
   });
+
+  test('SUMMARY titleのraw HTMLをdisplay textへescapeする', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-web-mdbook-summary-html-');
+    const metadataPath = path.join(bookDirectory, 'book.yaml');
+    const metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'));
+    metadata.structure.chapters[0].title = '<script>unsafe</script> & [表示]';
+    await fs.writeFile(metadataPath, YAML.stringify(metadata));
+
+    const result = await build(bookDirectory, outputRoot);
+    const summary = await fs.readFile(path.join(result.outputDirectory, 'src/SUMMARY.md'), 'utf8');
+    assert.ok(summary.includes('&lt;script&gt;unsafe&lt;/script&gt; &amp; \\[表示\\]'));
+    assert.doesNotMatch(summary, /<script>|<\/script>/u);
+  });
 });
