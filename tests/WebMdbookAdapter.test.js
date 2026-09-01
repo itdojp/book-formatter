@@ -266,6 +266,10 @@ describe('WebMdbookAdapter', () => {
       ['<svg><foreignObject>blocked</foreignObject></svg>', /active element <foreignObject>/],
       ['<svg><animate attributeName="x" /></svg>', /active element <animate>/],
       [
+        '<svg xmlns:s="http://www.w3.org/2000/svg"><s:script>blocked</s:script></svg>',
+        /active element <s:script>/
+      ],
+      [
         '<svg xml:base="https://assets.example/"><use href="#shape" /></svg>',
         /alternate base URL/
       ],

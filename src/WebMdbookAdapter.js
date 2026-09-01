@@ -39,11 +39,15 @@ const ACTIVE_SVG_ELEMENTS = new Set([
   'animatemotion',
   'animatetransform',
   'audio',
+  'base',
   'discard',
   'embed',
+  'form',
   'foreignobject',
   'handler',
   'iframe',
+  'link',
+  'meta',
   'object',
   'script',
   'set',
@@ -357,7 +361,8 @@ async function requireRegularPathBelow(bookRoot, relativePath, label) {
 function inspectSvgNode(node, assetPath) {
   if (node.tagName) {
     const tagName = node.tagName.toLowerCase();
-    if (ACTIVE_SVG_ELEMENTS.has(tagName)) {
+    const localTagName = tagName.split(':').at(-1);
+    if (ACTIVE_SVG_ELEMENTS.has(localTagName)) {
       throw new WebMdbookAdapterError(
         `SVG asset contains active element <${node.tagName}>: ${assetPath}`
       );
@@ -368,13 +373,14 @@ function inspectSvgNode(node, assetPath) {
       const qualifiedName = attribute.prefix
         ? `${attribute.prefix.toLowerCase()}:${attributeName}`
         : attributeName;
+      const localAttributeName = attributeName.split(':').at(-1);
       const value = attribute.value.trim();
-      if (attributeName.startsWith('on')) {
+      if (localAttributeName.startsWith('on')) {
         throw new WebMdbookAdapterError(
           `SVG asset contains event-handler attribute ${qualifiedName}: ${assetPath}`
         );
       }
-      if (attributeName === 'style') {
+      if (localAttributeName === 'style') {
         throw new WebMdbookAdapterError(
           `SVG asset contains inline style capable of external references: ${assetPath}`
         );
@@ -389,7 +395,7 @@ function inspectSvgNode(node, assetPath) {
           `SVG asset contains an ambiguous escaped attribute value: ${assetPath}`
         );
       }
-      if (attributeName === 'href' || attributeName === 'src') {
+      if (localAttributeName === 'href' || localAttributeName === 'src') {
         if (value && !SAFE_SVG_FRAGMENT_REFERENCE.test(value)) {
           throw new WebMdbookAdapterError(
             `SVG asset contains non-local ${qualifiedName} reference: ${assetPath}`
