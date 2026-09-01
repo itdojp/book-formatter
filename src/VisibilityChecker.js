@@ -64,21 +64,9 @@ function normalizeComparableText(value) {
 function createProtectedFragments(value, source, visibility) {
   const normalizedValue = String(value || '').replace(/\r\n?/g, '\n');
   const fragments = new Map();
-  const wholeDocument = normalizeComparableText(normalizedValue);
-
-  if (wholeDocument) {
-    const wholeDigest = digest(wholeDocument);
-    fragments.set(wholeDigest, {
-      source,
-      visibility,
-      digest: wholeDigest,
-      comparableText: wholeDocument
-    });
-  }
-
-  for (const candidate of normalizedValue.split(/\n\s*\n/u)) {
+  const addFragment = (candidate) => {
     const comparableText = normalizeComparableText(candidate);
-    if (!comparableText || /^:::(?:paid|internal)?$/u.test(comparableText)) continue;
+    if (!comparableText || /^:::(?:paid|internal)?$/u.test(comparableText)) return;
     const fragmentDigest = digest(comparableText);
     fragments.set(fragmentDigest, {
       source,
@@ -86,6 +74,29 @@ function createProtectedFragments(value, source, visibility) {
       digest: fragmentDigest,
       comparableText
     });
+  };
+
+  addFragment(normalizedValue);
+  for (const candidate of normalizedValue.split(/\n\s*\n/u)) {
+    addFragment(candidate);
+  }
+
+  const lines = normalizedValue.split('\n');
+  let fence = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (fence) {
+      if (isStandardFenceClose(lines[index], fence)) {
+        const body = lines.slice(fence.bodyStartIndex, index).join('\n');
+        addFragment(body);
+        for (const candidate of body.split(/\n\s*\n/u)) addFragment(candidate);
+        fence = null;
+      }
+      continue;
+    }
+    const open = detectStandardFenceOpen(lines[index]);
+    if (open && !open.invalidInfoString) {
+      fence = { ...open, bodyStartIndex: index + 1 };
+    }
   }
 
   return [...fragments.values()];

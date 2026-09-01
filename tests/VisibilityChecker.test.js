@@ -243,6 +243,34 @@ describe('VisibilityChecker', () => {
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );
+
+    const fencedCases = [
+      {
+        filename: 'backmatter/afterword.md',
+        content: '# 有償版\n\n```text\nPAID_EXCLUDED_CODE\n```\n',
+        artifact: '<pre><code>PAID_EXCLUDED_CODE</code></pre>\n'
+      },
+      {
+        filename: 'manuscript/01-introduction.md',
+        content: '# 公開版\n\n:::paid\n```text\nPAID_BLOCK_CODE\n```\n:::\n',
+        artifact: '<pre><code>PAID_BLOCK_CODE</code></pre>\n'
+      }
+    ];
+    for (const fencedCase of fencedCases) {
+      const fencedBook = await copySampleBook();
+      await fs.writeFile(path.join(fencedBook, fencedCase.filename), fencedCase.content);
+      const fencedLeak = await createArtifact(fencedCase.artifact, 'fenced-code.html');
+      const fencedReport = await checkBookVisibility(fencedBook, 'free', {
+        artifactPath: fencedLeak
+      });
+      assert.strictEqual(fencedReport.summary.safe, false, fencedCase.filename);
+      assert.ok(
+        fencedReport.findings.some(
+          (finding) => finding.code === 'protected_content_in_artifact'
+        ),
+        fencedCase.filename
+      );
+    }
   });
 
   test('paidはpaid本文を許可してinternal本文を拒否し、internalは両方を許可する', async () => {
