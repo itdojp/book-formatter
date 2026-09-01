@@ -56,6 +56,32 @@ const ACTIVE_SVG_ELEMENTS = new Set([
 ]);
 const SAFE_SVG_FRAGMENT_REFERENCE = /^#[A-Za-z_][A-Za-z0-9_.:-]*$/u;
 const SAFE_SVG_URL_FUNCTION = /^url\(\s*#[A-Za-z_][A-Za-z0-9_.:-]*\s*\)$/iu;
+const PASSIVE_WEB_ASSET_EXTENSIONS = new Set([
+  '.avif',
+  '.bmp',
+  '.csv',
+  '.gif',
+  '.ico',
+  '.jpeg',
+  '.jpg',
+  '.json',
+  '.mp3',
+  '.mp4',
+  '.ogg',
+  '.otf',
+  '.png',
+  '.svg',
+  '.tsv',
+  '.ttf',
+  '.txt',
+  '.wav',
+  '.webm',
+  '.webp',
+  '.woff',
+  '.woff2',
+  '.yaml',
+  '.yml'
+]);
 
 export class WebMdbookAdapterError extends Error {
   constructor(message) {
@@ -491,7 +517,13 @@ async function resolveDocumentAssets({
         `${kind} target must be an included Markdown document, generated book.yaml, or declared asset: ${destination}`
       );
     }
-    if (path.extname(verifiedRelative).toLowerCase() === '.svg') {
+    const extension = path.extname(verifiedRelative).toLowerCase();
+    if (!PASSIVE_WEB_ASSET_EXTENSIONS.has(extension)) {
+      throw new WebMdbookAdapterError(
+        `Unsupported web asset extension ${extension || '(none)'}: ${verifiedRelative}`
+      );
+    }
+    if (extension === '.svg') {
       await assertSafeSvgAsset(resolved, verifiedRelative);
     }
     assets.push({ source: resolved, destination: verifiedRelative });

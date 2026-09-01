@@ -282,6 +282,22 @@ describe('WebMdbookAdapter', () => {
       await appendWorkflow(unsafeBook, '\n[open](../assets/payload.svg)\n');
       await assert.rejects(build(unsafeBook, unsafeOutput), expected);
     }
+
+    for (const extension of ['htm', 'html', 'xhtml', 'xml', 'svgz']) {
+      const activeDocumentBook = await copySampleBook();
+      const activeDocumentOutput = await temporaryDirectory(
+        `tmp-web-mdbook-active-document-${extension}-`
+      );
+      await fs.writeFile(
+        path.join(activeDocumentBook, `assets/payload.${extension}`),
+        '<script>blocked</script>\n'
+      );
+      await appendWorkflow(activeDocumentBook, `\n[open](../assets/payload.${extension})\n`);
+      await assert.rejects(
+        build(activeDocumentBook, activeDocumentOutput),
+        new RegExp(`Unsupported web asset extension \\.${extension}`)
+      );
+    }
   });
 
   test('未知producerの既存出力を上書きしない', async () => {
