@@ -611,6 +611,29 @@ describe('VisibilityChecker', () => {
     });
     assert.strictEqual(hiddenClassTextReport.summary.safe, true);
 
+    const adjacentHiddenBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(adjacentHiddenBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\nPremiumonly details\n:::\n'
+    );
+    const adjacentHiddenLeak = await createArtifact(
+      '<p>Premium<span hidden>noise</span>only details</p>\n',
+      'adjacent-hidden.html'
+    );
+    const adjacentHiddenReport = await checkBookVisibility(adjacentHiddenBook, 'free', {
+      artifactPath: adjacentHiddenLeak
+    });
+    assert.strictEqual(adjacentHiddenReport.summary.safe, false);
+
+    const nestedHiddenLeak = await createArtifact(
+      '<p>Premium<span hidden><span>noise</span>tail</span> only details</p>\n',
+      'nested-hidden.html'
+    );
+    const nestedHiddenReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: nestedHiddenLeak
+    });
+    assert.strictEqual(nestedHiddenReport.summary.safe, false);
+
     const blockBoundaryBook = await copySampleBook();
     await fs.writeFile(
       path.join(blockBoundaryBook, 'manuscript/01-introduction.md'),

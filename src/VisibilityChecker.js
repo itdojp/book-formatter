@@ -200,9 +200,51 @@ function hasHiddenHtmlAttribute(tag, openingTag) {
   return /(?:^|\s)hidden(?:\s*=\s*[^\s/>]+)?(?=[\s/>])/iu.test(attributeText);
 }
 
+function findHtmlTagEnd(source, startIndex) {
+  let quote = null;
+  for (let index = startIndex + 1; index < source.length; index += 1) {
+    const character = source[index];
+    if (quote) {
+      if (character === quote) quote = null;
+    } else if (character === '"' || character === '\'') {
+      quote = character;
+    } else if (character === '>') {
+      return index;
+    }
+  }
+  return null;
+}
+
+function findMatchingHtmlClosingTag(source, startIndex, tagName) {
+  let depth = 1;
+  for (let index = startIndex; index < source.length; index += 1) {
+    if (source.startsWith('<!--', index)) {
+      const commentEnd = source.indexOf('-->', index + 4);
+      if (commentEnd === -1) return null;
+      index = commentEnd + 2;
+      continue;
+    }
+    if (source[index] !== '<') continue;
+    const endIndex = findHtmlTagEnd(source, index);
+    if (endIndex === null) return null;
+    const tag = source.slice(index, endIndex + 1);
+    const matchedTag = tag.match(/^<\s*(\/?)\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
+    if (matchedTag?.[2].toLowerCase() === tagName.toLowerCase()) {
+      if (matchedTag[1]) {
+        depth -= 1;
+        if (depth === 0) return endIndex + 1;
+      } else if (!/\/\s*>$/u.test(tag)) {
+        depth += 1;
+      }
+    }
+    index = endIndex;
+  }
+  return null;
+}
+
 function stripHtmlCodeElementContents(
   value,
-  { stripCode = true, stripNonRendered = false } = {}
+  { stripCode = true, stripNonRendered = false, rangeSeparator = ' ' } = {}
 ) {
   const source = String(value || '');
   const stack = [];
@@ -218,39 +260,31 @@ function stripHtmlCodeElementContents(
       continue;
     }
 
-    let quote = null;
-    let endIndex = index + 1;
-    for (; endIndex < source.length; endIndex += 1) {
-      const character = source[endIndex];
-      if (quote) {
-        if (character === quote) quote = null;
-      } else if (character === '"' || character === '\'') {
-        quote = character;
-      } else if (character === '>') {
-        break;
-      }
-    }
-
-    if (endIndex >= source.length) {
-      break;
-    }
+    const endIndex = findHtmlTagEnd(source, index);
+    if (endIndex === null) break;
 
     const tag = source.slice(index, endIndex + 1);
     const rawTextTag = tag.match(
       /^<\s*(script|style|template|textarea|title)(?=[\s/>])/iu
     );
     if (rawTextTag && !/\/\s*>$/u.test(tag)) {
-      const closingPattern = new RegExp(`<\\/\\s*${rawTextTag[1]}\\s*>`, 'igu');
-      closingPattern.lastIndex = endIndex + 1;
-      const closingTag = closingPattern.exec(source);
-      if (!closingTag) break;
+      let closingEnd;
+      if (rawTextTag[1].toLowerCase() === 'template') {
+        closingEnd = findMatchingHtmlClosingTag(source, endIndex + 1, rawTextTag[1]);
+      } else {
+        const closingPattern = new RegExp(`<\\/\\s*${rawTextTag[1]}\\s*>`, 'igu');
+        closingPattern.lastIndex = endIndex + 1;
+        const closingTag = closingPattern.exec(source);
+        closingEnd = closingTag ? closingPattern.lastIndex : null;
+      }
+      if (closingEnd === null) break;
       if (
         stripNonRendered &&
         ['script', 'style', 'template'].includes(rawTextTag[1].toLowerCase())
       ) {
-        ranges.push([index, closingPattern.lastIndex]);
+        ranges.push([index, closingEnd]);
       }
-      index = closingPattern.lastIndex - 1;
+      index = closingEnd - 1;
       continue;
     }
 
@@ -261,12 +295,10 @@ function stripHtmlCodeElementContents(
       hasHiddenHtmlAttribute(tag, openingTag) &&
       !/\/\s*>$/u.test(tag)
     ) {
-      const closingPattern = new RegExp(`<\\/\\s*${openingTag[1]}\\s*>`, 'igu');
-      closingPattern.lastIndex = endIndex + 1;
-      const closingTag = closingPattern.exec(source);
-      if (!closingTag) break;
-      ranges.push([index, closingPattern.lastIndex]);
-      index = closingPattern.lastIndex - 1;
+      const closingEnd = findMatchingHtmlClosingTag(source, endIndex + 1, openingTag[1]);
+      if (closingEnd === null) break;
+      ranges.push([index, closingEnd]);
+      index = closingEnd - 1;
       continue;
     }
 
@@ -289,8 +321,19 @@ function stripHtmlCodeElementContents(
 
   let result = '';
   let cursor = 0;
-  for (const [start, end] of ranges) {
-    result += `${source.slice(cursor, start)} `;
+  const mergedRanges = ranges
+    .sort((left, right) => left[0] - right[0] || left[1] - right[1])
+    .reduce((merged, [start, end]) => {
+      const previous = merged.at(-1);
+      if (previous && start <= previous[1]) {
+        previous[1] = Math.max(previous[1], end);
+      } else {
+        merged.push([start, end]);
+      }
+      return merged;
+    }, []);
+  for (const [start, end] of mergedRanges) {
+    result += `${source.slice(cursor, start)}${rangeSeparator}`;
     cursor = end;
   }
   result += source.slice(cursor);
@@ -304,16 +347,21 @@ function createArtifactComparables(value, allowFrontMatter) {
     : [completeBody];
   const artifactComparables = candidateBodies.flatMap((candidateBody) => {
     const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(candidateBody);
-    const readerVisibleBody = stripHtmlCodeElementContents(decodedBody, {
-      stripCode: false,
-      stripNonRendered: true
-    });
+    const readerVisibleBodies = ['', ' '].map((rangeSeparator) =>
+      stripHtmlCodeElementContents(decodedBody, {
+        stripCode: false,
+        stripNonRendered: true,
+        rangeSeparator
+      })
+    );
     return [
       candidateBody,
       decodedBody,
-      stripHtmlTags(readerVisibleBody),
-      stripHtmlTags(readerVisibleBody, ' '),
-      stripHtmlTags(readerVisibleBody, htmlBlockBoundary)
+      ...readerVisibleBodies.flatMap((readerVisibleBody) => [
+        stripHtmlTags(readerVisibleBody),
+        stripHtmlTags(readerVisibleBody, ' '),
+        stripHtmlTags(readerVisibleBody, htmlBlockBoundary)
+      ])
     ];
   });
   if (allowFrontMatter) {
@@ -826,17 +874,20 @@ async function scanArtifact(artifactPath, protectedFragments) {
       ? stripHtmlCodeElementContents(content)
       : content;
     const artifactComparables = createArtifactComparables(content, allowFrontMatter);
-    const readerVisibleBase = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
-      stripHtmlCodeElementContents(
-        normalizeArtifactBody(content, allowFrontMatter),
-        { stripNonRendered: true }
-      )
-    );
-    const readerVisibleCandidates = [
-      stripHtmlTags(readerVisibleBase),
-      stripHtmlTags(readerVisibleBase, '\n'),
-      stripHtmlTags(readerVisibleBase, htmlBlockBoundary)
-    ];
+    const normalizedArtifactBody = normalizeArtifactBody(content, allowFrontMatter);
+    const readerVisibleCandidates = ['', ' '].flatMap((rangeSeparator) => {
+      const readerVisibleBase = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
+        stripHtmlCodeElementContents(normalizedArtifactBody, {
+          stripNonRendered: true,
+          rangeSeparator
+        })
+      );
+      return [
+        stripHtmlTags(readerVisibleBase),
+        stripHtmlTags(readerVisibleBase, '\n'),
+        stripHtmlTags(readerVisibleBase, htmlBlockBoundary)
+      ];
+    });
     const renderedDelimiterLine =
       readerVisibleCandidates
         .map((candidate) =>
