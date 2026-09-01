@@ -22,21 +22,62 @@ structure:
     - id: preface
       title: はじめに
       path: frontmatter/preface.md
+      visibility: sample
   chapters:
     - id: introduction
       title: 標準書籍フォーマットとは
       path: manuscript/01-introduction.md
+      visibility: free
     - id: workflow
       title: 正本から出力する流れ
       path: manuscript/02-workflow.md
+      visibility: free
   backmatter:
     - id: afterword
       title: おわりに
       path: backmatter/afterword.md
+      visibility: paid
+    - id: internal-notes
+      title: 内部確認メモ
+      path: backmatter/internal-notes.md
+      visibility: internal
 editions:
-  - id: standard
-    title: 標準版
+  - id: free
+    title: 無料公開版
     status: draft
-    description: adapterへ渡す正本の最小edition
+    description: free文書とfree blockだけを含む公開edition
+    visibility: free
+    documents:
+      - introduction
+      - workflow
+  - id: sample
+    title: サンプル版
+    status: draft
+    description: freeとsample文書を含む公開edition
+    visibility: sample
+    documents:
+      - preface
+      - introduction
+  - id: paid
+    title: 有償版
+    status: draft
+    description: internalを除く有償edition
+    visibility: paid
+    documents:
+      - preface
+      - introduction
+      - workflow
+      - afterword
+  - id: internal
+    title: 内部確認版
+    status: draft
+    description: 全visibilityを確認する非公開edition
+    visibility: internal
+    documents:
+      - preface
+      - introduction
+      - workflow
+      - afterword
+      - internal-notes
 license: CC-BY-NC-SA-4.0
 version: 0.1.0

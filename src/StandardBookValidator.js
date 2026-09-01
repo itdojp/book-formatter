@@ -151,7 +151,7 @@ export async function validateStandardBook(bookDirectory, options = {}) {
   let schema;
 
   try {
-    metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'));
+    metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'), { uniqueKeys: true });
   } catch (error) {
     throw new StandardBookValidationError(`Cannot read book.yaml: ${error.message}`);
   }
@@ -232,8 +232,21 @@ export async function validateStandardBook(bookDirectory, options = {}) {
     throw new StandardBookValidationError('edition ids must be unique');
   }
 
+  for (const edition of metadata.editions) {
+    if (!edition.documents) continue;
+
+    for (const documentId of edition.documents) {
+      if (!seenIds.has(documentId)) {
+        throw new StandardBookValidationError(
+          `edition ${edition.id} references unknown structure id: ${documentId}`
+        );
+      }
+    }
+  }
+
   return {
     bookRoot,
+    metadata,
     metadataPath,
     schemaPath,
     schemaVersion: metadata.schema_version,

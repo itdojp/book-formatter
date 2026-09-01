@@ -136,7 +136,7 @@
       }
     },
     "editions": {
-      "description": "Named publication editions. Visibility rules are defined separately.",
+      "description": "Named publication editions. Visibility fields are optional for backward compatibility and required by the visibility checker.",
       "type": "array",
       "minItems": 1,
       "items": {
@@ -156,8 +156,50 @@
           },
           "description": {
             "$ref": "#/definitions/nonEmptyString"
+          },
+          "visibility": {
+            "$ref": "#/definitions/visibility"
+          },
+          "documents": {
+            "description": "Ordered structure IDs included by this edition before block-level visibility filtering.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/definitions/id"
+            }
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "visibility": {}
+              },
+              "required": ["visibility"]
+            },
+            "then": {
+              "properties": {
+                "documents": {}
+              },
+              "required": ["documents"]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "documents": {}
+              },
+              "required": ["documents"]
+            },
+            "then": {
+              "properties": {
+                "visibility": {}
+              },
+              "required": ["visibility"]
+            }
+          }
+        ]
       }
     },
     "license": {
@@ -178,6 +220,10 @@
     "nonEmptyString": {
       "type": "string",
       "minLength": 1
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["free", "sample", "paid", "internal"]
     },
     "httpsUrl": {
       "type": "string",
@@ -205,6 +251,9 @@
         },
         "path": {
           "$ref": "#/definitions/markdownPath"
+        },
+        "visibility": {
+          "$ref": "#/definitions/visibility"
         }
       }
     },

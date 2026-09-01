@@ -44,8 +44,9 @@ describe('StandardBookValidator', () => {
     const result = await validateStandardBook(SAMPLE_BOOK);
 
     assert.strictEqual(result.schemaVersion, 1);
-    assert.strictEqual(result.documentCount, 4);
-    assert.strictEqual(result.editionCount, 1);
+    assert.strictEqual(result.documentCount, 5);
+    assert.strictEqual(result.editionCount, 4);
+    assert.strictEqual(result.metadata.editions[0].visibility, 'free');
   });
 
   test('schema_versionがない旧config形式を標準正本として受理しない', async () => {
@@ -120,6 +121,45 @@ describe('StandardBookValidator', () => {
     await expectMetadataRejected((metadata) => {
       metadata.editions.push({ ...metadata.editions[0] });
     }, /edition ids must be unique/);
+  });
+
+  test('visibility付きeditionのdocument参照を検証する', async () => {
+    await expectMetadataRejected((metadata) => {
+      delete metadata.editions[0].documents;
+    }, /must have required property 'documents'/);
+
+    await expectMetadataRejected((metadata) => {
+      delete metadata.editions[0].visibility;
+    }, /must have required property 'visibility'/);
+
+    await expectMetadataRejected((metadata) => {
+      metadata.editions[0].visibility = 'public';
+    }, /allowed values/);
+
+    await expectMetadataRejected((metadata) => {
+      metadata.editions[0].documents.push('missing-document');
+    }, /references unknown structure id/);
+  });
+
+  test('visibility未使用の既存version 1 metadataとの互換性を維持する', async () => {
+    const bookDirectory = await copySampleBook();
+    await updateMetadata(bookDirectory, (metadata) => {
+      for (const section of Object.values(metadata.structure)) {
+        for (const entry of section) delete entry.visibility;
+      }
+      metadata.editions = [{ id: 'standard', title: '標準版', status: 'draft' }];
+    });
+
+    await assert.doesNotReject(validateStandardBook(bookDirectory));
+  });
+
+  test('book.yamlの重複keyをfail-closedで拒否する', async () => {
+    const bookDirectory = await copySampleBook();
+    const metadataPath = path.join(bookDirectory, 'book.yaml');
+    const content = await fs.readFile(metadataPath, 'utf8');
+    await fs.writeFile(metadataPath, content.replace('schema_version: 1\n', 'schema_version: 1\nschema_version: 1\n'));
+
+    await assert.rejects(validateStandardBook(bookDirectory), /Map keys must be unique/);
   });
 
   test('欠落fileとsymbolic link経由の原稿を拒否する', async (context) => {

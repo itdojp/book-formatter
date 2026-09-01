@@ -215,12 +215,18 @@ npm run check-markdown-structure -- <book-dir> --output markdown-structure-repor
 # portfolio-level book registryのschemaと参照整合性を検証
 npm run validate:book-registry
 
+# 標準書籍のedition visibilityと任意の生成artifactを検証
+npm run check-visibility -- examples/standard-book --edition free \
+  --output tmp-reports/visibility/free.json
+
 # 文章校正（textlint + PRH辞書）
 npm run check-textlint -- <book-dir> --output textlint-report.json
 
 # 技術文書プリセットも併用（任意）
 npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 ```
+
+標準書籍metadataは[標準書籍フォーマット](docs/standard-book-format.md)、有償本文と内部本文の分離は[Edition visibilityと有償本文の混入防止](docs/paid-editions.md)を参照してください。
 
 ## メンテナンススクリプト（運用者向け）
 

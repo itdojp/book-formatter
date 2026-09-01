@@ -1,0 +1,1494 @@
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { TextDecoder } from 'node:util';
+
+import fs from 'fs-extra';
+import MarkdownIt from 'markdown-it';
+import markdownItFootnote from 'markdown-it-footnote';
+import { parse as parseHtml } from 'parse5';
+import YAML from 'yaml';
+
+import {
+  detectStandardFenceOpen,
+  isStandardFenceClose,
+  parseStandardCalloutDelimiter,
+  STANDARD_CALLOUT_TYPES
+} from './StandardCalloutParser.js';
+import { validateStandardBook } from './StandardBookValidator.js';
+
+export const VISIBILITY_CONTRACT_VERSION = 1;
+export const VISIBILITY_VALUES = Object.freeze(['free', 'sample', 'paid', 'internal']);
+
+const VISIBILITY_RANK = new Map(VISIBILITY_VALUES.map((value, index) => [value, index]));
+const MARKDOWN_TEXT_EXTRACTOR = new MarkdownIt({
+  html: false,
+  linkify: false,
+  typographer: false
+}).use(markdownItFootnote);
+const MARKDOWN_ARTIFACT_RENDERER = new MarkdownIt({
+  html: true,
+  linkify: false,
+  typographer: false
+}).use(markdownItFootnote);
+const ARTIFACT_TEXT_EXTENSIONS = new Set([
+  '.css',
+  '.csv',
+  '.html',
+  '.htm',
+  '.ini',
+  '.js',
+  '.json',
+  '.mjs',
+  '.md',
+  '.svg',
+  '.toml',
+  '.ts',
+  '.txt',
+  '.xhtml',
+  '.xml',
+  '.yaml',
+  '.yml'
+]);
+const HTML_MARKUP_EXTENSIONS = new Set(['.html', '.htm', '.md', '.xhtml']);
+const HTML_NON_RENDERED_ELEMENTS = new Set([
+  'datalist',
+  'noscript',
+  'script',
+  'style',
+  'template',
+  'title'
+]);
+const MIN_INDEPENDENT_FRAGMENT_CODE_POINTS = 8;
+const HTML_BLOCK_ELEMENTS = new Set([
+  'address',
+  'article',
+  'aside',
+  'blockquote',
+  'body',
+  'br',
+  'caption',
+  'colgroup',
+  'dd',
+  'details',
+  'dialog',
+  'div',
+  'dl',
+  'dt',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'header',
+  'hgroup',
+  'hr',
+  'html',
+  'legend',
+  'li',
+  'main',
+  'menu',
+  'nav',
+  'ol',
+  'p',
+  'pre',
+  'search',
+  'section',
+  'summary',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'ul'
+]);
+const HTML_VOID_ELEMENTS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr'
+]);
+const SHORT_MARKDOWN_WRAPPER_PAIRS = new Map([
+  ['em_open', 'em_close'],
+  ['link_open', 'link_close'],
+  ['s_open', 's_close'],
+  ['strong_open', 'strong_close']
+]);
+const HTML_EXACT_FRAGMENT_ELEMENTS = new Set([
+  'a',
+  'b',
+  'code',
+  'del',
+  'em',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'i',
+  'mark',
+  's',
+  'small',
+  'strong',
+  'sub',
+  'sup'
+]);
+
+export class VisibilityValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'VisibilityValidationError';
+  }
+}
+
+function digest(value) {
+  return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+function compareCodeUnits(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function normalizeComparableText(value) {
+  return String(value || '')
+    .replace(/^\uFEFF/u, '')
+    .normalize('NFC')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function findFrontMatterClosingIndex(lines) {
+  if (!/^---[\t ]*$/u.test(lines[0] || '')) return null;
+  return lines.findIndex(
+    (line, index) => index > 0 && /^(?:---|\.\.\.)[\t ]*$/u.test(line)
+  );
+}
+
+function hasValidFrontMatter(lines, closingIndex) {
+  if (closingIndex === null || closingIndex < 0) return false;
+  try {
+    const frontMatter = YAML.parseDocument(lines.slice(1, closingIndex).join('\n'), {
+      strict: true,
+      uniqueKeys: true
+    });
+    return frontMatter.errors.length === 0;
+  } catch {
+    return false;
+  }
+}
+
+function stripValidFrontMatter(value) {
+  const normalizedValue = String(value || '')
+    .replace(/^\uFEFF/u, '')
+    .replace(/\r\n?/g, '\n');
+  const lines = normalizedValue.split('\n');
+  const closingIndex = findFrontMatterClosingIndex(lines);
+  return hasValidFrontMatter(lines, closingIndex)
+    ? lines.slice(closingIndex + 1).join('\n')
+    : normalizedValue;
+}
+
+function normalizeArtifactBody(value, allowFrontMatter) {
+  const normalizedValue = String(value || '')
+    .replace(/^\uFEFF/u, '')
+    .replace(/\r\n?/g, '\n');
+  return allowFrontMatter ? stripValidFrontMatter(normalizedValue) : normalizedValue;
+}
+
+function stripHtmlTags(value, separator = '', { preserveCdata = false } = {}) {
+  const source = String(value || '');
+  let result = '';
+  let inTag = false;
+  let quote = null;
+  let tagStart = -1;
+  let svgDepth = 0;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (!inTag) {
+      if ((preserveCdata || svgDepth > 0) && source.startsWith('<![CDATA[', index)) {
+        const cdataEnd = source.indexOf(']]>', index + 9);
+        if (cdataEnd === -1) {
+          result += source.slice(index);
+          break;
+        }
+        result += source.slice(index + 9, cdataEnd);
+        index = cdataEnd + 2;
+        continue;
+      }
+      if (source.startsWith('<!--', index)) {
+        const commentEnd = source.indexOf('-->', index + 4);
+        if (commentEnd === -1) {
+          result += source.slice(index);
+          break;
+        }
+        const comment = source.slice(index, commentEnd + 3);
+        result += typeof separator === 'function' ? separator(comment) : separator;
+        index = commentEnd + 2;
+        continue;
+      }
+      if (character === '<' && /[A-Za-z!/?]/u.test(source[index + 1] || '')) {
+        inTag = true;
+        tagStart = index;
+      } else {
+        result += character;
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === '\'') {
+      quote = character;
+    } else if (character === '>') {
+      inTag = false;
+      const tag = source.slice(tagStart, index + 1);
+      const parsedTag = tag.match(/^<\s*(\/?)\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
+      if (parsedTag?.[2].toLowerCase() === 'svg') {
+        if (parsedTag[1]) {
+          svgDepth = Math.max(0, svgDepth - 1);
+        } else if (!/\/\s*>$/u.test(tag)) {
+          svgDepth += 1;
+        }
+      }
+      result += typeof separator === 'function' ? separator(tag) : separator;
+      const imageAlt = tag.match(
+        /^<\s*img(?=[\s/>])[^>]*?\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu
+      );
+      if (imageAlt) result += imageAlt[1] ?? imageAlt[2] ?? imageAlt[3] ?? '';
+      tagStart = -1;
+    }
+  }
+
+  return result;
+}
+
+function htmlBlockBoundary(tag) {
+  const tagName = String(tag || '').match(/^<\s*\/?\s*([A-Za-z][A-Za-z0-9-]*)/u)?.[1];
+  return tagName && HTML_BLOCK_ELEMENTS.has(tagName.toLowerCase()) ? '\n' : '';
+}
+
+function hasHtmlAttribute(tag, openingTag, attributeName) {
+  const attributeText = tag
+    .slice(openingTag[0].length)
+    .replace(/"[^"]*"|'[^']*'/gu, ' quoted-value ');
+  const pattern = new RegExp(
+    `(?:^|\\s)${attributeName}(?:\\s*=\\s*[^\\s/>]+)?(?=[\\s/>])`,
+    'iu'
+  );
+  return pattern.test(attributeText);
+}
+
+function hasHiddenHtmlAttribute(tag, openingTag) {
+  return hasHtmlAttribute(tag, openingTag, 'hidden');
+}
+
+function isSelfClosingElement(tag, tagName, xmlMode) {
+  return HTML_VOID_ELEMENTS.has(tagName.toLowerCase()) || (xmlMode && /\/\s*>$/u.test(tag));
+}
+
+function findHtmlTagEnd(source, startIndex) {
+  let quote = null;
+  for (let index = startIndex + 1; index < source.length; index += 1) {
+    const character = source[index];
+    if (quote) {
+      if (character === quote) quote = null;
+    } else if (character === '"' || character === '\'') {
+      quote = character;
+    } else if (character === '>') {
+      return index;
+    }
+  }
+  return null;
+}
+
+function findMatchingHtmlClosingTag(source, startIndex, tagName, xmlMode) {
+  let depth = 1;
+  for (let index = startIndex; index < source.length; index += 1) {
+    if (source.startsWith('<!--', index)) {
+      const commentEnd = source.indexOf('-->', index + 4);
+      if (commentEnd === -1) return null;
+      index = commentEnd + 2;
+      continue;
+    }
+    if (xmlMode && source.startsWith('<![CDATA[', index)) {
+      const cdataEnd = source.indexOf(']]>', index + 9);
+      if (cdataEnd === -1) return null;
+      index = cdataEnd + 2;
+      continue;
+    }
+    if (source[index] !== '<') continue;
+    const endIndex = findHtmlTagEnd(source, index);
+    if (endIndex === null) return null;
+    const tag = source.slice(index, endIndex + 1);
+    const rawTextTag = !xmlMode
+      ? tag.match(/^<\s*(script|style|textarea|title)(?=[\s/>])/iu)
+      : null;
+    if (rawTextTag && !isSelfClosingElement(tag, rawTextTag[1], xmlMode)) {
+      const closingPattern = new RegExp(`<\\/\\s*${rawTextTag[1]}\\s*>`, 'igu');
+      closingPattern.lastIndex = endIndex + 1;
+      const closingTag = closingPattern.exec(source);
+      if (!closingTag) return null;
+      index = closingPattern.lastIndex - 1;
+      continue;
+    }
+    const matchedTag = tag.match(/^<\s*(\/?)\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
+    if (matchedTag?.[2].toLowerCase() === tagName.toLowerCase()) {
+      if (matchedTag[1]) {
+        depth -= 1;
+        if (depth === 0) return endIndex + 1;
+      } else if (!isSelfClosingElement(tag, matchedTag[2], xmlMode)) {
+        depth += 1;
+      }
+    }
+    index = endIndex;
+  }
+  return null;
+}
+
+function collectHtmlNonRenderedRanges(source) {
+  const ranges = [];
+  const document = parseHtml(String(source || ''), { sourceCodeLocationInfo: true });
+  const visit = (node) => {
+    const tagName = String(node.tagName || '').toLowerCase();
+    const hasAttribute = (name) =>
+      node.attrs?.some((attribute) => attribute.name.toLowerCase() === name);
+    const isNonRendered =
+      HTML_NON_RENDERED_ELEMENTS.has(tagName) ||
+      hasAttribute('hidden') ||
+      (tagName === 'dialog' && !hasAttribute('open'));
+    const location = node.sourceCodeLocation;
+    if (
+      isNonRendered &&
+      Number.isInteger(location?.startOffset) &&
+      Number.isInteger(location?.endOffset)
+    ) {
+      ranges.push([location.startOffset, location.endOffset]);
+      return;
+    }
+    for (const child of node.childNodes || []) visit(child);
+    if (node.content) visit(node.content);
+  };
+  visit(document);
+  return ranges;
+}
+
+function findDeclarativeShadowRootTemplateLine(source) {
+  let line = null;
+  const document = parseHtml(String(source || ''), { sourceCodeLocationInfo: true });
+  const visit = (node) => {
+    if (line !== null) return;
+    const tagName = String(node.tagName || '').toLowerCase();
+    const shadowRootMode = node.attrs
+      ?.find((attribute) => attribute.name.toLowerCase() === 'shadowrootmode')
+      ?.value.toLowerCase();
+    if (
+      tagName === 'template' &&
+      ['open', 'closed'].includes(shadowRootMode) &&
+      Number.isInteger(node.sourceCodeLocation?.startLine)
+    ) {
+      line = node.sourceCodeLocation.startLine;
+      return;
+    }
+    for (const child of node.childNodes || []) visit(child);
+    if (node.content) visit(node.content);
+  };
+  visit(document);
+  return line;
+}
+
+function stripHtmlCodeElementContents(
+  value,
+  { stripCode = true, stripNonRendered = false, rangeSeparator = ' ', xmlMode = false } = {}
+) {
+  const source = String(value || '');
+  const stack = [];
+  const ranges = stripNonRendered && !xmlMode ? collectHtmlNonRenderedRanges(source) : [];
+
+  for (let index = 0; index < source.length; index += 1) {
+    if (xmlMode && source.startsWith('<![CDATA[', index)) {
+      const cdataEnd = source.indexOf(']]>', index + 9);
+      if (cdataEnd === -1) break;
+      index = cdataEnd + 2;
+      continue;
+    }
+    if (source[index] !== '<' || !/[A-Za-z!/]/u.test(source[index + 1] || '')) continue;
+
+    if (source.startsWith('<!--', index)) {
+      const commentEnd = source.indexOf('-->', index + 4);
+      if (commentEnd === -1) break;
+      index = commentEnd + 2;
+      continue;
+    }
+
+    const endIndex = findHtmlTagEnd(source, index);
+    if (endIndex === null) break;
+
+    const tag = source.slice(index, endIndex + 1);
+    const rawTextTag = tag.match(
+      /^<\s*(script|style|template|textarea|title)(?=[\s/>])/iu
+    );
+    if (rawTextTag && !isSelfClosingElement(tag, rawTextTag[1], xmlMode)) {
+      let closingEnd;
+      if (rawTextTag[1].toLowerCase() === 'template') {
+        closingEnd = findMatchingHtmlClosingTag(
+          source,
+          endIndex + 1,
+          rawTextTag[1],
+          xmlMode
+        );
+      } else {
+        const closingPattern = new RegExp(`<\\/\\s*${rawTextTag[1]}\\s*>`, 'igu');
+        closingPattern.lastIndex = endIndex + 1;
+        const closingTag = closingPattern.exec(source);
+        closingEnd = closingTag ? closingPattern.lastIndex : null;
+      }
+      if (closingEnd === null) break;
+      if (
+        stripNonRendered &&
+        xmlMode &&
+        ['script', 'style', 'template', 'title'].includes(rawTextTag[1].toLowerCase())
+      ) {
+        ranges.push([index, closingEnd]);
+      }
+      index = closingEnd - 1;
+      continue;
+    }
+
+    const openingTag = tag.match(/^<\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
+    if (
+      stripNonRendered &&
+      xmlMode &&
+      openingTag &&
+      (HTML_NON_RENDERED_ELEMENTS.has(openingTag[1].toLowerCase()) ||
+        hasHiddenHtmlAttribute(tag, openingTag) ||
+        (openingTag[1].toLowerCase() === 'dialog' &&
+          !hasHtmlAttribute(tag, openingTag, 'open')))
+    ) {
+      if (isSelfClosingElement(tag, openingTag[1], xmlMode)) {
+        ranges.push([index, endIndex + 1]);
+        index = endIndex;
+        continue;
+      }
+      const closingEnd = findMatchingHtmlClosingTag(
+        source,
+        endIndex + 1,
+        openingTag[1],
+        xmlMode
+      );
+      if (closingEnd === null) break;
+      ranges.push([index, closingEnd]);
+      index = closingEnd - 1;
+      continue;
+    }
+
+    const codeTag = tag.match(/^<\s*(\/?)\s*(pre|code)(?=[\s/>])/iu);
+    if (stripCode && codeTag) {
+      if (codeTag[1]) {
+        const current = stack.at(-1);
+        if (!current || current.name !== codeTag[2].toLowerCase()) {
+          stack.length = 0;
+        } else {
+          stack.pop();
+          if (stack.length === 0) ranges.push([current.start, endIndex + 1]);
+        }
+      } else if (!isSelfClosingElement(tag, codeTag[2], xmlMode)) {
+        stack.push({ name: codeTag[2].toLowerCase(), start: index });
+      }
+    }
+    index = endIndex;
+  }
+
+  let result = '';
+  let cursor = 0;
+  const mergedRanges = ranges
+    .sort((left, right) => left[0] - right[0] || left[1] - right[1])
+    .reduce((merged, [start, end]) => {
+      const previous = merged.at(-1);
+      if (previous && start <= previous[1]) {
+        previous[1] = Math.max(previous[1], end);
+      } else {
+        merged.push([start, end]);
+      }
+      return merged;
+    }, []);
+  for (const [start, end] of mergedRanges) {
+    result += `${source.slice(cursor, start)}${rangeSeparator}`;
+    cursor = end;
+  }
+  result += source.slice(cursor);
+  return result;
+}
+
+function collectExactMarkdownTextFragments(value) {
+  const fragments = [];
+  const tokens = MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {});
+  const projectChildren = (children) =>
+    children
+      .map((child) => {
+        if (['text', 'code_inline', 'image'].includes(child.type)) return child.content;
+        if (child.type === 'softbreak' || child.type === 'hardbreak') return ' ';
+        return '';
+      })
+      .join('');
+  const addShortFragment = (candidate) => {
+    if (
+      normalizeComparableText(candidate) &&
+      !hasSufficientIndependentFragmentContext(candidate)
+    ) {
+      fragments.push(candidate);
+    }
+  };
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== 'inline' || !token.children) continue;
+    if (tokens[index - 1]?.type === 'heading_open') {
+      addShortFragment(projectChildren(token.children));
+    }
+
+    for (let childIndex = 0; childIndex < token.children.length; childIndex += 1) {
+      const child = token.children[childIndex];
+      if (child.type === 'code_inline' || child.type === 'image') {
+        addShortFragment(child.content);
+        continue;
+      }
+      const closingType = SHORT_MARKDOWN_WRAPPER_PAIRS.get(child.type);
+      if (!closingType) continue;
+      let depth = 1;
+      let closingIndex = childIndex + 1;
+      for (; closingIndex < token.children.length; closingIndex += 1) {
+        if (token.children[closingIndex].type === child.type) depth += 1;
+        if (token.children[closingIndex].type === closingType) depth -= 1;
+        if (depth === 0) break;
+      }
+      if (depth !== 0) continue;
+      addShortFragment(projectChildren(token.children.slice(childIndex + 1, closingIndex)));
+    }
+  }
+  return fragments;
+}
+
+function collectExactHtmlTextFragments(value, { preserveCdata, xmlMode }) {
+  const fragments = [];
+  for (const rangeSeparator of ['', ' ']) {
+    const source = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
+      stripHtmlCodeElementContents(value, {
+        stripCode: false,
+        stripNonRendered: true,
+        rangeSeparator,
+        xmlMode
+      })
+    );
+    const stack = [];
+    let svgDepth = 0;
+    for (let index = 0; index < source.length; index += 1) {
+      if (source.startsWith('<!--', index)) {
+        const commentEnd = source.indexOf('-->', index + 4);
+        if (commentEnd === -1) break;
+        index = commentEnd + 2;
+        continue;
+      }
+      if (source[index] !== '<') continue;
+      const endIndex = findHtmlTagEnd(source, index);
+      if (endIndex === null) break;
+      const tag = source.slice(index, endIndex + 1);
+      const parsedTag = tag.match(/^<\s*(\/?)\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
+      if (!parsedTag) {
+        index = endIndex;
+        continue;
+      }
+      const tagName = parsedTag[2].toLowerCase();
+      if (!parsedTag[1] && tagName === 'img') {
+        const projected = stripHtmlTags(tag);
+        if (normalizeComparableText(projected)) fragments.push(projected);
+      } else if (HTML_EXACT_FRAGMENT_ELEMENTS.has(tagName)) {
+        if (parsedTag[1]) {
+          const openingIndex = stack.findLastIndex((entry) => entry.name === tagName);
+          if (openingIndex !== -1) {
+            const opening = stack[openingIndex];
+            stack.length = openingIndex;
+            const body = source.slice(opening.bodyStart, index);
+            for (const separator of ['', ' ', htmlBlockBoundary]) {
+              const projected = stripHtmlTags(body, separator, {
+                preserveCdata: opening.preserveCdata
+              });
+              if (normalizeComparableText(projected)) fragments.push(projected);
+            }
+          }
+        } else if (!isSelfClosingElement(tag, tagName, xmlMode)) {
+          stack.push({
+            name: tagName,
+            bodyStart: endIndex + 1,
+            preserveCdata: preserveCdata || svgDepth > 0
+          });
+        }
+      }
+      if (tagName === 'svg') {
+        if (parsedTag[1]) {
+          svgDepth = Math.max(0, svgDepth - 1);
+        } else if (!/\/\s*>$/u.test(tag)) {
+          svgDepth += 1;
+        }
+      }
+      index = endIndex;
+    }
+  }
+  return fragments;
+}
+
+function createArtifactComparables(value, allowFrontMatter, xmlMode) {
+  const preserveCdata = xmlMode;
+  const completeBody = normalizeArtifactBody(value, false);
+  const candidateBodies = allowFrontMatter
+    ? [normalizeArtifactBody(value, true), completeBody]
+    : [completeBody];
+  const artifactComparables = candidateBodies.flatMap((candidateBody) => {
+    const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(candidateBody);
+    const readerVisibleBodies = ['', ' '].map((rangeSeparator) =>
+      stripHtmlCodeElementContents(decodedBody, {
+        stripCode: false,
+        stripNonRendered: true,
+        rangeSeparator,
+        xmlMode
+      })
+    );
+    return [
+      candidateBody,
+      decodedBody,
+      ...readerVisibleBodies.flatMap((readerVisibleBody) => [
+        stripHtmlTags(readerVisibleBody, '', { preserveCdata }),
+        stripHtmlTags(readerVisibleBody, ' ', { preserveCdata }),
+        stripHtmlTags(readerVisibleBody, htmlBlockBoundary, { preserveCdata })
+      ])
+    ];
+  });
+  if (allowFrontMatter) {
+    artifactComparables.push(...collectMarkdownTextFragments(candidateBodies[0]));
+    artifactComparables.push(...collectExactMarkdownTextFragments(candidateBodies[0]));
+  }
+  artifactComparables.push(
+    ...collectExactHtmlTextFragments(completeBody, { preserveCdata, xmlMode })
+  );
+  return artifactComparables
+    .map((candidate) => normalizeComparableText(candidate))
+    .filter(Boolean);
+}
+
+function isEscapedCharacter(value, index) {
+  let backslashes = 0;
+  for (let candidate = index - 1; candidate >= 0 && value[candidate] === '\\'; candidate -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
+function projectInlineMath(value) {
+  const fragments = [];
+  let projected = '';
+
+  for (let index = 0; index < value.length; index += 1) {
+    if (
+      value[index] !== '$' ||
+      isEscapedCharacter(value, index) ||
+      value[index - 1] === '$' ||
+      value[index + 1] === '$'
+    ) {
+      projected += value[index];
+      continue;
+    }
+
+    let closingIndex = index + 1;
+    for (; closingIndex < value.length; closingIndex += 1) {
+      if (
+        value[closingIndex] === '$' &&
+        !isEscapedCharacter(value, closingIndex) &&
+        value[closingIndex - 1] !== '$' &&
+        value[closingIndex + 1] !== '$'
+      ) {
+        break;
+      }
+    }
+    if (closingIndex >= value.length) {
+      projected += value[index];
+      continue;
+    }
+
+    const body = value.slice(index + 1, closingIndex);
+    if (!normalizeComparableText(body)) {
+      projected += value[index];
+      continue;
+    }
+    projected += body;
+    fragments.push(body);
+    index = closingIndex;
+  }
+
+  return { projected, fragments };
+}
+
+function projectCanonicalMath(value) {
+  const lines = String(value || '').split('\n');
+  const projectedLines = [];
+  const fragments = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].trim() === '$$') {
+      const closingIndex = lines.findIndex(
+        (line, candidateIndex) => candidateIndex > index && line.trim() === '$$'
+      );
+      if (closingIndex !== -1) {
+        const bodyLines = lines.slice(index + 1, closingIndex);
+        const body = bodyLines.join('\n');
+        if (normalizeComparableText(body)) fragments.push(body);
+        projectedLines.push(...bodyLines);
+        index = closingIndex;
+        continue;
+      }
+    }
+
+    const inline = projectInlineMath(lines[index]);
+    projectedLines.push(inline.projected);
+    fragments.push(...inline.fragments);
+  }
+
+  return { projected: projectedLines.join('\n'), fragments };
+}
+
+function projectInlineChildrenWithCanonicalMath(children) {
+  const fragments = [];
+  let projected = '';
+  let textRun = '';
+  const flushTextRun = () => {
+    if (!textRun) return;
+    const math = projectCanonicalMath(textRun);
+    projected += math.projected;
+    fragments.push(...math.fragments);
+    textRun = '';
+  };
+
+  for (const child of children) {
+    if (child.type === 'text') {
+      textRun += child.content;
+    } else if (child.type === 'softbreak' || child.type === 'hardbreak') {
+      textRun += '\n';
+    } else {
+      flushTextRun();
+      if (child.type === 'code_inline' || child.type === 'image') projected += child.content;
+    }
+  }
+  flushTextRun();
+  return { projected, fragments };
+}
+
+function hasSufficientIndependentFragmentContext(value) {
+  const normalized = normalizeComparableText(value).replace(/\s/gu, '');
+  return (
+    [...normalized].length >= MIN_INDEPENDENT_FRAGMENT_CODE_POINTS &&
+    /[\p{L}\p{N}]/u.test(normalized)
+  );
+}
+
+function collectMarkdownTextFragments(value) {
+  const fragments = [];
+  for (const token of MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {})) {
+    if (token.type !== 'inline' || !token.children) continue;
+    const projectedText = token.children
+      .map((child) => {
+        if (['text', 'code_inline', 'image'].includes(child.type)) return child.content;
+        if (child.type === 'softbreak' || child.type === 'hardbreak') return ' ';
+        return '';
+      })
+      .join('');
+    if (hasSufficientIndependentFragmentContext(projectedText)) {
+      fragments.push(projectedText);
+    }
+    const mathProjection = projectInlineChildrenWithCanonicalMath(token.children);
+    const projectedMathText = normalizeComparableText(mathProjection.projected);
+    const standaloneMath = mathProjection.fragments.some(
+      (fragment) => normalizeComparableText(fragment) === projectedMathText
+    );
+    if (
+      projectedMathText &&
+      mathProjection.fragments.length > 0 &&
+      (!standaloneMath || hasSufficientIndependentFragmentContext(projectedMathText))
+    ) {
+      fragments.push(mathProjection.projected);
+    }
+    for (const child of token.children) {
+      if (
+        child.type === 'image' &&
+        hasSufficientIndependentFragmentContext(child.content)
+      ) {
+        fragments.push(child.content);
+      }
+    }
+    if (token.children.some((child) => child.type === 'footnote_ref')) {
+      for (const child of token.children) {
+        if (
+          child.type === 'text' &&
+          hasSufficientIndependentFragmentContext(child.content)
+        ) {
+          fragments.push(child.content);
+        }
+      }
+    }
+  }
+  return fragments;
+}
+
+function collectCanonicalMathFragments(value) {
+  const fragments = [];
+  for (const token of MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {})) {
+    if (token.type === 'inline' && token.children) {
+      fragments.push(
+        ...projectInlineChildrenWithCanonicalMath(token.children).fragments.filter(
+          hasSufficientIndependentFragmentContext
+        )
+      );
+    }
+  }
+
+  return fragments;
+}
+
+function createProtectedFragments(value, source, visibility) {
+  const normalizedValue = String(value || '').replace(/\r\n?/g, '\n');
+  const fragments = new Map();
+  const addFragment = (candidate, matchMode = 'substring') => {
+    const comparableText = normalizeComparableText(candidate);
+    if (!comparableText || /^:::(?:paid|internal)?$/u.test(comparableText)) return;
+    const fragmentDigest = digest(comparableText);
+    const existing = fragments.get(fragmentDigest);
+    if (existing && (existing.matchMode === 'substring' || matchMode === 'exact')) return;
+    fragments.set(fragmentDigest, {
+      source,
+      visibility,
+      digest: fragmentDigest,
+      comparableText,
+      matchMode
+    });
+  };
+
+  addFragment(normalizedValue);
+  for (const candidate of normalizedValue.split(/\n\s*\n/u)) {
+    addFragment(candidate);
+  }
+
+  for (const line of normalizedValue.split('\n')) {
+    const listItem = line.match(
+      /^\s*(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?(.+)$/u
+    );
+    if (listItem && hasSufficientIndependentFragmentContext(listItem[1])) {
+      addFragment(listItem[1]);
+    }
+  }
+
+  for (const fragment of collectMarkdownTextFragments(normalizedValue)) {
+    addFragment(fragment);
+  }
+  for (const fragment of collectExactMarkdownTextFragments(normalizedValue)) {
+    addFragment(fragment, 'exact');
+  }
+  for (const fragment of collectCanonicalMathFragments(normalizedValue)) {
+    addFragment(fragment);
+  }
+
+  const lines = normalizedValue.split('\n');
+  let fence = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (fence) {
+      if (isStandardFenceClose(lines[index], fence)) {
+        const body = lines.slice(fence.bodyStartIndex, index).join('\n');
+        if (hasSufficientIndependentFragmentContext(body)) addFragment(body);
+        for (const candidate of body.split(/\n\s*\n/u)) {
+          if (hasSufficientIndependentFragmentContext(candidate)) addFragment(candidate);
+        }
+        fence = null;
+      }
+      continue;
+    }
+    const open = detectStandardFenceOpen(lines[index]);
+    if (open && !open.invalidInfoString) {
+      fence = { ...open, bodyStartIndex: index + 1 };
+    }
+  }
+
+  return [...fragments.values()];
+}
+
+function parseVisibilityRegions(content, sourcePath) {
+  const normalizedContent = String(content || '')
+    .replace(/^\uFEFF/u, '')
+    .replace(/\r\n?/g, '\n');
+  const lines = normalizedContent.split('\n');
+  const findings = [];
+  const regions = [];
+  const calloutBodies = [];
+  let fence = null;
+  let callout = null;
+  let contentStartIndex = 0;
+
+  const frontMatterClosingIndex = findFrontMatterClosingIndex(lines);
+  if (frontMatterClosingIndex !== null) {
+    const closingIndex = frontMatterClosingIndex;
+    if (closingIndex === -1) {
+      findings.push({
+        code: 'unclosed_front_matter',
+        severity: 'error',
+        file: sourcePath,
+        line: 1,
+        message: 'YAML front matter is not closed; visibility boundaries cannot be determined.'
+      });
+      contentStartIndex = lines.length;
+    } else {
+      const frontMatter = YAML.parseDocument(lines.slice(1, closingIndex).join('\n'), {
+        strict: true,
+        uniqueKeys: true
+      });
+      if (frontMatter.errors.length > 0) {
+        findings.push({
+          code: 'invalid_front_matter',
+          severity: 'error',
+          file: sourcePath,
+          line: 1,
+          message: 'YAML front matter is invalid; visibility boundaries cannot be determined.'
+        });
+        contentStartIndex = lines.length;
+      } else {
+        contentStartIndex = closingIndex + 1;
+      }
+    }
+  }
+
+  const addFinding = (code, line, message) => {
+    findings.push({ code, severity: 'error', file: sourcePath, line, message });
+  };
+
+  for (let index = contentStartIndex; index < lines.length; index += 1) {
+    const line = lines[index];
+    const lineNumber = index + 1;
+
+    if (fence) {
+      if (isStandardFenceClose(line, fence)) fence = null;
+      continue;
+    }
+
+    const fenceOpen = detectStandardFenceOpen(line);
+    if (fenceOpen) {
+      if (fenceOpen.invalidInfoString) {
+        addFinding(
+          'invalid_code_fence',
+          lineNumber,
+          'Backtick code fence info strings cannot contain a backtick.'
+        );
+      } else {
+        fence = { ...fenceOpen, line: lineNumber };
+      }
+      continue;
+    }
+
+    const delimiter = parseStandardCalloutDelimiter(line);
+    if (!delimiter) continue;
+
+    if (delimiter.indented) {
+      addFinding(
+        'invalid_callout_delimiter',
+        lineNumber,
+        'Standard callout delimiters must start at the beginning of the line.'
+      );
+      continue;
+    }
+
+    if (delimiter.kind === 'invalid') {
+      addFinding(
+        'invalid_callout_delimiter',
+        lineNumber,
+        'Standard callout delimiter is malformed.'
+      );
+      continue;
+    }
+
+    if (delimiter.kind === 'open') {
+      if (!STANDARD_CALLOUT_TYPES.has(delimiter.type)) {
+        addFinding(
+          'unknown_callout_type',
+          lineNumber,
+          `Unknown standard callout type: ${delimiter.type}.`
+        );
+        continue;
+      }
+      if (callout) {
+        addFinding(
+          'nested_callout',
+          lineNumber,
+          `Standard callouts cannot be nested (inside ${callout.type} from line ${callout.line}).`
+        );
+        continue;
+      }
+      callout = { type: delimiter.type, line: lineNumber, bodyStartIndex: index + 1 };
+      continue;
+    }
+
+    if (!callout) {
+      addFinding(
+        'orphan_callout_close',
+        lineNumber,
+        'Callout closing delimiter has no matching opening delimiter.'
+      );
+      continue;
+    }
+
+    const body = lines.slice(callout.bodyStartIndex, index).join('\n');
+    calloutBodies.push(body);
+    if (callout.type === 'paid' || callout.type === 'internal') {
+      const comparableText = normalizeComparableText(body);
+      regions.push({
+        visibility: callout.type,
+        startLine: callout.line,
+        endLine: lineNumber,
+        digest: digest(comparableText),
+        comparableText,
+        protectedFragments: createProtectedFragments(body, sourcePath, callout.type)
+      });
+    }
+    callout = null;
+  }
+
+  if (fence) {
+    addFinding(
+      'unclosed_code_fence',
+      fence.line,
+      'Code fence is not closed; visibility boundaries cannot be determined.'
+    );
+  }
+  if (callout) {
+    addFinding(
+      'unclosed_callout',
+      callout.line,
+      `Standard callout ${callout.type} is not closed.`
+    );
+  }
+
+  return {
+    findings,
+    regions,
+    calloutBodies,
+    comparableText: normalizeComparableText(normalizedContent)
+  };
+}
+
+function flattenStructure(metadata) {
+  return [
+    ...metadata.structure.frontmatter.map((entry) => ({ ...entry, section: 'frontmatter' })),
+    ...metadata.structure.chapters.map((entry) => ({ ...entry, section: 'chapters' })),
+    ...metadata.structure.backmatter.map((entry) => ({ ...entry, section: 'backmatter' }))
+  ];
+}
+
+function visibilityAllowed(contentVisibility, editionVisibility) {
+  const contentRank = VISIBILITY_RANK.get(contentVisibility);
+  const editionRank = VISIBILITY_RANK.get(editionVisibility);
+  return contentRank !== undefined && editionRank !== undefined && contentRank <= editionRank;
+}
+
+async function inspectArtifactPath(artifactPath) {
+  const requestedPath = path.resolve(artifactPath);
+  let rootStat;
+  try {
+    rootStat = await fs.lstat(requestedPath);
+  } catch {
+    throw new VisibilityValidationError(`Artifact path does not exist: ${requestedPath}`);
+  }
+  if (rootStat.isSymbolicLink()) {
+    throw new VisibilityValidationError(`Artifact path must not be a symbolic link: ${requestedPath}`);
+  }
+  if ((await fs.realpath(requestedPath)) !== requestedPath) {
+    throw new VisibilityValidationError(
+      `Artifact path must not traverse a symbolic link: ${requestedPath}`
+    );
+  }
+
+  if (rootStat.isFile()) {
+    const extension = path.extname(requestedPath).toLowerCase();
+    if (!ARTIFACT_TEXT_EXTENSIONS.has(extension)) {
+      throw new VisibilityValidationError(
+        `Artifact file extension is not supported for text scanning: ${extension || '(none)'}`
+      );
+    }
+    return [{ absolutePath: requestedPath, reportPath: path.basename(requestedPath) }];
+  }
+  if (!rootStat.isDirectory()) {
+    throw new VisibilityValidationError(`Artifact path must be a file or directory: ${requestedPath}`);
+  }
+
+  const files = [];
+  async function visit(directory) {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) => compareCodeUnits(left.name, right.name));
+
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+      const stat = await fs.lstat(entryPath);
+      if (stat.isSymbolicLink()) {
+        throw new VisibilityValidationError(
+          `Artifact tree must not contain symbolic links: ${path.relative(requestedPath, entryPath)}`
+        );
+      }
+      if (stat.isDirectory()) {
+        await visit(entryPath);
+      } else if (stat.isFile() && ARTIFACT_TEXT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+        files.push({
+          absolutePath: entryPath,
+          reportPath: path.relative(requestedPath, entryPath).replace(/\\/g, '/')
+        });
+      }
+    }
+  }
+
+  await visit(requestedPath);
+  if (files.length === 0) {
+    throw new VisibilityValidationError(
+      `Artifact directory does not contain supported text files: ${requestedPath}`
+    );
+  }
+  return files;
+}
+
+function findRawProtectedDelimiter(content, allowFrontMatter, allowMarkdownFences) {
+  const lines = normalizeArtifactBody(content, false).split('\n');
+  let fence = null;
+  const frontMatterClosingIndex = allowFrontMatter ? findFrontMatterClosingIndex(lines) : null;
+  const contentStartIndex =
+    hasValidFrontMatter(lines, frontMatterClosingIndex)
+      ? frontMatterClosingIndex + 1
+      : 0;
+
+  for (let index = contentStartIndex; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (allowMarkdownFences && fence) {
+      if (isStandardFenceClose(line, fence)) fence = null;
+      continue;
+    }
+    if (allowMarkdownFences) {
+      const open = detectStandardFenceOpen(line);
+      if (open && !open.invalidInfoString) {
+        fence = open;
+        continue;
+      }
+    }
+    const delimiter = parseStandardCalloutDelimiter(line);
+    if (
+      delimiter?.kind === 'open' &&
+      (delimiter.type === 'paid' || delimiter.type === 'internal')
+    ) {
+      return index + 1;
+    }
+  }
+  return null;
+}
+
+async function scanArtifact(artifactPath, protectedFragments) {
+  const files = await inspectArtifactPath(artifactPath);
+  const findings = [];
+
+  for (const file of files) {
+    const bytes = await fs.readFile(file.absolutePath);
+    let content;
+    try {
+      content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      throw new VisibilityValidationError(
+        `Artifact text file must be valid UTF-8: ${file.reportPath}`
+      );
+    }
+    if (content.includes('\0')) {
+      throw new VisibilityValidationError(
+        `Artifact text file must not contain NUL bytes: ${file.reportPath}`
+      );
+    }
+    const fileExtension = path.extname(file.reportPath).toLowerCase();
+    const allowFrontMatter = fileExtension === '.md';
+    const allowMarkdownFences = fileExtension === '.md';
+    const xmlMode = ['.svg', '.xhtml', '.xml'].includes(fileExtension);
+    const artifactComparables = createArtifactComparables(content, allowFrontMatter, xmlMode);
+    const normalizedArtifactBody = normalizeArtifactBody(content, allowFrontMatter);
+    const markdownRenderedBody = allowMarkdownFences
+      ? MARKDOWN_ARTIFACT_RENDERER.render(normalizedArtifactBody)
+      : null;
+    const declarativeShadowRootLine = HTML_MARKUP_EXTENSIONS.has(fileExtension)
+      ? findDeclarativeShadowRootTemplateLine(markdownRenderedBody ?? content)
+      : null;
+    if (declarativeShadowRootLine !== null) {
+      findings.push({
+        code: 'unsupported_declarative_shadow_dom',
+        severity: 'error',
+        file: file.reportPath,
+        line: declarativeShadowRootLine,
+        message:
+          'Generated artifact uses declarative Shadow DOM, which requires target-specific composed-tree validation.'
+      });
+    }
+    const rawMarkerContent = allowMarkdownFences
+      ? ''
+      : HTML_MARKUP_EXTENSIONS.has(fileExtension)
+        ? stripHtmlCodeElementContents(content, { xmlMode })
+        : content;
+    const readerVisibleCandidates = ['', ' '].flatMap((rangeSeparator) => {
+      const readerVisibleBase = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
+        stripHtmlCodeElementContents(markdownRenderedBody ?? normalizedArtifactBody, {
+          stripNonRendered: true,
+          rangeSeparator,
+          xmlMode
+        })
+      );
+      return [
+        stripHtmlTags(readerVisibleBase, '', { preserveCdata: xmlMode }),
+        stripHtmlTags(readerVisibleBase, '\n', { preserveCdata: xmlMode }),
+        stripHtmlTags(readerVisibleBase, htmlBlockBoundary, { preserveCdata: xmlMode })
+      ];
+    });
+    const renderedDelimiterLine =
+      readerVisibleCandidates
+        .map((candidate) =>
+          findRawProtectedDelimiter(candidate, false, false)
+        )
+        .find((line) => line !== null) ?? null;
+    const delimiterLine =
+      findRawProtectedDelimiter(
+        rawMarkerContent,
+        allowFrontMatter,
+        allowMarkdownFences
+      ) ||
+      renderedDelimiterLine;
+    if (delimiterLine !== null) {
+      findings.push({
+        code: 'raw_protected_marker_in_artifact',
+        severity: 'error',
+        file: file.reportPath,
+        line: delimiterLine,
+        message: 'Generated artifact contains a raw paid/internal callout marker.'
+      });
+    }
+
+    for (const fragment of protectedFragments) {
+      if (
+        !fragment.comparableText ||
+        !artifactComparables.some((candidate) =>
+          fragment.matchMode === 'exact'
+            ? candidate === fragment.comparableText
+            : candidate.includes(fragment.comparableText)
+        )
+      ) {
+        continue;
+      }
+      findings.push({
+        code: 'protected_content_in_artifact',
+        severity: 'error',
+        file: file.reportPath,
+        line: 1,
+        source: fragment.source,
+        visibility: fragment.visibility,
+        digest: fragment.digest,
+        message: 'Generated artifact contains a protected source region.'
+      });
+    }
+  }
+
+  return { files: files.map((file) => file.reportPath), findings };
+}
+
+function sortFindings(findings) {
+  return findings.sort((left, right) =>
+    compareCodeUnits(String(left.file || ''), String(right.file || '')) ||
+    Number(left.line || 0) - Number(right.line || 0) ||
+    compareCodeUnits(String(left.code || ''), String(right.code || ''))
+  );
+}
+
+export async function checkBookVisibility(bookDirectory, editionId, options = {}) {
+  if (!editionId) throw new VisibilityValidationError('Edition ID is required.');
+
+  const standardBook = await validateStandardBook(bookDirectory);
+  const { bookRoot, metadata } = standardBook;
+  const edition = metadata.editions.find((candidate) => candidate.id === editionId);
+  if (!edition) throw new VisibilityValidationError(`Unknown edition: ${editionId}`);
+  if (!edition.visibility || !edition.documents) {
+    throw new VisibilityValidationError(
+      `Edition ${editionId} must declare visibility and documents for visibility checking.`
+    );
+  }
+  if (VISIBILITY_RANK.has(edition.id) && edition.id !== edition.visibility) {
+    throw new VisibilityValidationError(
+      `Reserved edition ID ${edition.id} must use matching visibility ${edition.id}.`
+    );
+  }
+
+  const entries = flattenStructure(metadata);
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+  const includedIds = new Set(edition.documents);
+  const findings = [];
+  const documents = [];
+  const protectedFragments = [];
+  let regionCount = 0;
+  let protectedRegionCount = 0;
+
+  for (const entry of entries) {
+    if (!entry.visibility) {
+      findings.push({
+        code: 'missing_document_visibility',
+        severity: 'error',
+        file: entry.path,
+        line: 1,
+        message: `Structure entry ${entry.id} must declare visibility.`
+      });
+    }
+  }
+
+  for (const documentId of edition.documents) {
+    const entry = entryById.get(documentId);
+    if (!entry) {
+      findings.push({
+        code: 'unknown_edition_document',
+        severity: 'error',
+        file: 'book.yaml',
+        line: 1,
+        message: `Edition ${edition.id} references unknown structure ID: ${documentId}`
+      });
+    } else if (entry.visibility && !visibilityAllowed(entry.visibility, edition.visibility)) {
+      findings.push({
+        code: 'incompatible_document_visibility',
+        severity: 'error',
+        file: entry.path,
+        line: 1,
+        visibility: entry.visibility,
+        message: `Edition ${edition.id} (${edition.visibility}) cannot include ${entry.id} (${entry.visibility}).`
+      });
+    }
+  }
+
+  for (const entry of entries) {
+    const absolutePath = path.join(bookRoot, entry.path);
+    const content = await fs.readFile(absolutePath, 'utf8');
+    const parsed = parseVisibilityRegions(content, entry.path);
+    findings.push(...parsed.findings);
+    regionCount += parsed.regions.length;
+
+    const included = includedIds.has(entry.id);
+    const protectedRegions = [];
+
+    if (!included) {
+      const documentVisibility = entry.visibility || 'unknown';
+      const documentDigest = digest(parsed.comparableText);
+      protectedFragments.push(
+        ...createProtectedFragments(content, entry.path, documentVisibility)
+      );
+      for (const body of parsed.calloutBodies) {
+        protectedFragments.push(
+          ...createProtectedFragments(body, entry.path, documentVisibility)
+        );
+      }
+      protectedRegions.push({
+        visibility: documentVisibility,
+        startLine: 1,
+        endLine: content.replace(/\r\n?/g, '\n').split('\n').length,
+        digest: documentDigest,
+        decision: 'exclude-document'
+      });
+    }
+
+    for (const region of parsed.regions) {
+      const allowed = included && visibilityAllowed(region.visibility, edition.visibility);
+      if (!allowed) {
+        protectedRegionCount += 1;
+        protectedFragments.push(...region.protectedFragments);
+      }
+      protectedRegions.push({
+        visibility: region.visibility,
+        startLine: region.startLine,
+        endLine: region.endLine,
+        digest: region.digest,
+        decision: allowed ? 'include' : 'exclude-block'
+      });
+    }
+
+    documents.push({
+      id: entry.id,
+      section: entry.section,
+      path: entry.path,
+      visibility: entry.visibility || 'unknown',
+      decision: included ? 'include' : 'exclude-document',
+      protectedRegions
+    });
+  }
+
+  let artifact = null;
+  if (options.artifactPath) {
+    const uniqueFragmentMap = new Map();
+    for (const fragment of protectedFragments) {
+      const key = `${fragment.source}\u0000${fragment.visibility}\u0000${fragment.digest}`;
+      const existing = uniqueFragmentMap.get(key);
+      if (!existing || (existing.matchMode === 'exact' && fragment.matchMode === 'substring')) {
+        uniqueFragmentMap.set(key, fragment);
+      }
+    }
+    const uniqueFragments = [...uniqueFragmentMap.values()];
+    artifact = await scanArtifact(options.artifactPath, uniqueFragments);
+    findings.push(...artifact.findings);
+  }
+
+  sortFindings(findings);
+  const includedDocumentCount = documents.filter((document) => document.decision === 'include').length;
+  const documentById = new Map(documents.map((document) => [document.id, document]));
+  const orderedDocuments = [
+    ...edition.documents.map((documentId) => documentById.get(documentId)),
+    ...documents.filter((document) => !includedIds.has(document.id))
+  ];
+
+  return {
+    schema_version: 1,
+    visibility_contract_version: VISIBILITY_CONTRACT_VERSION,
+    book: metadata.id,
+    edition: {
+      id: edition.id,
+      visibility: edition.visibility,
+      status: edition.status
+    },
+    summary: {
+      safe: findings.length === 0,
+      documents: documents.length,
+      includedDocuments: includedDocumentCount,
+      excludedDocuments: documents.length - includedDocumentCount,
+      visibilityRegions: regionCount,
+      protectedRegions: documents.length - includedDocumentCount + protectedRegionCount,
+      artifactFiles: artifact ? artifact.files.length : 0,
+      findings: findings.length
+    },
+    documents: orderedDocuments,
+    artifact: artifact ? { files: artifact.files } : null,
+    findings
+  };
+}
