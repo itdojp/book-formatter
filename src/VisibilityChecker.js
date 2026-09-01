@@ -315,6 +315,17 @@ function findMatchingHtmlClosingTag(source, startIndex, tagName, xmlMode) {
     const endIndex = findHtmlTagEnd(source, index);
     if (endIndex === null) return null;
     const tag = source.slice(index, endIndex + 1);
+    const rawTextTag = !xmlMode
+      ? tag.match(/^<\s*(script|style|textarea|title)(?=[\s/>])/iu)
+      : null;
+    if (rawTextTag && !isSelfClosingElement(tag, rawTextTag[1], xmlMode)) {
+      const closingPattern = new RegExp(`<\\/\\s*${rawTextTag[1]}\\s*>`, 'igu');
+      closingPattern.lastIndex = endIndex + 1;
+      const closingTag = closingPattern.exec(source);
+      if (!closingTag) return null;
+      index = closingPattern.lastIndex - 1;
+      continue;
+    }
     const matchedTag = tag.match(/^<\s*(\/?)\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
     if (matchedTag?.[2].toLowerCase() === tagName.toLowerCase()) {
       if (matchedTag[1]) {

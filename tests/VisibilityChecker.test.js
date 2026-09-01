@@ -694,6 +694,15 @@ describe('VisibilityChecker', () => {
     });
     assert.strictEqual(nestedHiddenReport.summary.safe, false);
 
+    const hiddenRawTextTagLeak = await createArtifact(
+      '<p>Premium<span hidden><script>const x="</span>"</script>noise</span> only details</p>\n',
+      'hidden-raw-text-tag.html'
+    );
+    const hiddenRawTextTagReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: hiddenRawTextTagLeak
+    });
+    assert.strictEqual(hiddenRawTextTagReport.summary.safe, false);
+
     const hiddenVoidLeak = await createArtifact(
       '<p>Premium <img hidden alt="noise">only details</p>\n',
       'hidden-void.html'
