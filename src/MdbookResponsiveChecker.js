@@ -471,6 +471,13 @@ export function isSidebarRenderedVisible(sidebarRect, sidebarStyle, viewportWidt
   return isElementRenderedVisible(sidebarRect, sidebarStyle, viewportWidth, viewportHeight);
 }
 
+export function areAncestorPaintStylesVisible(ancestorStyles) {
+  return ancestorStyles.every((style) => {
+    const opacity = Number.parseFloat(style.opacity);
+    return style.display !== 'none' && Number.isFinite(opacity) && opacity > 0;
+  });
+}
+
 function probeExpression(state) {
   return `(async () => {
     const toggle = document.getElementById('mdbook-sidebar-toggle-anchor');
@@ -495,7 +502,18 @@ function probeExpression(state) {
     const contentRect = content.getBoundingClientRect();
     const sidebarStyle = getComputedStyle(sidebar);
     const contentStyle = getComputedStyle(content);
+    const contentAncestorPaintStyles = [];
+    for (let ancestor = content.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      const ancestorStyle = getComputedStyle(ancestor);
+      contentAncestorPaintStyles.push({
+        tagName: ancestor.tagName,
+        id: ancestor.id,
+        display: ancestorStyle.display,
+        opacity: ancestorStyle.opacity
+      });
+    }
     const isRenderedVisible = ${isElementRenderedVisible.toString()};
+    const areAncestorPaintStylesVisible = ${areAncestorPaintStylesVisible.toString()};
     const sidebarVisible = isRenderedVisible(
       sidebarRect,
       sidebarStyle,
@@ -508,6 +526,11 @@ function probeExpression(state) {
       window.innerWidth,
       window.innerHeight
     );
+    const contentAncestorsVisible = areAncestorPaintStylesVisible(contentAncestorPaintStyles);
+    const hiddenContentAncestor = contentAncestorPaintStyles.find((style) => {
+      const opacity = Number.parseFloat(style.opacity);
+      return style.display === 'none' || !Number.isFinite(opacity) || opacity <= 0;
+    }) || null;
     return {
       state: ${JSON.stringify(state)},
       viewportWidth: window.innerWidth,
@@ -545,6 +568,8 @@ function probeExpression(state) {
       contentVisibility: contentStyle.visibility,
       contentOpacity: contentStyle.opacity,
       contentVisible,
+      contentAncestorsVisible,
+      hiddenContentAncestor,
       sidebarVisible,
       overlap: sidebarVisible && Math.min(sidebarRect.right, contentRect.right) - Math.max(sidebarRect.left, contentRect.left) > 1,
       bodyOverflow: document.documentElement.scrollWidth > window.innerWidth + 1
@@ -571,6 +596,15 @@ export function validateResponsiveProbe(probe, viewport, state, page) {
         `bottom=${probe.content.bottom}, width=${probe.content.width}, ` +
         `height=${probe.content.height}, display=${probe.contentDisplay}, ` +
         `visibility=${probe.contentVisibility}, opacity=${probe.contentOpacity})`
+    );
+  }
+  if (!probe.contentAncestorsVisible) {
+    const ancestor = probe.hiddenContentAncestor || {};
+    throw new MdbookResponsiveError(
+      `Content has a non-rendered ancestor in ${page} at ` +
+        `${viewport.width}x${viewport.height}/${state} ` +
+        `(tag=${ancestor.tagName}, id=${ancestor.id}, display=${ancestor.display}, ` +
+        `opacity=${ancestor.opacity})`
     );
   }
   if (state === 'open' && !probe.sidebarVisible) {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import fs from 'fs-extra';
 
 import {
+  areAncestorPaintStylesVisible,
   checkMdbookResponsive,
   isElementRenderedVisible,
   isSidebarRenderedVisible,
@@ -141,6 +142,8 @@ describe('MdbookResponsiveChecker', () => {
       contentVisibility: 'visible',
       contentOpacity: '1',
       contentVisible: true,
+      contentAncestorsVisible: true,
+      hiddenContentAncestor: null,
       overlap: false,
       bodyOverflow: false
     };
@@ -215,12 +218,59 @@ describe('MdbookResponsiveChecker', () => {
         contentVisibility: style.visibility,
         contentOpacity: style.opacity,
         contentVisible: isElementRenderedVisible(rect, style, 390, 844),
+        contentAncestorsVisible: true,
+        hiddenContentAncestor: null,
         overlap: false,
         bodyOverflow: false
       };
       assert.throws(
         () => validateResponsiveProbe(probe, viewport, 'closed', 'book/index.html'),
         /Content is not rendered in book\/index\.html at 390x844\/closed/
+      );
+    }
+  });
+
+  test('content ancestorのdisplayとopacityをpaint visibilityへ反映する', () => {
+    const visibleAncestors = [
+      { tagName: 'DIV', id: 'mdbook-page-wrapper', display: 'block', opacity: '1' },
+      { tagName: 'BODY', id: '', display: 'block', opacity: '1' },
+      { tagName: 'HTML', id: '', display: 'block', opacity: '1' }
+    ];
+    assert.strictEqual(areAncestorPaintStylesVisible(visibleAncestors), true);
+
+    const hiddenCases = [
+      { ...visibleAncestors[0], display: 'none' },
+      { ...visibleAncestors[0], opacity: '0' },
+      { ...visibleAncestors[0], opacity: 'not-a-number' }
+    ];
+    for (const hiddenAncestor of hiddenCases) {
+      assert.strictEqual(
+        areAncestorPaintStylesVisible([hiddenAncestor, ...visibleAncestors.slice(1)]),
+        false
+      );
+      assert.throws(
+        () => validateResponsiveProbe(
+          {
+            viewportWidth: 390,
+            viewportHeight: 844,
+            sidebar: { left: -300, right: 0, top: 0, bottom: 844, width: 300, height: 844 },
+            sidebarVisible: false,
+            wrapper: { left: 0, right: 390, width: 390 },
+            content: { left: 0, right: 390, top: 0, bottom: 844, width: 390, height: 844 },
+            contentDisplay: 'block',
+            contentVisibility: 'visible',
+            contentOpacity: '1',
+            contentVisible: true,
+            contentAncestorsVisible: false,
+            hiddenContentAncestor: hiddenAncestor,
+            overlap: false,
+            bodyOverflow: false
+          },
+          { width: 390, height: 844 },
+          'closed',
+          'book/index.html'
+        ),
+        /Content has a non-rendered ancestor in book\/index\.html at 390x844\/closed/
       );
     }
   });
