@@ -81,6 +81,14 @@ describe('WebMdbookAdapter', () => {
     assert.match(bookToml, /build-dir = "book"/);
     assert.match(bookToml, /create-missing = false/);
     assert.match(bookToml, /additional-css = \["theme\/css\/itdo-mdbook\.css"\]/);
+    assert.match(
+      bookToml,
+      /git-repository-url = "https:\/\/github\.com\/itdojp\/book-formatter"/
+    );
+    assert.match(
+      bookToml,
+      /edit-url-template = "https:\/\/github\.com\/itdojp\/book-formatter\/edit\/main\/\{path\}"/
+    );
     assert.doesNotMatch(bookToml, /theme\s*=/);
 
     const publicMetadata = YAML.parse(await fs.readFile(path.join(target, 'src/book.yaml'), 'utf8'));
@@ -348,5 +356,52 @@ describe('WebMdbookAdapter', () => {
     assert.ok(summary.includes('&lt;script&gt;unsafe&lt;/script&gt; &amp; \\[表示\\]'));
     assert.ok(!summary.includes('<script>'));
     assert.ok(!summary.includes('</script>'));
+  });
+
+  test('GitHub clone URLをWeb URLへ正規化して有効な編集linkを生成する', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-web-mdbook-repository-normalize-');
+    const metadataPath = path.join(bookDirectory, 'book.yaml');
+    const metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'));
+    metadata.repository.url = 'https://github.com/itdojp/standard-book-example.git';
+    await fs.writeFile(metadataPath, YAML.stringify(metadata));
+
+    const result = await build(bookDirectory, outputRoot);
+    const bookToml = await fs.readFile(path.join(result.outputDirectory, 'book.toml'), 'utf8');
+    assert.match(
+      bookToml,
+      /git-repository-url = "https:\/\/github\.com\/itdojp\/standard-book-example"/
+    );
+    assert.match(
+      bookToml,
+      /edit-url-template = "https:\/\/github\.com\/itdojp\/standard-book-example\/edit\/main\/\{path\}"/
+    );
+    assert.ok(!bookToml.includes('standard-book-example.git/edit/'));
+  });
+
+  test('GitHub以外またはrepository root以外のURLを編集linkとして拒否する', async () => {
+    const unsupportedUrls = [
+      'https://gitlab.example/itdojp/standard-book-example',
+      'https://github.com/itdojp/standard-book-example/tree/main',
+      'https://github.com/itdojp/standard-book-example?tab=readme',
+      'https://github.com/itdojp/standard-book-example#readme',
+      'https://github.com:8443/itdojp/standard-book-example'
+    ];
+
+    for (const [index, repositoryUrl] of unsupportedUrls.entries()) {
+      const bookDirectory = await copySampleBook();
+      const outputRoot = await temporaryDirectory(`tmp-web-mdbook-repository-reject-${index}-`);
+      const metadataPath = path.join(bookDirectory, 'book.yaml');
+      const metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'));
+      metadata.repository.url = repositoryUrl;
+      await fs.writeFile(metadataPath, YAML.stringify(metadata));
+
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        (error) =>
+          error instanceof AdapterBuildError &&
+          /web-mdbook repository\.url must/.test(error.message)
+      );
+    }
   });
 });

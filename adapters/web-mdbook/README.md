@@ -6,6 +6,13 @@
 
 ## 生成契約
 
+`repository.url` は `github.com` の HTTPS repository root URL に限定する。
+`https://github.com/owner/repository.git` の clone URL は
+`https://github.com/owner/repository` へ正規化し、mdBook の repository link と
+edit link の双方に使用する。GitHub 以外の host、repository root より深い path、
+query、fragment、非標準 port は、壊れた edit link を生成しないよう fail closed で
+拒否する。
+
 ```bash
 npm start build -- \
   --book examples/standard-book \
