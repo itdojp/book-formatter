@@ -1,0 +1,256 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/itdojp/book-formatter/shared/schema/book-registry.schema.json",
+  "title": "Book Portfolio Registry",
+  "description": "Portfolio-level inventory of book repositories, engines, channels, editions, and migration state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "checked_at", "books"],
+  "properties": {
+    "schema_version": {
+      "description": "Version of this registry contract.",
+      "const": 1
+    },
+    "checked_at": {
+      "description": "Date on which the registry facts were last reviewed.",
+      "type": "string",
+      "format": "date"
+    },
+    "books": {
+      "description": "Book records keyed by the exact GitHub repository name.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/definitions/repositoryName"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/book"
+      }
+    }
+  },
+  "definitions": {
+    "book": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "status",
+        "repository",
+        "engine",
+        "channels",
+        "editions",
+        "migration"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/definitions/status"
+        },
+        "repository": {
+          "$ref": "#/definitions/repository"
+        },
+        "engine": {
+          "$ref": "#/definitions/engine"
+        },
+        "channels": {
+          "$ref": "#/definitions/channels"
+        },
+        "editions": {
+          "$ref": "#/definitions/editions"
+        },
+        "migration": {
+          "$ref": "#/definitions/migration"
+        },
+        "notes": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "branch", "path"],
+      "properties": {
+        "url": {
+          "$ref": "#/definitions/githubHttpsUrl"
+        },
+        "branch": {
+          "$ref": "#/definitions/gitBranch"
+        },
+        "path": {
+          "$ref": "#/definitions/repositoryPath"
+        }
+      }
+    },
+    "channels": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "github_pages": {
+          "$ref": "#/definitions/channel"
+        },
+        "cloudflare_pages": {
+          "$ref": "#/definitions/channel"
+        },
+        "web": {
+          "$ref": "#/definitions/channel"
+        },
+        "zenn": {
+          "$ref": "#/definitions/channel"
+        },
+        "note": {
+          "$ref": "#/definitions/channel"
+        },
+        "kindle": {
+          "$ref": "#/definitions/channel"
+        },
+        "booth": {
+          "$ref": "#/definitions/channel"
+        },
+        "pdf": {
+          "$ref": "#/definitions/channel"
+        }
+      }
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/status"
+        },
+        "url": {
+          "$ref": "#/definitions/httpsUrl"
+        },
+        "notes": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    },
+    "editions": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/definitions/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/edition"
+      }
+    },
+    "edition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "status", "channels"],
+      "properties": {
+        "title": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/definitions/status"
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/channelName"
+          }
+        },
+        "notes": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/status"
+        },
+        "target_engine": {
+          "$ref": "#/definitions/engine"
+        },
+        "notes": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["active", "planned"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "target_engine": {}
+            },
+            "required": ["target_engine"]
+          }
+        }
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "planned", "legacy", "archived", "unknown"]
+    },
+    "engine": {
+      "type": "string",
+      "enum": ["standard", "mdbook", "jekyll", "other", "unknown"]
+    },
+    "channelName": {
+      "type": "string",
+      "enum": [
+        "github_pages",
+        "cloudflare_pages",
+        "web",
+        "zenn",
+        "note",
+        "kindle",
+        "booth",
+        "pdf"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "repositoryName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^(?!\\.\\.?$)(?!.*\\.git$)[A-Za-z0-9_.-]+$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "httpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[^\\s]+$"
+    },
+    "githubHttpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?$"
+    },
+    "repositoryPath": {
+      "type": "string",
+      "pattern": "^(?:\\.|(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!/)(?!.*\\\\)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*)$"
+    },
+    "gitBranch": {
+      "type": "string",
+      "pattern": "^(?!@$)(?!HEAD$)(?!-)(?!/)(?!\\.)(?!.*\\/\\.)(?!.*\\.\\.)(?!.*@\\{)(?!.*//)(?![^/]*\\.lock(?:/|$))(?!.*\\/[^/]*\\.lock(?:/|$))(?!.*[\\u0000-\\u0020\\u007F~^:?*\\[\\]\\\\])(?!.*[/.]$).+$"
+    }
+  }
+}
