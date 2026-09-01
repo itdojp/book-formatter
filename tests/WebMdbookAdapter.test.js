@@ -303,6 +303,10 @@ describe('WebMdbookAdapter', () => {
         `${'\\\\['.repeat(129)}deep${']'.repeat(129)}`,
         /link audit depth exceeds 128/
       ],
+      [
+        `${'[\\]'.repeat(129)}${']'.repeat(129)}(https://example.invalid)`,
+        /link audit depth exceeds 128/
+      ],
       [`${'> '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
       [`${'>   '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
       [

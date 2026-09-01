@@ -364,10 +364,13 @@ function maskInlineCodeSpans(source) {
   return characters.join('');
 }
 
-function maskEscapedLinkOpeners(source) {
+function maskEscapedBracketDelimiters(source) {
   const characters = [...source];
   for (let index = 0; index < characters.length; index += 1) {
-    if (characters[index] === '[' && isBackslashEscaped(characters, index)) {
+    if (
+      (characters[index] === '[' || characters[index] === ']') &&
+      isBackslashEscaped(characters, index)
+    ) {
       characters[index] = ' ';
     }
   }
@@ -431,7 +434,7 @@ function rejectUnsupportedSourceDestinations(source, sourcePath, tokens) {
   // crossing a parser-established heading or paragraph boundary.
   const visibleInlineBlocks = tokens
     .filter((token) => token.type === 'inline')
-    .map((token) => maskEscapedLinkOpeners(maskInlineCodeSpans(token.content)));
+    .map((token) => maskEscapedBracketDelimiters(maskInlineCodeSpans(token.content)));
   assertMarkdownAuditDepth(visibleInlineBlocks, tokens, sourcePath);
 
   const sourceAuditEnvironment = {};
