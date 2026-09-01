@@ -66,7 +66,7 @@ READMEなしのcategory作成、由来不明のファイル投入、archive内sc
 | 優先 | 現path | 現分類 | 想定移動先 | 理由 | 主なリスク | 前提・後続Issue |
 | ---: | --- | --- | --- | --- | --- | --- |
 | 1 | `scripts/build-simple.js` | archive | `archive/scripts-legacy/scripts/build-simple.js` | 現行参照0、CommonJS形式、`docs/` 全削除を伴う旧build | GitHub外の手動利用者、旧configでのみ成立する用途を見落とす可能性 | #102。移動前にrelease noteとconsumer検索、誤実行しないREADMEを追加 |
-| 2 | `docs/IMPROVEMENT_PROPOSALS.md` | archive | `archive/proposals/docs/IMPROVEMENT_PROPOSALS.md` | 2025年の提案・サンプル実装で、現在の契約や残課題を表さない | 設計判断の経緯を失う | #102。Issue/commitへの索引をREADMEへ残す |
+| 2 | `docs/IMPROVEMENT_PROPOSALS.md` | legacy | `archive/proposals/docs/IMPROVEMENT_PROPOSALS.md` | 2025年の提案・サンプル実装で、現在の契約や残課題を表さない | 現行READMEとPerformance Guideのリンクを壊す、設計判断の経緯を失う | #103で現行参照を代替文書へ更新し、link checkで旧path参照0を確認した後に#102。Issue/commit索引をREADMEへ残す |
 | 3 | `docs/includes/page-navigation.html` | active | `adapters/web-jekyll-legacy/templates/includes/page-navigation.html` | `README-unified-setup.md` が現行の手動copy元として明示するが、shared/starterとは内容が異なる | 現行の手動setupを破壊する、どの版を正本とするか未決定 | #96で代替pathと移行手順を先に提供。#103で利用文書を更新するまで旧pathを保持 |
 | 4 | `docs/_includes/`, `docs/assets/js/safe-main.js` | unknown | `archive/legacy-book-publishing-template-v3/component-snapshots/` | shared/starterと複製・差分があり、formatter自身のruntime入力や手動copy元とは確認できない | 外部文書からの未確認path参照 | #96で正本を固定し、hash/consumer監査後に#102。確定まで移動禁止 |
 | 5 | root `TROUBLESHOOTING.md`、`docs/mobile-responsive-implementation-guide.md`、その他Jekyll中心の `docs/*.md` | legacy | `adapters/web-jekyll-legacy/docs/` | Jekyll v3 / Pagesの現行運用・実装知識であり、マルチチャネル共通文書と分離すべき | 現行consumerの唯一の手順やshared CSSの由来を失う、相対リンク切れ | #96でadapter docsを成立させ、#115/#116の変更と#103の新しい共通入口を反映してから移動。代替成立前のarchive禁止 |

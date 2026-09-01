@@ -151,7 +151,7 @@ Node.js `v22.22.2` / npm `10.9.7` で4ファイルをまとめて3回実行し�
 | `JS-ERROR-HANDLING.md`, `PERFORMANCE_GUIDE.md` | legacy | Jekyll shared JS/layoutの運用説明。#96配下でコードとの同期が必要 |
 | `includes/page-navigation.html` | active | `README-unified-setup.md` が新規書籍への手動copy元として明示。内容はshared/starterと異なるため#96で移行先と正本を固定するまで保持 |
 | `_includes/`, `assets/js/safe-main.js` | unknown | shared/starterと重複・差分があり、現行consumerまたは正本を確定できない。移動禁止 |
-| `IMPROVEMENT_PROPOSALS.md` | archive候補 | 2025年時点の提案と実装例を混在し、現在の実装済み機能・正本を示さない |
+| `IMPROVEMENT_PROPOSALS.md` | legacy | 2025年時点の提案と実装例を混在するが、現行READMEとPerformance Guideから参照される。#103で参照先と代替を更新するまで保持 |
 | `mobile-responsive-implementation-guide.md` | legacy | 現行 `shared/assets/css/mobile-responsive.css` が由来を明記し、統一ガイドからも参照されるJekyll responsive実装資料。#115/#116と#96で更新・移管し、代替成立後にのみarchiveを再判断 |
 
 ## 文書・実装間の確認済み乖離
