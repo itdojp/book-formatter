@@ -219,9 +219,15 @@ npm run validate:book-registry
 npm run check-visibility -- examples/standard-book --edition free \
   --output tmp-reports/visibility/free.json
 
-# adapter skeletonのbuild planを検証し、manifestを表示（書き込みなし）
+# web-mdbook adapterのbuild planを検証し、manifestを表示（書き込みなし）
 npm start build -- --book examples/standard-book \
   --target web-mdbook --edition free --dry-run
+
+# mdBook projectをdist/web-mdbookへ生成してbuild/viewportを検証
+npm start build -- --book examples/standard-book \
+  --target web-mdbook --edition free --out-dir dist
+mdbook build dist/web-mdbook
+npm run check-mdbook-responsive -- --book dist/web-mdbook
 
 # 文章校正（textlint + PRH辞書）
 npm run check-textlint -- <book-dir> --output textlint-report.json

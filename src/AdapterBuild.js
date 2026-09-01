@@ -8,6 +8,13 @@ import {
   VISIBILITY_CONTRACT_VERSION
 } from './VisibilityChecker.js';
 import { validateStandardBook } from './StandardBookValidator.js';
+import {
+  DEFAULT_WEB_MDBOOK_CSS,
+  WEB_MDBOOK_COMPATIBILITY_VERSION,
+  WEB_MDBOOK_IMPLEMENTATION,
+  WebMdbookAdapterError,
+  writeWebMdbookProject
+} from './WebMdbookAdapter.js';
 
 export const ADAPTER_MANIFEST_VERSION = 1;
 
@@ -135,7 +142,14 @@ function createManifest(metadata, target, edition, visibilityReport) {
     kind: 'book-formatter.adapter-build',
     adapter: {
       target,
-      implementation: 'skeleton'
+      implementation: target === 'web-mdbook' ? WEB_MDBOOK_IMPLEMENTATION : 'skeleton',
+      ...(target === 'web-mdbook'
+        ? {
+          project_format: 'mdbook',
+          verified_mdbook_version: WEB_MDBOOK_COMPATIBILITY_VERSION,
+          build_directory: 'book'
+        }
+        : {})
     },
     book: {
       id: metadata.id,
@@ -221,7 +235,24 @@ export async function buildStandardBookAdapter(options) {
     visibilityReport
   );
 
-  if (!dryRun) await writeManifest(manifestPath, manifest);
+  if (target === 'web-mdbook') {
+    try {
+      await writeWebMdbookProject({
+        standardBook,
+        edition,
+        visibilityReport,
+        outputDirectory,
+        manifest,
+        sharedCssPath: DEFAULT_WEB_MDBOOK_CSS,
+        validateOnly: dryRun
+      });
+    } catch (error) {
+      if (error instanceof WebMdbookAdapterError) throw new AdapterBuildError(error.message);
+      throw error;
+    }
+  } else if (!dryRun) {
+    await writeManifest(manifestPath, manifest);
+  }
 
   return {
     manifest,
