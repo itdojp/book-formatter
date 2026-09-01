@@ -197,14 +197,20 @@ function stripHtmlCodeElementContents(value) {
 }
 
 function createArtifactComparables(value, allowFrontMatter) {
-  const readerBody = normalizeArtifactBody(value, allowFrontMatter);
-  const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(readerBody);
-  return [
-    readerBody,
-    decodedBody,
-    stripHtmlTags(decodedBody),
-    stripHtmlTags(decodedBody, ' ')
-  ]
+  const completeBody = normalizeArtifactBody(value, false);
+  const candidateBodies = allowFrontMatter
+    ? [normalizeArtifactBody(value, true), completeBody]
+    : [completeBody];
+  return candidateBodies
+    .flatMap((candidateBody) => {
+      const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(candidateBody);
+      return [
+        candidateBody,
+        decodedBody,
+        stripHtmlTags(decodedBody),
+        stripHtmlTags(decodedBody, ' ')
+      ];
+    })
     .map((candidate) => normalizeComparableText(candidate))
     .filter(Boolean);
 }

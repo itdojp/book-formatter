@@ -200,6 +200,20 @@ describe('VisibilityChecker', () => {
     });
     assert.strictEqual(frontMatterArtifactReport.summary.safe, true);
 
+    const frontMatterLeakArtifact = await createArtifact(
+      `---\ntitle: "${PAID_BLOCK_TEXT}"\n---\n\n# 公開版\n`,
+      'front-matter-leak.md'
+    );
+    const frontMatterLeakReport = await checkBookVisibility(SAMPLE_BOOK, 'free', {
+      artifactPath: frontMatterLeakArtifact
+    });
+    assert.strictEqual(frontMatterLeakReport.summary.safe, false);
+    assert.ok(
+      frontMatterLeakReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
     const renderedFenceArtifact = await createArtifact(
       '<pre class="highlight"><code>:::paid\nliteral example\n:::</code></pre>\n',
       'rendered-fence.html'
