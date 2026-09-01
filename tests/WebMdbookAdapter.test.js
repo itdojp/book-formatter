@@ -291,6 +291,18 @@ describe('WebMdbookAdapter', () => {
         '    [open](javascript:example)\n[danger](javascript:alert(7))',
         /Unsupported external link/
       ],
+      [
+        '`unclosed example\n# [danger](javascript:alert(18))`',
+        /Unsupported external link/
+      ],
+      [
+        `${'['.repeat(129)}deep${']'.repeat(129)}(https://example.invalid)`,
+        /link audit depth exceeds 128/
+      ],
+      [
+        `${'\\\\['.repeat(129)}deep${']'.repeat(129)}`,
+        /link audit depth exceeds 128/
+      ],
       [`${'> '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
       [`${'>   '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
       [
@@ -332,6 +344,13 @@ describe('WebMdbookAdapter', () => {
         'Nested label link: [outer [inner]](https://example.invalid)\n' +
         '\n[not a reference\n\n```text\ninert\n```\n\n]: javascript:example\n' +
         '\n`\n[documented]:\n  javascript:example\n`\n' +
+        '\nMultiline code: `first line\n[open](javascript:example)\nlast line`.\n' +
+        '\nDouble multiline code: ``first line\n![image](data:image/png;base64,AAAA)\nlast line``.\n' +
+        `\nDeep multiline code: \`first line\n${' '.repeat(260)}${'>'.repeat(129)}` +
+        '[open](javascript:example)\nlast line`.\n' +
+        `\nDepth 128: ${'['.repeat(128)}deep${']'.repeat(128)}(https://example.invalid)\n` +
+        `\nCode depth 129: \`${'['.repeat(129)}deep${']'.repeat(129)}\`.\n` +
+        `\nEscaped depth 129: ${'\\['.repeat(129)}literal.\n` +
         '\nFootnote text[^audit-note].\n\n[^audit-note]: Reader-visible footnote.\n' +
         `深いinline code例: \`${'['.repeat(129)}\`\n` +
         `\n\`\`\`text\n${'['.repeat(129)}\n\`\`\`\n` +
@@ -345,6 +364,23 @@ describe('WebMdbookAdapter', () => {
     );
     assert.ok(inlineCodeChapter.includes('`[open](javascript:example)`'));
     assert.ok(inlineCodeChapter.includes('`![image](data:image/png;base64,AAAA)`'));
+    assert.ok(inlineCodeChapter.includes('`first line\n[open](javascript:example)\nlast line`'));
+    assert.ok(
+      inlineCodeChapter.includes(
+        '``first line\n![image](data:image/png;base64,AAAA)\nlast line``'
+      )
+    );
+    assert.ok(
+      inlineCodeChapter.includes(
+        `${' '.repeat(260)}${'>'.repeat(129)}[open](javascript:example)`
+      )
+    );
+    assert.ok(
+      inlineCodeChapter.includes(
+        `${'['.repeat(128)}deep${']'.repeat(128)}(https://example.invalid)`
+      )
+    );
+    assert.ok(inlineCodeChapter.includes(`${'\\['.repeat(129)}literal`));
     assert.ok(inlineCodeChapter.includes('URL scheme名 javascript: / data:'));
     assert.ok(inlineCodeChapter.includes('&lbrack;example]: javascript:example'));
 

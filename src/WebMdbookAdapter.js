@@ -335,8 +335,8 @@ function isBackslashEscaped(characters, index) {
   return backslashes % 2 === 1;
 }
 
-function maskSingleLineCodeSpans(line) {
-  const characters = [...line];
+function maskInlineCodeSpans(source) {
+  const characters = [...source];
 
   for (let index = 0; index < characters.length; index += 1) {
     if (characters[index] !== '`' || isBackslashEscaped(characters, index)) continue;
@@ -364,8 +364,8 @@ function maskSingleLineCodeSpans(line) {
   return characters.join('');
 }
 
-function maskEscapedLinkOpeners(line) {
-  const characters = [...line];
+function maskEscapedLinkOpeners(source) {
+  const characters = [...source];
   for (let index = 0; index < characters.length; index += 1) {
     if (characters[index] === '[' && isBackslashEscaped(characters, index)) {
       characters[index] = ' ';
@@ -390,38 +390,31 @@ function destinationScheme(source) {
   return normalized.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1] || null;
 }
 
-function leadingBlockquoteDepth(line) {
-  let cursor = 0;
-  let depth = 0;
-  while (cursor < line.length) {
-    while (line[cursor] === ' ' || line[cursor] === '\t') cursor += 1;
-    if (line[cursor] !== '>') break;
-    depth += 1;
-    cursor += 1;
-  }
-  return depth;
-}
-
-function assertMarkdownAuditDepth(source, sourcePath) {
-  let bracketDepth = 0;
+function assertMarkdownAuditDepth(inlineBlocks, tokens, sourcePath) {
   let maximumBracketDepth = 0;
-  for (const character of source) {
-    if (character === '[') {
-      bracketDepth += 1;
-      maximumBracketDepth = Math.max(maximumBracketDepth, bracketDepth);
-    } else if (character === ']') {
-      bracketDepth = Math.max(0, bracketDepth - 1);
+  for (const inlineBlock of inlineBlocks) {
+    let bracketDepth = 0;
+    for (const character of inlineBlock) {
+      if (character === '[') {
+        bracketDepth += 1;
+        maximumBracketDepth = Math.max(maximumBracketDepth, bracketDepth);
+      } else if (character === ']') {
+        bracketDepth = Math.max(0, bracketDepth - 1);
+      }
     }
   }
-  const maximumContainerDepth = Math.max(0, ...source.split('\n').map((line) => {
-    const indentation = line.match(/^[ \t]*/u)?.[0] || '';
-    let columns = 0;
-    for (const character of indentation) {
-      columns = character === '\t' ? columns + 4 - (columns % 4) : columns + 1;
+  const containerOpens = new Set(['blockquote_open', 'bullet_list_open', 'ordered_list_open']);
+  const containerCloses = new Set(['blockquote_close', 'bullet_list_close', 'ordered_list_close']);
+  let containerDepth = 0;
+  let maximumContainerDepth = 0;
+  for (const token of tokens) {
+    if (containerOpens.has(token.type)) {
+      containerDepth += 1;
+      maximumContainerDepth = Math.max(maximumContainerDepth, containerDepth);
+    } else if (containerCloses.has(token.type)) {
+      containerDepth = Math.max(0, containerDepth - 1);
     }
-    const quoteDepth = leadingBlockquoteDepth(line.slice(indentation.length));
-    return Math.floor(columns / 2) + quoteDepth;
-  }));
+  }
   if (
     maximumBracketDepth > MAX_MARKDOWN_AUDIT_DEPTH ||
     maximumContainerDepth > MAX_MARKDOWN_AUDIT_DEPTH
@@ -433,38 +426,13 @@ function assertMarkdownAuditDepth(source, sourcePath) {
 }
 
 function rejectUnsupportedSourceDestinations(source, sourcePath, tokens) {
-  const normalized = String(source).replace(/\r\n?/g, '\n');
-  const auditedLines = [];
-  const inertLines = new Set();
-  for (const token of tokens) {
-    if ((token.type === 'fence' || token.type === 'code_block') && token.map) {
-      for (let line = token.map[0]; line < token.map[1]; line += 1) inertLines.add(line);
-    }
-  }
-  for (const [lineIndex, line] of normalized.split('\n').entries()) {
-    if (inertLines.has(lineIndex)) {
-      continue;
-    }
-
-    const visibleSource = maskEscapedLinkOpeners(maskSingleLineCodeSpans(line));
-    auditedLines.push(visibleSource);
-    const patterns = [
-      { pattern: /(!?)\[[^\]]*\]\(\s*<?([^)>\s]+)/gu, destination: 2, image: 1 }
-    ];
-    for (const entry of patterns) {
-      for (const match of visibleSource.matchAll(entry.pattern)) {
-        const scheme = destinationScheme(match[entry.destination]);
-        if (!scheme) continue;
-        if (scheme.toLowerCase() !== 'https') {
-          const kind = entry.image && match[entry.image] === '!' ? 'image' : 'link';
-          throw new WebMdbookAdapterError(
-            `Unsupported external ${kind} in ${sourcePath}: ${scheme}:`
-          );
-        }
-      }
-    }
-  }
-  assertMarkdownAuditDepth(auditedLines.join('\n'), sourcePath);
+  // MarkdownIt owns inline block and code-span boundaries. Derive the depth
+  // input from complete inline blocks so multiline spans remain inert without
+  // crossing a parser-established heading or paragraph boundary.
+  const visibleInlineBlocks = tokens
+    .filter((token) => token.type === 'inline')
+    .map((token) => maskEscapedLinkOpeners(maskInlineCodeSpans(token.content)));
+  assertMarkdownAuditDepth(visibleInlineBlocks, tokens, sourcePath);
 
   const sourceAuditEnvironment = {};
   const sourceAuditTokens = collectTokens(
