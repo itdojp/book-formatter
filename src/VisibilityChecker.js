@@ -42,7 +42,7 @@ const ARTIFACT_TEXT_EXTENSIONS = new Set([
   '.yml'
 ]);
 const HTML_MARKUP_EXTENSIONS = new Set(['.html', '.htm', '.md', '.xhtml']);
-const MIN_STANDALONE_MATH_FRAGMENT_CODE_POINTS = 8;
+const MIN_INDEPENDENT_FRAGMENT_CODE_POINTS = 8;
 const HTML_BLOCK_ELEMENTS = new Set([
   'address',
   'article',
@@ -226,7 +226,7 @@ function stripHtmlCodeElementContents(value) {
     }
 
     const tag = source.slice(index, endIndex + 1);
-    const rawTextTag = tag.match(/^<\s*(script|style)(?=[\s/>])/iu);
+    const rawTextTag = tag.match(/^<\s*(script|style|textarea|title)(?=[\s/>])/iu);
     if (rawTextTag && !/\/\s*>$/u.test(tag)) {
       const closingPattern = new RegExp(`<\\/\\s*${rawTextTag[1]}\\s*>`, 'igu');
       closingPattern.lastIndex = endIndex + 1;
@@ -274,7 +274,8 @@ function createArtifactComparables(value, allowFrontMatter) {
       candidateBody,
       decodedBody,
       stripHtmlTags(decodedBody),
-      stripHtmlTags(decodedBody, ' ')
+      stripHtmlTags(decodedBody, ' '),
+      stripHtmlTags(decodedBody, htmlBlockBoundary)
     ];
   });
   if (allowFrontMatter) {
@@ -391,9 +392,12 @@ function projectInlineChildrenWithCanonicalMath(children) {
   return { projected, fragments };
 }
 
-function hasSufficientStandaloneMathContext(value) {
-  return [...normalizeComparableText(value).replace(/\s/gu, '')].length >=
-    MIN_STANDALONE_MATH_FRAGMENT_CODE_POINTS;
+function hasSufficientIndependentFragmentContext(value) {
+  const normalized = normalizeComparableText(value).replace(/\s/gu, '');
+  return (
+    [...normalized].length >= MIN_INDEPENDENT_FRAGMENT_CODE_POINTS &&
+    /[\p{L}\p{N}]/u.test(normalized)
+  );
 }
 
 function collectMarkdownTextFragments(value) {
@@ -415,7 +419,7 @@ function collectMarkdownTextFragments(value) {
     );
     if (
       projectedMathText &&
-      (!standaloneMath || hasSufficientStandaloneMathContext(projectedMathText))
+      (!standaloneMath || hasSufficientIndependentFragmentContext(projectedMathText))
     ) {
       fragments.push(mathProjection.projected);
     }
@@ -426,7 +430,10 @@ function collectMarkdownTextFragments(value) {
     }
     if (token.children.some((child) => child.type === 'footnote_ref')) {
       for (const child of token.children) {
-        if (child.type === 'text' && normalizeComparableText(child.content)) {
+        if (
+          child.type === 'text' &&
+          hasSufficientIndependentFragmentContext(child.content)
+        ) {
           fragments.push(child.content);
         }
       }
@@ -441,7 +448,7 @@ function collectCanonicalMathFragments(value) {
     if (token.type === 'inline' && token.children) {
       fragments.push(
         ...projectInlineChildrenWithCanonicalMath(token.children).fragments.filter(
-          hasSufficientStandaloneMathContext
+          hasSufficientIndependentFragmentContext
         )
       );
     }

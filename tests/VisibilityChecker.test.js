@@ -246,6 +246,20 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const textareaMarkerArtifact = await createArtifact(
+      '<textarea><code>\n:::paid\nliteral-looking marker\n</code></textarea>\n',
+      'textarea-marker.html'
+    );
+    const textareaMarkerReport = await checkBookVisibility(SAMPLE_BOOK, 'free', {
+      artifactPath: textareaMarkerArtifact
+    });
+    assert.strictEqual(textareaMarkerReport.summary.safe, false);
+    assert.ok(
+      textareaMarkerReport.findings.some(
+        (finding) => finding.code === 'raw_protected_marker_in_artifact'
+      )
+    );
+
     const visibleFenceTextArtifact = await createArtifact(
       '```text\n:::paid\nstill visible in plain text\n```\n',
       'visible-fence.txt'
@@ -513,6 +527,25 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const blockBoundaryBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(blockBoundaryBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\nPremium **only**.  \nDetails\n:::\n'
+    );
+    const blockBoundaryLeak = await createArtifact(
+      '<p>Premium <strong>only</strong>.<br>Details</p>\n',
+      'block-boundary.html'
+    );
+    const blockBoundaryReport = await checkBookVisibility(blockBoundaryBook, 'free', {
+      artifactPath: blockBoundaryLeak
+    });
+    assert.strictEqual(blockBoundaryReport.summary.safe, false);
+    assert.ok(
+      blockBoundaryReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
     const mathWrappedMarkdownLeak = await createArtifact(
       '# 公開版\n\nPremium $only$ details\n',
       'math-wrapped-markdown.md'
@@ -578,6 +611,14 @@ describe('VisibilityChecker', () => {
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );
+    const unrelatedPunctuationArtifact = await createArtifact(
+      '<p>Public sentence.</p>\n',
+      'unrelated-punctuation.html'
+    );
+    const unrelatedPunctuationReport = await checkBookVisibility(footnoteBook, 'free', {
+      artifactPath: unrelatedPunctuationArtifact
+    });
+    assert.strictEqual(unrelatedPunctuationReport.summary.safe, true);
   });
 
   test('paidはpaid本文を許可してinternal本文を拒否し、internalは両方を許可する', async () => {
