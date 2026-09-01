@@ -485,6 +485,20 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const mathWrappedMarkdownLeak = await createArtifact(
+      '# 公開版\n\nPremium $only$ details\n',
+      'math-wrapped-markdown.md'
+    );
+    const mathWrappedMarkdownReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: mathWrappedMarkdownLeak
+    });
+    assert.strictEqual(mathWrappedMarkdownReport.summary.safe, false);
+    assert.ok(
+      mathWrappedMarkdownReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
     const adjacentInlineBook = await copySampleBook();
     await fs.writeFile(
       path.join(adjacentInlineBook, 'manuscript/01-introduction.md'),

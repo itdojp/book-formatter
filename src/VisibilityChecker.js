@@ -273,6 +273,112 @@ function createArtifactComparables(value, allowFrontMatter) {
     .filter(Boolean);
 }
 
+function isEscapedCharacter(value, index) {
+  let backslashes = 0;
+  for (let candidate = index - 1; candidate >= 0 && value[candidate] === '\\'; candidate -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
+function projectInlineMath(value) {
+  const fragments = [];
+  let projected = '';
+
+  for (let index = 0; index < value.length; index += 1) {
+    if (
+      value[index] !== '$' ||
+      isEscapedCharacter(value, index) ||
+      value[index - 1] === '$' ||
+      value[index + 1] === '$'
+    ) {
+      projected += value[index];
+      continue;
+    }
+
+    let closingIndex = index + 1;
+    for (; closingIndex < value.length; closingIndex += 1) {
+      if (
+        value[closingIndex] === '$' &&
+        !isEscapedCharacter(value, closingIndex) &&
+        value[closingIndex - 1] !== '$' &&
+        value[closingIndex + 1] !== '$'
+      ) {
+        break;
+      }
+    }
+    if (closingIndex >= value.length) {
+      projected += value[index];
+      continue;
+    }
+
+    const body = value.slice(index + 1, closingIndex);
+    if (!normalizeComparableText(body)) {
+      projected += value[index];
+      continue;
+    }
+    projected += body;
+    fragments.push(body);
+    index = closingIndex;
+  }
+
+  return { projected, fragments };
+}
+
+function projectCanonicalMath(value) {
+  const lines = String(value || '').split('\n');
+  const projectedLines = [];
+  const fragments = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].trim() === '$$') {
+      const closingIndex = lines.findIndex(
+        (line, candidateIndex) => candidateIndex > index && line.trim() === '$$'
+      );
+      if (closingIndex !== -1) {
+        const bodyLines = lines.slice(index + 1, closingIndex);
+        const body = bodyLines.join('\n');
+        if (normalizeComparableText(body)) fragments.push(body);
+        projectedLines.push(...bodyLines);
+        index = closingIndex;
+        continue;
+      }
+    }
+
+    const inline = projectInlineMath(lines[index]);
+    projectedLines.push(inline.projected);
+    fragments.push(...inline.fragments);
+  }
+
+  return { projected: projectedLines.join('\n'), fragments };
+}
+
+function projectInlineChildrenWithCanonicalMath(children) {
+  const fragments = [];
+  let projected = '';
+  let textRun = '';
+  const flushTextRun = () => {
+    if (!textRun) return;
+    const math = projectCanonicalMath(textRun);
+    projected += math.projected;
+    fragments.push(...math.fragments);
+    textRun = '';
+  };
+
+  for (const child of children) {
+    if (child.type === 'text') {
+      textRun += child.content;
+    } else if (child.type === 'softbreak' || child.type === 'hardbreak') {
+      textRun += '\n';
+    } else {
+      flushTextRun();
+      if (child.type === 'code_inline' || child.type === 'image') projected += child.content;
+    }
+  }
+  flushTextRun();
+  return { projected, fragments };
+}
+
 function collectMarkdownTextFragments(value) {
   const fragments = [];
   for (const token of MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {})) {
@@ -285,6 +391,10 @@ function collectMarkdownTextFragments(value) {
       })
       .join('');
     if (normalizeComparableText(projectedText)) fragments.push(projectedText);
+    const mathProjection = projectInlineChildrenWithCanonicalMath(token.children);
+    if (normalizeComparableText(mathProjection.projected)) {
+      fragments.push(mathProjection.projected);
+    }
     for (const child of token.children) {
       if (child.type === 'image' && normalizeComparableText(child.content)) {
         fragments.push(child.content);
@@ -303,59 +413,9 @@ function collectMarkdownTextFragments(value) {
 
 function collectCanonicalMathFragments(value) {
   const fragments = [];
-  const inlineTokens = MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {}).filter(
-    (token) => token.type === 'inline' && token.children
-  );
-
-  for (const token of inlineTokens) {
-    const mathSource = token.children
-      .map((child) => {
-        if (child.type === 'text') return child.content;
-        if (child.type === 'softbreak' || child.type === 'hardbreak') return '\n';
-        return '\u0000';
-      })
-      .join('');
-    const lines = mathSource.split('\n');
-    const displayLines = new Set();
-
-    for (let index = 0; index < lines.length; index += 1) {
-      if (lines[index].trim() !== '$$') continue;
-      const closingIndex = lines.findIndex(
-        (line, candidateIndex) => candidateIndex > index && line.trim() === '$$'
-      );
-      if (closingIndex === -1) break;
-      const body = lines.slice(index + 1, closingIndex).join('\n');
-      if (normalizeComparableText(body)) fragments.push(body);
-      for (let lineIndex = index; lineIndex <= closingIndex; lineIndex += 1) {
-        displayLines.add(lineIndex);
-      }
-      index = closingIndex;
-    }
-
-    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-      if (displayLines.has(lineIndex)) continue;
-      const line = lines[lineIndex];
-      for (let index = 0; index < line.length; index += 1) {
-        if (
-          line[index] !== '$' ||
-          line[index - 1] === '\\' ||
-          line[index - 1] === '$' ||
-          line[index + 1] === '$'
-        ) {
-          continue;
-        }
-        const closingIndex = line.indexOf('$', index + 1);
-        if (
-          closingIndex === -1 ||
-          line[closingIndex - 1] === '\\' ||
-          line[closingIndex + 1] === '$'
-        ) {
-          continue;
-        }
-        const body = line.slice(index + 1, closingIndex);
-        if (normalizeComparableText(body)) fragments.push(body);
-        index = closingIndex;
-      }
+  for (const token of MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {})) {
+    if (token.type === 'inline' && token.children) {
+      fragments.push(...projectInlineChildrenWithCanonicalMath(token.children).fragments);
     }
   }
 
