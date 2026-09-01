@@ -261,6 +261,14 @@ describe('WebMdbookAdapter', () => {
       ],
       ['[danger](java&NewLine;script:alert(3))', /Unsupported external link/],
       ['[danger](java&#13;script:alert(4))', /Unsupported external link/],
+      ...Array.from({ length: 32 }, (_value, index) => [
+        `[danger](&#${index + 1};javascript:alert(c0-decimal-${index + 1}))`,
+        /Unsupported external link/
+      ]),
+      ...Array.from({ length: 32 }, (_value, index) => [
+        `[danger](&#x${(index + 1).toString(16)};javascript:alert(c0-hex-${index + 1}))`,
+        /Unsupported external link/
+      ]),
       ['\\\\[danger](javascript:alert(5))', /Unsupported external link/],
       ['[danger\\]ous](javascript:alert(8))', /Unsupported external link/],
       ['[outer [inner]](javascript:alert(9))', /Unsupported external link/],

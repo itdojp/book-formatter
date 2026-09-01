@@ -386,7 +386,14 @@ function decodeHtmlEntities(source) {
 }
 
 function destinationScheme(source) {
-  const normalized = decodeHtmlEntities(source)
+  const decoded = decodeHtmlEntities(source);
+  let start = 0;
+  let end = decoded.length;
+  while (start < end && decoded.charCodeAt(start) <= 0x20) start += 1;
+  while (end > start && decoded.charCodeAt(end - 1) <= 0x20) end -= 1;
+  // Match URL-parser preprocessing: trim leading/trailing C0 controls and
+  // space, then ignore ASCII TAB/LF/CR wherever they occur in the input.
+  const normalized = decoded.slice(start, end)
     .replaceAll('\t', '')
     .replaceAll('\n', '')
     .replaceAll('\r', '');
