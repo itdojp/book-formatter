@@ -77,14 +77,14 @@ describe('BookRegistryValidator', () => {
     await assert.rejects(validateBookRegistry(invalidStatusPath), /allowed values/);
   });
 
-  test('unsafe repository URL、branch、pathを拒否する', async () => {
+  test('credential付きchannel URL、unsafe branch、pathを拒否する', async () => {
     const credentialUrlPath = await mutateExampleRegistry((registry) => {
-      registry.books['it-engineer-knowledge-architecture'].repository.url =
-        'https://user:secret@github.com/itdojp/it-engineer-knowledge-architecture';
+      registry.books['it-engineer-knowledge-architecture'].channels.github_pages.url =
+        'https://user:secret@itdojp.github.io/it-engineer-knowledge-architecture/';
     });
     await assert.rejects(
       validateBookRegistry(credentialUrlPath),
-      /must match pattern|without credentials/
+      /without credentials/
     );
 
     const invalidBranchPath = await mutateExampleRegistry((registry) => {
