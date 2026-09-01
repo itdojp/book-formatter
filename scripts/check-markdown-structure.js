@@ -30,13 +30,13 @@ function findFrontMatter(lines) {
     return { hasFrontMatter: false, bodyStartLine: 1 };
   }
 
-  if (String(lines[0]) !== '---') {
+  if (!/^---[ \t]*$/.test(String(lines[0]))) {
     return { hasFrontMatter: false, bodyStartLine: 1 };
   }
 
   for (let i = 1; i < lines.length; i += 1) {
     const line = String(lines[i]);
-    if (line === '---' || line === '...') {
+    if (/^(---|\.\.\.)[ \t]*$/.test(line)) {
       return {
         hasFrontMatter: true,
         bodyStartLine: i + 2,

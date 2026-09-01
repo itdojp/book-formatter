@@ -184,7 +184,7 @@ raw HTMLは公開先間で意味が変わるため、原則禁止します。表
 
 | 項目 | severity | 備考 |
 | --- | --- | --- |
-| 不正・未閉鎖Front Matter | error | column 1のdelimiterを使うlegacy互換検査 |
+| 不正・未閉鎖Front Matter | error | column 1（末尾space/tab可）のdelimiterを使うlegacy互換検査 |
 | 見出しレベル飛び、複数h1 | warning | 移行可能性を保つためwarning |
 | 言語名のないcode fence | warning | 新規標準原稿では必須 |
 | 未閉鎖code fence | error | markerと長さを考慮 |

@@ -70,6 +70,26 @@ test('check-markdown-structure: invalid front matter should fail on error', asyn
   });
 });
 
+test('check-markdown-structure: front matter delimiters should allow trailing spaces and tabs', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const md = [
+      '---  ',
+      'title: "Valid"',
+      '...\t',
+      '# Heading',
+      ''
+    ].join('\n');
+    await fs.writeFile(path.join(tmpRoot, 'trailing-space-front-matter.md'), md, 'utf8');
+
+    const { result, report } = runCheckMarkdownStructure(tmpRoot, { failOn: 'warn' });
+
+    assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.equal(report.summary.errors, 0);
+    assert.equal(report.summary.warnings, 0);
+  });
+});
+
 test('check-markdown-structure: heading level skip should be warning and fail on warn', async () => {
   await withTempDir(async (tmpRoot) => {
     const md = [
