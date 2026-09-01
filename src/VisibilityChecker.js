@@ -41,6 +41,48 @@ const ARTIFACT_TEXT_EXTENSIONS = new Set([
   '.yaml',
   '.yml'
 ]);
+const HTML_BLOCK_ELEMENTS = new Set([
+  'address',
+  'article',
+  'aside',
+  'blockquote',
+  'br',
+  'dd',
+  'details',
+  'div',
+  'dl',
+  'dt',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'header',
+  'hr',
+  'legend',
+  'li',
+  'main',
+  'nav',
+  'ol',
+  'p',
+  'pre',
+  'section',
+  'summary',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'ul'
+]);
 
 export class VisibilityValidationError extends Error {
   constructor(message) {
@@ -98,13 +140,14 @@ function stripHtmlTags(value, separator = '') {
   let result = '';
   let inTag = false;
   let quote = null;
+  let tagStart = -1;
 
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];
     if (!inTag) {
       if (character === '<' && /[A-Za-z!/?]/u.test(source[index + 1] || '')) {
         inTag = true;
-        result += separator;
+        tagStart = index;
       } else {
         result += character;
       }
@@ -119,11 +162,18 @@ function stripHtmlTags(value, separator = '') {
       quote = character;
     } else if (character === '>') {
       inTag = false;
-      result += separator;
+      const tag = source.slice(tagStart, index + 1);
+      result += typeof separator === 'function' ? separator(tag) : separator;
+      tagStart = -1;
     }
   }
 
   return result;
+}
+
+function htmlBlockBoundary(tag) {
+  const tagName = String(tag || '').match(/^<\s*\/?\s*([A-Za-z][A-Za-z0-9-]*)/u)?.[1];
+  return tagName && HTML_BLOCK_ELEMENTS.has(tagName.toLowerCase()) ? '\n' : '';
 }
 
 function stripHtmlCodeElementContents(value) {
@@ -548,7 +598,8 @@ async function scanArtifact(artifactPath, protectedFragments) {
     );
     const readerVisibleCandidates = [
       stripHtmlTags(readerVisibleBase),
-      stripHtmlTags(readerVisibleBase, '\n')
+      stripHtmlTags(readerVisibleBase, '\n'),
+      stripHtmlTags(readerVisibleBase, htmlBlockBoundary)
     ];
     const renderedDelimiterLine =
       readerVisibleCandidates
