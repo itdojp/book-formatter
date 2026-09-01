@@ -261,6 +261,7 @@ describe('WebMdbookAdapter', () => {
       ],
       ['[danger](java&NewLine;script:alert(3))', /Unsupported external link/],
       ['[danger](java&#13;script:alert(4))', /Unsupported external link/],
+      ['\\\\[danger](javascript:alert(5))', /Unsupported external link/],
       [`${'> '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
       [`${'>   '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
       [
@@ -297,9 +298,11 @@ describe('WebMdbookAdapter', () => {
         'Backslashを含む例: `[open](javascript:example)\\`\n' +
         'URL scheme名 javascript: / data: はlink destinationではない。\n' +
         '&lbrack;example]: javascript:example はreference definitionではない。\n' +
+        'Escaped構文例: \\[open](javascript:example) と !\\[image](data:image/png;base64,AAAA)\n' +
         `深いinline code例: \`${'['.repeat(129)}\`\n` +
         `\n\`\`\`text\n${'['.repeat(129)}\n\`\`\`\n` +
-        `\n> \`\`\`text\n> ${'['.repeat(129)}\n> \`\`\`\n`
+        `\n> \`\`\`text\n> ${'['.repeat(129)}\n> \`\`\`\n` +
+        '\n- list example\n    ```text\n    [open](javascript:example)\n    ```\n'
     );
     const inlineCodeResult = await build(inlineCodeBook, inlineCodeOutput);
     const inlineCodeChapter = await fs.readFile(

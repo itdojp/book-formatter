@@ -317,18 +317,19 @@ function collectTokens(tokens) {
   return collected;
 }
 
+function isBackslashEscaped(characters, index) {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && characters[cursor] === '\\'; cursor -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
 function maskSingleLineCodeSpans(line) {
   const characters = [...line];
-  const escapedAt = (index) => {
-    let backslashes = 0;
-    for (let cursor = index - 1; cursor >= 0 && characters[cursor] === '\\'; cursor -= 1) {
-      backslashes += 1;
-    }
-    return backslashes % 2 === 1;
-  };
 
   for (let index = 0; index < characters.length; index += 1) {
-    if (characters[index] !== '`' || escapedAt(index)) continue;
+    if (characters[index] !== '`' || isBackslashEscaped(characters, index)) continue;
     let runLength = 1;
     while (characters[index + runLength] === '`') runLength += 1;
     let close = index + runLength;
@@ -353,6 +354,16 @@ function maskSingleLineCodeSpans(line) {
   return characters.join('');
 }
 
+function maskEscapedLinkOpeners(line) {
+  const characters = [...line];
+  for (let index = 0; index < characters.length; index += 1) {
+    if (characters[index] === '[' && isBackslashEscaped(characters, index)) {
+      characters[index] = ' ';
+    }
+  }
+  return characters.join('');
+}
+
 function decodeHtmlEntities(source) {
   return source.replace(HTML_ENTITY, (entity) => {
     const fragment = parseFragment(entity);
@@ -369,19 +380,16 @@ function destinationScheme(source) {
   return normalized.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1] || null;
 }
 
-function leadingBlockquotePrefix(line) {
+function leadingBlockquoteDepth(line) {
   let cursor = 0;
   let depth = 0;
-  let prefixEnd = 0;
   while (cursor < line.length) {
     while (line[cursor] === ' ' || line[cursor] === '\t') cursor += 1;
     if (line[cursor] !== '>') break;
     depth += 1;
     cursor += 1;
-    prefixEnd = cursor;
   }
-  while (line[prefixEnd] === ' ' || line[prefixEnd] === '\t') prefixEnd += 1;
-  return { depth, content: depth ? line.slice(prefixEnd) : line };
+  return depth;
 }
 
 function assertMarkdownAuditDepth(source, sourcePath) {
@@ -401,7 +409,7 @@ function assertMarkdownAuditDepth(source, sourcePath) {
     for (const character of indentation) {
       columns = character === '\t' ? columns + 4 - (columns % 4) : columns + 1;
     }
-    const quoteDepth = leadingBlockquotePrefix(line.slice(indentation.length)).depth;
+    const quoteDepth = leadingBlockquoteDepth(line.slice(indentation.length));
     return Math.floor(columns / 2) + quoteDepth;
   }));
   if (
@@ -414,23 +422,21 @@ function assertMarkdownAuditDepth(source, sourcePath) {
   }
 }
 
-function rejectUnsupportedSourceDestinations(source, sourcePath) {
+function rejectUnsupportedSourceDestinations(source, sourcePath, tokens) {
   const normalized = String(source).replace(/\r\n?/g, '\n');
   const auditedLines = [];
-  let fence = null;
-  for (const line of normalized.split('\n')) {
-    const containerContent = leadingBlockquotePrefix(line).content;
-    if (fence) {
-      if (isStandardFenceClose(containerContent, fence)) fence = null;
-      continue;
+  const inertLines = new Set();
+  for (const token of tokens) {
+    if ((token.type === 'fence' || token.type === 'code_block') && token.map) {
+      for (let line = token.map[0]; line < token.map[1]; line += 1) inertLines.add(line);
     }
-    const openedFence = detectStandardFenceOpen(containerContent);
-    if (openedFence) {
-      fence = openedFence;
+  }
+  for (const [lineIndex, line] of normalized.split('\n').entries()) {
+    if (inertLines.has(lineIndex)) {
       continue;
     }
 
-    const visibleSource = maskSingleLineCodeSpans(line);
+    const visibleSource = maskEscapedLinkOpeners(maskSingleLineCodeSpans(line));
     auditedLines.push(visibleSource);
     const patterns = [
       { pattern: /(!?)\[[^\]]*\]\(\s*<?([^)>\s]+)/gu, destination: 2, image: 1 },
@@ -467,7 +473,6 @@ function rejectMdbookFileDirectives(source, sourcePath) {
 
 function inspectMarkdown(source, sourcePath) {
   rejectMdbookFileDirectives(source, sourcePath);
-  rejectUnsupportedSourceDestinations(source, sourcePath);
   const tokens = collectTokens(MARKDOWN.parse(source, {}));
   const html = tokens.find((token) => token.type === 'html_block' || token.type === 'html_inline');
   if (html) {
@@ -475,6 +480,7 @@ function inspectMarkdown(source, sourcePath) {
       `Reader-visible raw HTML is not supported by web-mdbook: ${sourcePath}`
     );
   }
+  rejectUnsupportedSourceDestinations(source, sourcePath, tokens);
   const destinations = [];
   for (const token of tokens) {
     if (token.type === 'link_open') {
