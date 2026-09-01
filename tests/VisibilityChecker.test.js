@@ -278,6 +278,33 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const markerAfterMarkdownFenceHtmlOpener = await createArtifact(
+      '```\n<code>\n```\n:::paid\npublic\n</code>\n',
+      'marker-after-fenced-html-opener.md'
+    );
+    const markerAfterMarkdownFenceHtmlOpenerReport = await checkBookVisibility(
+      SAMPLE_BOOK,
+      'free',
+      { artifactPath: markerAfterMarkdownFenceHtmlOpener }
+    );
+    assert.strictEqual(markerAfterMarkdownFenceHtmlOpenerReport.summary.safe, false);
+    assert.ok(
+      markerAfterMarkdownFenceHtmlOpenerReport.findings.some(
+        (finding) => finding.code === 'raw_protected_marker_in_artifact'
+      )
+    );
+
+    const markerInsideMarkdownFenceHtmlLiteral = await createArtifact(
+      '```\n<code>\n:::paid\n</code>\n```\n',
+      'marker-inside-fenced-html-literal.md'
+    );
+    const markerInsideMarkdownFenceHtmlLiteralReport = await checkBookVisibility(
+      SAMPLE_BOOK,
+      'free',
+      { artifactPath: markerInsideMarkdownFenceHtmlLiteral }
+    );
+    assert.strictEqual(markerInsideMarkdownFenceHtmlLiteralReport.summary.safe, true);
+
     const textareaMarkerArtifact = await createArtifact(
       '<textarea><code>\n:::paid\nliteral-looking marker\n</code></textarea>\n',
       'textarea-marker.html'
