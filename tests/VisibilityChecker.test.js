@@ -161,7 +161,8 @@ describe('VisibilityChecker', () => {
       ['free', `# leak\n\n${INTERNAL_BLOCK_TEXT}\n`],
       ['sample', `# leak\n\n${INTERNAL_BLOCK_TEXT}\n`],
       ['free', 'この文書はdocument-level `paid` visibilityの例です。有償editionの構成と検査方法を説明しますが、実際の販売情報は含みません。'],
-      ['free', ':::paid\nremoved too late\n:::\n']
+      ['free', ':::paid\nremoved too late\n:::\n'],
+      ['free', '  :::internal\nindented marker remained\n  :::\n']
     ];
     for (const [editionId, content] of cases) {
       const artifactPath = await createArtifact(content);

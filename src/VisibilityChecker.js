@@ -279,7 +279,10 @@ async function inspectArtifactPath(artifactPath) {
 }
 
 function findRawProtectedDelimiter(content) {
-  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
+  const lines = String(content || '')
+    .replace(/^\uFEFF/u, '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
   let fence = null;
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -293,7 +296,13 @@ function findRawProtectedDelimiter(content) {
       fence = open;
       continue;
     }
-    if (/^:::(paid|internal)\s*$/.test(line)) return index + 1;
+    const delimiter = parseStandardCalloutDelimiter(line);
+    if (
+      delimiter?.kind === 'open' &&
+      (delimiter.type === 'paid' || delimiter.type === 'internal')
+    ) {
+      return index + 1;
+    }
   }
   return null;
 }
