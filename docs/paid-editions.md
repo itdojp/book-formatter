@@ -168,7 +168,7 @@ version 1は完全な情報漏えい対策ではない。
 
 - markerのない本文が意味的に有償・内部情報かは判定しない
 - paraphrase、翻訳、HTML構造化など大きく変換された本文の同一性は判定しない
-- list item、footnote隣接text、standalone mathから独立抽出するfragmentが空白を除いて8 code point未満の場合、通常語中の1文字まで拾う誤検知を避けるため独立substringとして照合しない。周辺本文を含む投影と、adapterのvisibility plan/target固有検査で補完する
+- fenced code本文、list item、footnote隣接text、standalone mathから独立抽出するfragmentが空白を除いて8 code point未満の場合、通常語中の1文字まで拾う誤検知を避けるため独立substringとして照合しない。周辺本文を含む投影と、adapterのvisibility plan/target固有検査で補完する
 - binary artifact内部は共通checkerで判定しない
 - DRM、repository access、販売platform accessを設定しない
 - `structure`にないfileをadapterが独自に取り込む動作を許可しないが、adapter実装前には検証できない

@@ -395,6 +395,20 @@ describe('VisibilityChecker', () => {
       );
     }
 
+    const shortFenceBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(shortFenceBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\n```text\nx\n```\n:::\n'
+    );
+    const unrelatedShortFenceArtifact = await createArtifact(
+      '<p>Public example text.</p>\n',
+      'unrelated-short-fence.html'
+    );
+    const unrelatedShortFenceReport = await checkBookVisibility(shortFenceBook, 'free', {
+      artifactPath: unrelatedShortFenceArtifact
+    });
+    assert.strictEqual(unrelatedShortFenceReport.summary.safe, true);
+
     const listBook = await copySampleBook();
     await fs.writeFile(
       path.join(listBook, 'manuscript/01-introduction.md'),

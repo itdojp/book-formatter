@@ -518,8 +518,10 @@ function createProtectedFragments(value, source, visibility) {
     if (fence) {
       if (isStandardFenceClose(lines[index], fence)) {
         const body = lines.slice(fence.bodyStartIndex, index).join('\n');
-        addFragment(body);
-        for (const candidate of body.split(/\n\s*\n/u)) addFragment(candidate);
+        if (hasSufficientIndependentFragmentContext(body)) addFragment(body);
+        for (const candidate of body.split(/\n\s*\n/u)) {
+          if (hasSufficientIndependentFragmentContext(candidate)) addFragment(candidate);
+        }
         fence = null;
       }
       continue;
