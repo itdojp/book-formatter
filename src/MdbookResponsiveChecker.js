@@ -197,7 +197,9 @@ async function inspectBuiltLinks(buildRoot) {
         continue;
       }
 
-      const [rawPath, rawFragment = ''] = destination.split('#', 2);
+      const fragmentIndex = destination.indexOf('#');
+      const rawPath = fragmentIndex === -1 ? destination : destination.slice(0, fragmentIndex);
+      const rawFragment = fragmentIndex === -1 ? '' : destination.slice(fragmentIndex + 1);
       const pathWithoutQuery = rawPath.split('?', 1)[0];
       const decodedPath = decodeUrlPart(pathWithoutQuery, reportPath);
       const rootRelative = decodedPath.startsWith('/');
@@ -441,6 +443,21 @@ async function closeChrome(browser) {
   await removeChromeProfile(browser.profileDirectory);
 }
 
+export function isSidebarRenderedVisible(sidebarRect, sidebarStyle, viewportWidth) {
+  const opacity = Number.parseFloat(sidebarStyle.opacity);
+  return (
+    sidebarRect.width > 0 &&
+    sidebarRect.height > 0 &&
+    sidebarRect.right > 0 &&
+    sidebarRect.left < viewportWidth &&
+    sidebarStyle.display !== 'none' &&
+    sidebarStyle.visibility !== 'hidden' &&
+    sidebarStyle.visibility !== 'collapse' &&
+    Number.isFinite(opacity) &&
+    opacity > 0
+  );
+}
+
 function probeExpression(state) {
   return `(async () => {
     const toggle = document.getElementById('mdbook-sidebar-toggle-anchor');
@@ -464,13 +481,24 @@ function probeExpression(state) {
     const wrapperRect = wrapper.getBoundingClientRect();
     const contentRect = content.getBoundingClientRect();
     const sidebarStyle = getComputedStyle(sidebar);
-    const sidebarVisible = sidebarRect.width > 0 && sidebarRect.right > 0 && sidebarRect.left < window.innerWidth;
+    const sidebarVisible = (${isSidebarRenderedVisible.toString()})(
+      sidebarRect,
+      sidebarStyle,
+      window.innerWidth
+    );
     return {
       state: ${JSON.stringify(state)},
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
-      sidebar: { left: sidebarRect.left, right: sidebarRect.right, width: sidebarRect.width },
+      sidebar: {
+        left: sidebarRect.left,
+        right: sidebarRect.right,
+        width: sidebarRect.width,
+        height: sidebarRect.height
+      },
       sidebarDisplay: sidebarStyle.display,
+      sidebarVisibility: sidebarStyle.visibility,
+      sidebarOpacity: sidebarStyle.opacity,
       sidebarCssWidth: sidebarStyle.width,
       sidebarPosition: sidebarStyle.position,
       sidebarTransform: sidebarStyle.transform,

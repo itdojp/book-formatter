@@ -6,6 +6,7 @@ import fs from 'fs-extra';
 
 import {
   checkMdbookResponsive,
+  isSidebarRenderedVisible,
   MDBOOK_VIEWPORTS,
   MdbookResponsiveError,
   removeChromeProfile,
@@ -159,6 +160,24 @@ describe('MdbookResponsiveChecker', () => {
     );
   });
 
+  test('sidebarのgeometryとcomputed visibilityを組み合わせて表示状態を判定する', () => {
+    const visibleRect = { left: 0, right: 300, width: 300, height: 844 };
+    const visibleStyle = { display: 'block', visibility: 'visible', opacity: '1' };
+    assert.strictEqual(isSidebarRenderedVisible(visibleRect, visibleStyle, 390), true);
+
+    const hiddenCases = [
+      [{ ...visibleRect, height: 0 }, visibleStyle],
+      [visibleRect, { ...visibleStyle, display: 'none' }],
+      [visibleRect, { ...visibleStyle, visibility: 'hidden' }],
+      [visibleRect, { ...visibleStyle, visibility: 'collapse' }],
+      [visibleRect, { ...visibleStyle, opacity: '0' }],
+      [{ ...visibleRect, left: -300, right: 0 }, visibleStyle]
+    ];
+    for (const [rect, style] of hiddenCases) {
+      assert.strictEqual(isSidebarRenderedVisible(rect, style, 390), false);
+    }
+  });
+
   test('generated content pageのresponsive DOM driftをsupport page扱いせず拒否する', async () => {
     const root = await fixture();
     const index = await fs.readFile(path.join(root, 'book/index.html'), 'utf8');
@@ -229,6 +248,25 @@ describe('MdbookResponsiveChecker', () => {
     await assert.rejects(
       checkMdbookResponsive(brokenAnchor, { staticOnly: true }),
       /Broken local anchor/
+    );
+
+    const repeatedHash = await fixture();
+    await fs.appendFile(
+      path.join(repeatedHash, 'book/index.html'),
+      '<div id="intro"></div><a href="#intro#details">broken fragment</a>\n'
+    );
+    await assert.rejects(
+      checkMdbookResponsive(repeatedHash, { staticOnly: true }),
+      /Broken local anchor/
+    );
+
+    const validRepeatedHash = await fixture();
+    await fs.appendFile(
+      path.join(validRepeatedHash, 'book/index.html'),
+      '<div id="intro#details"></div><a href="#intro#details">valid fragment</a>\n'
+    );
+    await assert.doesNotReject(
+      checkMdbookResponsive(validRepeatedHash, { staticOnly: true })
     );
   });
 });
