@@ -593,21 +593,78 @@ async function assertOwnedExistingOutput(outputDirectory) {
   }
 }
 
-async function replaceOwnedDirectory(stagingDirectory, outputDirectory) {
+async function pathIdentity(candidate) {
+  const stat = await fs.stat(candidate);
+  return { dev: stat.dev, ino: stat.ino };
+}
+
+function samePathIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function assertProtectedRootsUnchanged(protectedRoots, expectedIdentities) {
+  for (const [index, protectedRoot] of protectedRoots.entries()) {
+    let currentIdentity;
+    try {
+      currentIdentity = await pathIdentity(protectedRoot);
+    } catch {
+      throw new WebMdbookAdapterError(
+        `Protected book path became unavailable during output replacement: ${protectedRoot}`
+      );
+    }
+    if (!samePathIdentity(currentIdentity, expectedIdentities[index])) {
+      throw new WebMdbookAdapterError(
+        `Protected book path changed during output replacement: ${protectedRoot}`
+      );
+    }
+  }
+}
+
+async function replaceOwnedDirectory({
+  stagingDirectory,
+  outputDirectory,
+  protectedRoots,
+  revalidateReplacementDirectory
+}) {
   const backupDirectory = `${outputDirectory}.backup-${process.pid}-${randomUUID()}`;
   const outputExists = await fs.pathExists(outputDirectory);
+  const protectedRootIdentities = await Promise.all(protectedRoots.map(pathIdentity));
+  let outputMoved = false;
+  let stagingInstalled = false;
+  let committed = false;
   try {
-    if (outputExists) await fs.rename(outputDirectory, backupDirectory);
+    if (outputExists) {
+      await fs.rename(outputDirectory, backupDirectory);
+      outputMoved = true;
+      await assertProtectedRootsUnchanged(protectedRoots, protectedRootIdentities);
+      await revalidateReplacementDirectory(backupDirectory);
+    }
     await fs.rename(stagingDirectory, outputDirectory);
-    if (outputExists) await fs.remove(backupDirectory);
+    stagingInstalled = true;
+    await assertProtectedRootsUnchanged(protectedRoots, protectedRootIdentities);
+    if (outputMoved) await revalidateReplacementDirectory(backupDirectory);
+    committed = true;
+    if (outputMoved) {
+      try {
+        await fs.remove(backupDirectory);
+      } catch (error) {
+        throw new WebMdbookAdapterError(
+          'New output was installed, but backup cleanup failed; retained path: ' +
+            `${backupDirectory}; ${error.message}`
+        );
+      }
+    }
   } catch (error) {
-    if (!(await fs.pathExists(outputDirectory)) && await fs.pathExists(backupDirectory)) {
+    if (committed) throw error;
+    if (stagingInstalled && await fs.pathExists(outputDirectory)) {
+      await fs.remove(outputDirectory);
+    }
+    if (outputMoved && await fs.pathExists(backupDirectory)) {
       await fs.rename(backupDirectory, outputDirectory);
     }
     throw error;
   } finally {
     await fs.remove(stagingDirectory);
-    if (await fs.pathExists(outputDirectory)) await fs.remove(backupDirectory);
   }
 }
 
@@ -618,8 +675,19 @@ export async function writeWebMdbookProject({
   outputDirectory,
   manifest,
   sharedCssPath,
+  revalidateOutputDestination,
+  revalidateReplacementDirectory,
   validateOnly = false
 }) {
+  if (
+    typeof revalidateOutputDestination !== 'function' ||
+    typeof revalidateReplacementDirectory !== 'function'
+  ) {
+    throw new WebMdbookAdapterError(
+      'web-mdbook output replacement requires fail-closed destination revalidation callbacks.'
+    );
+  }
+
   const allEntries = flattenStructure(standardBook.metadata);
   const entryById = new Map(allEntries.map((entry) => [entry.id, entry]));
   const includedReports = visibilityReport.documents.filter(
@@ -711,7 +779,21 @@ export async function writeWebMdbookProject({
       'utf8'
     );
 
-    await replaceOwnedDirectory(stagingDirectory, outputDirectory);
+    await revalidateOutputDestination();
+    await assertOwnedExistingOutput(outputDirectory);
+    const protectedRoots = [
+      standardBook.bookRoot,
+      standardBook.metadataPath,
+      ...Object.values(standardBook.metadata.source).map(
+        (relativeSource) => path.resolve(standardBook.bookRoot, relativeSource)
+      )
+    ];
+    await replaceOwnedDirectory({
+      stagingDirectory,
+      outputDirectory,
+      protectedRoots,
+      revalidateReplacementDirectory
+    });
   } catch (error) {
     await fs.remove(stagingDirectory);
     throw error;

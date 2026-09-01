@@ -7,6 +7,7 @@ import YAML from 'yaml';
 
 import {
   AdapterBuildError,
+  assertOutputDoesNotOverlapBookSources,
   buildStandardBookAdapter
 } from '../src/AdapterBuild.js';
 
@@ -327,6 +328,220 @@ describe('WebMdbookAdapter', () => {
       /Refusing to replace output without a valid adapter manifest/
     );
     assert.strictEqual(await fs.readFile(path.join(target, 'owner.txt'), 'utf8'), 'foreign\n');
+  });
+
+  test('出力target配下のcanonical bookをdry-runと実buildの両方で保護する', async () => {
+    const outputRoot = await temporaryDirectory('tmp-web-mdbook-book-ancestor-output-');
+    const target = path.join(outputRoot, 'web-mdbook');
+    const bookDirectory = path.join(target, 'canonical-book');
+    await fs.ensureDir(target);
+    await fs.writeJson(path.join(target, 'manifest.json'), {
+      kind: 'book-formatter.adapter-build',
+      adapter: { target: 'web-mdbook' }
+    });
+    await fs.copy(SAMPLE_BOOK, bookDirectory);
+    const canonicalMarker = path.join(bookDirectory, 'manuscript/01-introduction.md');
+    const original = await fs.readFile(canonicalMarker, 'utf8');
+
+    for (const dryRun of [true, false]) {
+      await assert.rejects(
+        buildStandardBookAdapter({
+          bookDirectory,
+          target: 'web-mdbook',
+          editionId: 'free',
+          outputRoot,
+          dryRun
+        }),
+        /Output directory must not overlap the canonical book or declared sources/
+      );
+      assert.strictEqual(await fs.readFile(canonicalMarker, 'utf8'), original);
+    }
+  });
+
+  test('filesystem identityでbind aliasの出力内包とsource配下を拒否する', async () => {
+    const directoryEntry = { isDirectory: () => true, isSymbolicLink: () => false };
+    const fileEntry = { isDirectory: () => false, isSymbolicLink: () => false };
+    const entryFor = (candidate, identities, files = new Set()) => {
+      if (!identities.has(candidate)) return null;
+      return files.has(candidate) ? fileEntry : directoryEntry;
+    };
+    const baseIdentities = new Map([
+      ['/canonical/book', { dev: 7, ino: 20 }],
+      ['/canonical/book/book.yaml', { dev: 7, ino: 24 }],
+      ['/canonical/book/manuscript', { dev: 7, ino: 21 }],
+      ['/canonical/book/manuscript/nested', { dev: 7, ino: 23 }],
+      ['/canonical/book/assets', { dev: 7, ino: 22 }],
+      ['/alias', { dev: 7, ino: 30 }],
+      ['/', { dev: 7, ino: 1 }]
+    ]);
+
+    const bindOutputIdentities = new Map([
+      ...baseIdentities,
+      ['/alias/output', { dev: 7, ino: 31 }],
+      ['/alias/output/canonical-book', { dev: 7, ino: 20 }]
+    ]);
+    await assert.rejects(
+      assertOutputDoesNotOverlapBookSources(
+        '/canonical/book',
+        ['/canonical/book/manuscript', '/canonical/book/assets'],
+        '/alias/output',
+        {
+          lstat: async (candidate) => entryFor(
+            candidate,
+            bindOutputIdentities,
+            new Set(['/canonical/book/book.yaml'])
+          ),
+          readdir: async (candidate) => {
+            if (candidate === '/canonical/book/manuscript') return ['nested'];
+            if (candidate === '/alias/output') return ['canonical-book'];
+            return [];
+          },
+          realpath: async (candidate) => candidate,
+          stat: async (candidate) => bindOutputIdentities.get(candidate)
+        }
+      ),
+      /Output directory must not overlap the canonical book or declared sources/
+    );
+
+    const sourceDescendantIdentities = new Map([
+      ...baseIdentities,
+      ['/alias/output', { dev: 7, ino: 31 }],
+      ['/alias/output/source-subtree', { dev: 7, ino: 23 }]
+    ]);
+    await assert.rejects(
+      assertOutputDoesNotOverlapBookSources(
+        '/canonical/book',
+        ['/canonical/book/manuscript', '/canonical/book/assets'],
+        '/alias/output',
+        {
+          lstat: async (candidate) => entryFor(
+            candidate,
+            sourceDescendantIdentities,
+            new Set(['/canonical/book/book.yaml'])
+          ),
+          readdir: async (candidate) => {
+            if (candidate === '/canonical/book/manuscript') return ['nested'];
+            if (candidate === '/alias/output') return ['source-subtree'];
+            return [];
+          },
+          realpath: async (candidate) => candidate,
+          stat: async (candidate) => sourceDescendantIdentities.get(candidate)
+        }
+      ),
+      /Output directory must not overlap the canonical book or declared sources/
+    );
+
+    const sourceAliasIdentities = new Map([
+      ...baseIdentities,
+      ['/alias/output', { dev: 7, ino: 21 }]
+    ]);
+    await assert.rejects(
+      assertOutputDoesNotOverlapBookSources(
+        '/canonical/book',
+        ['/canonical/book/manuscript', '/canonical/book/assets'],
+        '/alias/output',
+        {
+          lstat: async (candidate) => entryFor(
+            candidate,
+            sourceAliasIdentities,
+            new Set(['/canonical/book/book.yaml'])
+          ),
+          readdir: async () => [],
+          realpath: async (candidate) => candidate,
+          stat: async (candidate) => sourceAliasIdentities.get(candidate)
+        }
+      ),
+      /Output directory must not overlap the canonical book or declared sources/
+    );
+
+    const metadataAliasIdentities = new Map([
+      ...baseIdentities,
+      ['/alias/output', { dev: 7, ino: 31 }],
+      ['/alias/output/metadata', { dev: 7, ino: 24 }]
+    ]);
+    await assert.rejects(
+      assertOutputDoesNotOverlapBookSources(
+        '/canonical/book',
+        ['/canonical/book/manuscript', '/canonical/book/assets'],
+        '/alias/output',
+        {
+          lstat: async (candidate) => entryFor(
+            candidate,
+            metadataAliasIdentities,
+            new Set(['/canonical/book/book.yaml', '/alias/output/metadata'])
+          ),
+          readdir: async (candidate) => candidate === '/alias/output' ? ['metadata'] : [],
+          realpath: async (candidate) => candidate,
+          stat: async (candidate) => metadataAliasIdentities.get(candidate)
+        }
+      ),
+      /Output directory must not overlap the canonical book or declared sources/
+    );
+
+    const duplicateViewIdentities = new Map([
+      ...baseIdentities,
+      ['/alias/output', { dev: 7, ino: 31 }],
+      ['/alias/output/a', { dev: 7, ino: 32 }],
+      ['/alias/output/b', { dev: 7, ino: 32 }],
+      ['/alias/output/b/slot', { dev: 7, ino: 23 }]
+    ]);
+    await assert.rejects(
+      assertOutputDoesNotOverlapBookSources(
+        '/canonical/book',
+        ['/canonical/book/manuscript', '/canonical/book/assets'],
+        '/alias/output',
+        {
+          lstat: async (candidate) => entryFor(
+            candidate,
+            duplicateViewIdentities,
+            new Set(['/canonical/book/book.yaml'])
+          ),
+          readdir: async (candidate) => {
+            if (candidate === '/canonical/book/manuscript') return ['nested'];
+            if (candidate === '/alias/output') return ['a', 'b'];
+            if (candidate === '/alias/output/b') return ['slot'];
+            return [];
+          },
+          realpath: async (candidate) => candidate,
+          stat: async (candidate) => duplicateViewIdentities.get(candidate)
+        }
+      ),
+      /Output directory must not overlap the canonical book or declared sources/
+    );
+  });
+
+  test('backup cleanupが部分失敗しても新outputを欠損backupへrollbackしない', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-web-mdbook-backup-cleanup-output-');
+    const initial = await build(bookDirectory, outputRoot);
+    await fs.writeFile(path.join(initial.outputDirectory, 'old-only.txt'), 'old\n');
+
+    const remove = fs.remove;
+    let retainedBackup;
+    fs.remove = async (candidate) => {
+      if (path.basename(String(candidate)).startsWith('web-mdbook.backup-')) {
+        retainedBackup = candidate;
+        await remove(path.join(candidate, 'old-only.txt'));
+        const error = new Error('injected partial backup cleanup failure');
+        error.code = 'EIO';
+        throw error;
+      }
+      return remove(candidate);
+    };
+
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /New output was installed, but backup cleanup failed; retained path:/
+      );
+    } finally {
+      fs.remove = remove;
+    }
+
+    assert.ok(retainedBackup);
+    assert.strictEqual(await fs.pathExists(retainedBackup), true);
+    assert.strictEqual(await fs.pathExists(path.join(initial.outputDirectory, 'book.toml')), true);
+    assert.strictEqual(await fs.pathExists(path.join(initial.outputDirectory, 'old-only.txt')), false);
   });
 
   test('SUMMARYへ改行を注入するstructure titleを拒否する', async () => {
