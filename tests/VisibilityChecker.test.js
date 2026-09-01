@@ -703,6 +703,37 @@ describe('VisibilityChecker', () => {
     });
     assert.strictEqual(hiddenRawTextTagReport.summary.safe, false);
 
+    const hiddenImpliedParagraphLeak = await createArtifact(
+      '<p>Premium</p><p hidden>noise<p>only details</p>\n',
+      'hidden-implied-paragraph.html'
+    );
+    const hiddenImpliedParagraphReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: hiddenImpliedParagraphLeak }
+    );
+    assert.strictEqual(hiddenImpliedParagraphReport.summary.safe, false);
+
+    const hiddenImpliedListItemLeak = await createArtifact(
+      '<ul><li>Premium</li><li hidden>noise<ul><li>nested</li></ul><li>only details</li></ul>\n',
+      'hidden-implied-list-item.html'
+    );
+    const hiddenImpliedListItemReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: hiddenImpliedListItemLeak }
+    );
+    assert.strictEqual(hiddenImpliedListItemReport.summary.safe, false);
+
+    const hiddenXmlCdataLeak = await createArtifact(
+      '<p>Premium<span hidden><![CDATA[x></span>]]>noise</span> only details</p>\n',
+      'hidden-cdata-close.xhtml'
+    );
+    const hiddenXmlCdataReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: hiddenXmlCdataLeak
+    });
+    assert.strictEqual(hiddenXmlCdataReport.summary.safe, false);
+
     const hiddenVoidLeak = await createArtifact(
       '<p>Premium <img hidden alt="noise">only details</p>\n',
       'hidden-void.html'

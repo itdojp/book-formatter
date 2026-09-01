@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'fs-extra';
 import MarkdownIt from 'markdown-it';
 import markdownItFootnote from 'markdown-it-footnote';
+import { parse as parseHtml } from 'parse5';
 import YAML from 'yaml';
 
 import {
@@ -311,6 +312,12 @@ function findMatchingHtmlClosingTag(source, startIndex, tagName, xmlMode) {
       index = commentEnd + 2;
       continue;
     }
+    if (xmlMode && source.startsWith('<![CDATA[', index)) {
+      const cdataEnd = source.indexOf(']]>', index + 9);
+      if (cdataEnd === -1) return null;
+      index = cdataEnd + 2;
+      continue;
+    }
     if (source[index] !== '<') continue;
     const endIndex = findHtmlTagEnd(source, index);
     if (endIndex === null) return null;
@@ -340,13 +347,37 @@ function findMatchingHtmlClosingTag(source, startIndex, tagName, xmlMode) {
   return null;
 }
 
+function collectHtmlNonRenderedRanges(source) {
+  const ranges = [];
+  const document = parseHtml(String(source || ''), { sourceCodeLocationInfo: true });
+  const visit = (node) => {
+    const tagName = String(node.tagName || '').toLowerCase();
+    const isNonRendered =
+      ['script', 'style', 'template'].includes(tagName) ||
+      node.attrs?.some((attribute) => attribute.name.toLowerCase() === 'hidden');
+    const location = node.sourceCodeLocation;
+    if (
+      isNonRendered &&
+      Number.isInteger(location?.startOffset) &&
+      Number.isInteger(location?.endOffset)
+    ) {
+      ranges.push([location.startOffset, location.endOffset]);
+      return;
+    }
+    for (const child of node.childNodes || []) visit(child);
+    if (node.content) visit(node.content);
+  };
+  visit(document);
+  return ranges;
+}
+
 function stripHtmlCodeElementContents(
   value,
   { stripCode = true, stripNonRendered = false, rangeSeparator = ' ', xmlMode = false } = {}
 ) {
   const source = String(value || '');
   const stack = [];
-  const ranges = [];
+  const ranges = stripNonRendered && !xmlMode ? collectHtmlNonRenderedRanges(source) : [];
 
   for (let index = 0; index < source.length; index += 1) {
     if (source[index] !== '<' || !/[A-Za-z!/]/u.test(source[index + 1] || '')) continue;
@@ -383,6 +414,7 @@ function stripHtmlCodeElementContents(
       if (closingEnd === null) break;
       if (
         stripNonRendered &&
+        xmlMode &&
         ['script', 'style', 'template'].includes(rawTextTag[1].toLowerCase())
       ) {
         ranges.push([index, closingEnd]);
@@ -394,6 +426,7 @@ function stripHtmlCodeElementContents(
     const openingTag = tag.match(/^<\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
     if (
       stripNonRendered &&
+      xmlMode &&
       openingTag &&
       hasHiddenHtmlAttribute(tag, openingTag)
     ) {
