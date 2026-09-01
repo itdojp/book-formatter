@@ -30,12 +30,12 @@ function findFrontMatter(lines) {
     return { hasFrontMatter: false, bodyStartLine: 1 };
   }
 
-  if (String(lines[0]).trim() !== '---') {
+  if (String(lines[0]) !== '---') {
     return { hasFrontMatter: false, bodyStartLine: 1 };
   }
 
   for (let i = 1; i < lines.length; i += 1) {
-    const line = String(lines[i]).trim();
+    const line = String(lines[i]);
     if (line === '---' || line === '...') {
       return {
         hasFrontMatter: true,
@@ -63,12 +63,14 @@ function detectFenceOpen(line) {
 
   const infoString = String(m[2] || '').trim();
   const language = infoString.split(/\s+/).filter(Boolean)[0] || '';
+  const markerChar = m[1][0];
 
   return {
-    markerChar: m[1][0],
+    markerChar,
     markerLen: m[1].length,
     infoString,
-    language: language.toLowerCase()
+    language: language.toLowerCase(),
+    invalidInfoString: markerChar === '`' && infoString.includes('`')
   };
 }
 
@@ -86,9 +88,34 @@ function parseHeading(line) {
   return { level: m[1].length, text: m[2].trim() };
 }
 
+const STANDARD_CALLOUT_TYPES = new Set(['note', 'tip', 'warning', 'paid', 'internal']);
+
+function parseCalloutDelimiter(line) {
+  const source = String(line || '');
+  const candidate = source.trimStart();
+  if (!candidate.startsWith(':::')) return null;
+
+  const indented = candidate !== source;
+  if (/^:::\s*$/.test(candidate)) {
+    return { kind: 'close', indented };
+  }
+
+  const opening = candidate.match(/^:::([a-z]+)\s*$/);
+  if (opening) {
+    return {
+      kind: 'open',
+      type: opening[1],
+      indented
+    };
+  }
+
+  return { kind: 'invalid', indented };
+}
+
 class MarkdownStructureRunner {
-  constructor({ maxIssues }) {
+  constructor({ maxIssues, standardCallouts }) {
     this.maxIssues = maxIssues;
+    this.standardCallouts = standardCallouts;
     this.issues = [];
     this.fileIssues = new Map();
     this.fileErrors = [];
@@ -200,6 +227,7 @@ class MarkdownStructureRunner {
     let fenceStartLine = null;
     let previousHeadingLevel = null;
     let h1Count = 0;
+    let callout = null;
 
     for (let i = bodyStartLine - 1; i < lines.length; i += 1) {
       const lineText = lines[i];
@@ -208,6 +236,18 @@ class MarkdownStructureRunner {
       if (!inFence) {
         const open = detectFenceOpen(lineText);
         if (open) {
+          if (open.invalidInfoString) {
+            this.addIssue({
+              file: relativeFile,
+              line: lineNumber,
+              column: 1,
+              kind: 'invalid_code_fence',
+              severity: 'error',
+              message: 'Backtick code fence info strings cannot contain a backtick.'
+            });
+            continue;
+          }
+
           inFence = true;
           fence = open;
           fenceStartLine = lineNumber;
@@ -222,6 +262,76 @@ class MarkdownStructureRunner {
               message: 'Code fence has no language specifier.'
             });
           }
+          continue;
+        }
+
+        const calloutDelimiter = this.standardCallouts ? parseCalloutDelimiter(lineText) : null;
+        if (calloutDelimiter) {
+          if (calloutDelimiter.indented) {
+            this.addIssue({
+              file: relativeFile,
+              line: lineNumber,
+              column: 1,
+              kind: 'indented_callout_delimiter',
+              severity: 'error',
+              message: 'Standard callout delimiters must start at the beginning of the line.'
+            });
+          }
+
+          if (calloutDelimiter.kind === 'invalid') {
+            this.addIssue({
+              file: relativeFile,
+              line: lineNumber,
+              column: 1,
+              kind: 'invalid_callout_delimiter',
+              severity: 'error',
+              message: 'Callout delimiter must be :::note, :::tip, :::warning, :::paid, :::internal, or :::.'
+            });
+            continue;
+          }
+
+          if (calloutDelimiter.kind === 'open') {
+            if (!STANDARD_CALLOUT_TYPES.has(calloutDelimiter.type)) {
+              this.addIssue({
+                file: relativeFile,
+                line: lineNumber,
+                column: 1,
+                kind: 'unknown_callout_type',
+                severity: 'error',
+                message: `Unknown standard callout type: ${calloutDelimiter.type}.`
+              });
+              continue;
+            }
+
+            if (callout) {
+              this.addIssue({
+                file: relativeFile,
+                line: lineNumber,
+                column: 1,
+                kind: 'nested_callout',
+                severity: 'error',
+                message: `Standard callouts cannot be nested (already inside ${callout.type} from line ${callout.line}).`
+              });
+              continue;
+            }
+
+            callout = { type: calloutDelimiter.type, line: lineNumber };
+            continue;
+          }
+
+          if (!callout) {
+            this.addIssue({
+              file: relativeFile,
+              line: lineNumber,
+              column: 1,
+              kind: 'orphan_callout_close',
+              severity: 'error',
+              message: 'Callout closing delimiter has no matching opening delimiter.'
+            });
+            continue;
+          }
+
+          callout = null;
           continue;
         }
 
@@ -262,6 +372,17 @@ class MarkdownStructureRunner {
         kind: 'unclosed_code_fence',
         severity: 'error',
         message: 'Code fence is not closed.'
+      });
+    }
+
+    if (callout) {
+      this.addIssue({
+        file: relativeFile,
+        line: callout.line,
+        column: 1,
+        kind: 'unclosed_callout',
+        severity: 'error',
+        message: `Standard ${callout.type} callout is not closed with :::.`
       });
     }
 
@@ -310,7 +431,7 @@ const program = new Command();
 
 program
   .name('check-markdown-structure')
-  .description('Check markdown structural risks (front matter, headings, code fences)')
+  .description('Check markdown structural risks (front matter, headings, code fences, standard callouts)')
   .version('1.0.0')
   .argument('[directory]', 'Directory to check', '.')
   .option('-p, --pattern <pattern>', 'Glob pattern for files', '**/*.md')
@@ -333,6 +454,7 @@ program
     '**/templates/**'
   ])
   .option('--fail-on <level>', 'Fail on: none|warn|error', 'error')
+  .option('--standard-callouts', 'Validate standard callout delimiters', false)
   .option('--max-issues <n>', 'Max issues to print (0=all)', '200')
   .option('-o, --output <file>', 'Save report to file (JSON)')
   .action(async (directory, options) => {
@@ -343,7 +465,10 @@ program
     }
 
     try {
-      const runner = new MarkdownStructureRunner({ maxIssues: options.maxIssues });
+      const runner = new MarkdownStructureRunner({
+        maxIssues: options.maxIssues,
+        standardCallouts: options.standardCallouts
+      });
       const report = await runner.scanDirectory(directory, {
         pattern: options.pattern,
         ignore: options.ignore
