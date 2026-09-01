@@ -262,6 +262,7 @@ describe('WebMdbookAdapter', () => {
       ['[danger](java&NewLine;script:alert(3))', /Unsupported external link/],
       ['[danger](java&#13;script:alert(4))', /Unsupported external link/],
       [`${'> '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
+      [`${'>   '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
       [
         `${Array.from({ length: 130 }, (_value, depth) =>
           `${'  '.repeat(depth)}- ${depth === 129 ? '[deep](https://example.invalid)' : 'item'}`
@@ -297,7 +298,8 @@ describe('WebMdbookAdapter', () => {
         'URL scheme名 javascript: / data: はlink destinationではない。\n' +
         '&lbrack;example]: javascript:example はreference definitionではない。\n' +
         `深いinline code例: \`${'['.repeat(129)}\`\n` +
-        `\n\`\`\`text\n${'['.repeat(129)}\n\`\`\`\n`
+        `\n\`\`\`text\n${'['.repeat(129)}\n\`\`\`\n` +
+        `\n> \`\`\`text\n> ${'['.repeat(129)}\n> \`\`\`\n`
     );
     const inlineCodeResult = await build(inlineCodeBook, inlineCodeOutput);
     const inlineCodeChapter = await fs.readFile(

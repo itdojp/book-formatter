@@ -369,6 +369,21 @@ function destinationScheme(source) {
   return normalized.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1] || null;
 }
 
+function leadingBlockquotePrefix(line) {
+  let cursor = 0;
+  let depth = 0;
+  let prefixEnd = 0;
+  while (cursor < line.length) {
+    while (line[cursor] === ' ' || line[cursor] === '\t') cursor += 1;
+    if (line[cursor] !== '>') break;
+    depth += 1;
+    cursor += 1;
+    prefixEnd = cursor;
+  }
+  while (line[prefixEnd] === ' ' || line[prefixEnd] === '\t') prefixEnd += 1;
+  return { depth, content: depth ? line.slice(prefixEnd) : line };
+}
+
 function assertMarkdownAuditDepth(source, sourcePath) {
   let bracketDepth = 0;
   let maximumBracketDepth = 0;
@@ -386,9 +401,8 @@ function assertMarkdownAuditDepth(source, sourcePath) {
     for (const character of indentation) {
       columns = character === '\t' ? columns + 4 - (columns % 4) : columns + 1;
     }
-    const quoteMarkers = (line.slice(indentation.length).match(/^(?:>[ \t]?)+/u)?.[0]
-      .match(/>/gu) || []).length;
-    return Math.floor(columns / 2) + quoteMarkers;
+    const quoteDepth = leadingBlockquotePrefix(line.slice(indentation.length)).depth;
+    return Math.floor(columns / 2) + quoteDepth;
   }));
   if (
     maximumBracketDepth > MAX_MARKDOWN_AUDIT_DEPTH ||
@@ -405,11 +419,12 @@ function rejectUnsupportedSourceDestinations(source, sourcePath) {
   const auditedLines = [];
   let fence = null;
   for (const line of normalized.split('\n')) {
+    const containerContent = leadingBlockquotePrefix(line).content;
     if (fence) {
-      if (isStandardFenceClose(line, fence)) fence = null;
+      if (isStandardFenceClose(containerContent, fence)) fence = null;
       continue;
     }
-    const openedFence = detectStandardFenceOpen(line);
+    const openedFence = detectStandardFenceOpen(containerContent);
     if (openedFence) {
       fence = openedFence;
       continue;
