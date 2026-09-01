@@ -65,6 +65,21 @@ describe('VisibilityChecker', () => {
 
     const secondFree = await checkBookVisibility(SAMPLE_BOOK, 'free');
     assert.deepStrictEqual(secondFree, free);
+
+    const reorderedBook = await copySampleBook();
+    await updateMetadata(reorderedBook, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'free').documents = [
+        'workflow',
+        'introduction'
+      ];
+    });
+    const reordered = await checkBookVisibility(reorderedBook, 'free');
+    assert.deepStrictEqual(
+      reordered.documents
+        .filter((document) => document.decision === 'include')
+        .map((document) => document.id),
+      ['workflow', 'introduction']
+    );
   });
 
   test('reportへpaid/internal本文を複製せずdigestだけを記録する', async () => {

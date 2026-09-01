@@ -501,6 +501,11 @@ export async function checkBookVisibility(bookDirectory, editionId, options = {}
 
   sortFindings(findings);
   const includedDocumentCount = documents.filter((document) => document.decision === 'include').length;
+  const documentById = new Map(documents.map((document) => [document.id, document]));
+  const orderedDocuments = [
+    ...edition.documents.map((documentId) => documentById.get(documentId)),
+    ...documents.filter((document) => !includedIds.has(document.id))
+  ];
 
   return {
     schema_version: 1,
@@ -521,7 +526,7 @@ export async function checkBookVisibility(bookDirectory, editionId, options = {}
       artifactFiles: artifact ? artifact.files.length : 0,
       findings: findings.length
     },
-    documents,
+    documents: orderedDocuments,
     artifact: artifact ? { files: artifact.files } : null,
     findings
   };

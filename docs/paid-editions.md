@@ -135,6 +135,9 @@ reportは決定論的なversioned objectで、次を含む。
 - artifact file一覧とfinding
 - summaryとsafe判定
 
+`documents`は、include対象をeditionの宣言順で先に並べ、exclude対象をcanonical
+structure順で後に並べる。adapterはinclude対象の順序を無言でcanonical順へ戻してはならない。
+
 有償本文・internal本文そのものはreportへ複製しない。reportをpublic artifactに
 してよいという意味ではなく、repositoryのvisibilityとCI artifact retentionを
 別途確認する。
