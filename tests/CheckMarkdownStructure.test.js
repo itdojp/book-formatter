@@ -115,6 +115,20 @@ test('check-markdown-structure: BOM-prefixed front matter should retain validati
   });
 });
 
+test('check-markdown-structure: valid BOM-prefixed front matter should pass', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const md = ['\uFEFF---  ', 'title: "Valid"', '...\t', '# Heading', ''].join('\r\n');
+    await fs.writeFile(path.join(tmpRoot, 'valid-bom-front-matter.md'), md, 'utf8');
+
+    const { result, report } = runCheckMarkdownStructure(tmpRoot, { failOn: 'warn' });
+
+    assert.equal(result.status, 0, `expected exit code 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.equal(report.summary.errors, 0);
+    assert.equal(report.summary.warnings, 0);
+  });
+});
+
 test('check-markdown-structure: heading level skip should be warning and fail on warn', async () => {
   await withTempDir(async (tmpRoot) => {
     const md = [
