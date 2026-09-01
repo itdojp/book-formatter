@@ -85,10 +85,7 @@ describe('WebMdbookAdapter', () => {
       bookToml,
       /git-repository-url = "https:\/\/github\.com\/itdojp\/book-formatter"/
     );
-    assert.match(
-      bookToml,
-      /edit-url-template = "https:\/\/github\.com\/itdojp\/book-formatter\/edit\/main\/\{path\}"/
-    );
+    assert.doesNotMatch(bookToml, /edit-url-template/);
     assert.doesNotMatch(bookToml, /theme\s*=/);
 
     const publicMetadata = YAML.parse(await fs.readFile(path.join(target, 'src/book.yaml'), 'utf8'));
@@ -358,7 +355,7 @@ describe('WebMdbookAdapter', () => {
     assert.ok(!summary.includes('</script>'));
   });
 
-  test('GitHub clone URLをWeb URLへ正規化して有効な編集linkを生成する', async () => {
+  test('GitHub clone URLをWeb URLへ正規化してrepository linkへ使用する', async () => {
     const repositoryUrls = [
       'https://github.com/itdojp/standard-book-example.git',
       'https://GITHUB.COM/itdojp/standard-book-example.git/',
@@ -379,15 +376,12 @@ describe('WebMdbookAdapter', () => {
         bookToml,
         /git-repository-url = "https:\/\/github\.com\/itdojp\/standard-book-example"/
       );
-      assert.match(
-        bookToml,
-        /edit-url-template = "https:\/\/github\.com\/itdojp\/standard-book-example\/edit\/main\/\{path\}"/
-      );
+      assert.doesNotMatch(bookToml, /edit-url-template/);
       assert.ok(!bookToml.includes('standard-book-example.git/edit/'));
     }
   });
 
-  test('GitHub以外またはrepository root以外のURLを編集linkとして拒否する', async () => {
+  test('GitHub以外またはrepository root以外のURLをrepository linkとして拒否する', async () => {
     const unsupportedUrls = [
       'https://gitlab.example/itdojp/standard-book-example',
       'https://github.com/itdojp/standard-book-example/tree/main',
