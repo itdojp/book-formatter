@@ -450,21 +450,25 @@ async function closeChrome(browser) {
   await removeChromeProfile(browser.profileDirectory);
 }
 
-export function isSidebarRenderedVisible(sidebarRect, sidebarStyle, viewportWidth, viewportHeight) {
-  const opacity = Number.parseFloat(sidebarStyle.opacity);
+export function isElementRenderedVisible(elementRect, elementStyle, viewportWidth, viewportHeight) {
+  const opacity = Number.parseFloat(elementStyle.opacity);
   return (
-    sidebarRect.width > 0 &&
-    sidebarRect.height > 0 &&
-    sidebarRect.right > 0 &&
-    sidebarRect.left < viewportWidth &&
-    sidebarRect.bottom > 0 &&
-    sidebarRect.top < viewportHeight &&
-    sidebarStyle.display !== 'none' &&
-    sidebarStyle.visibility !== 'hidden' &&
-    sidebarStyle.visibility !== 'collapse' &&
+    elementRect.width > 0 &&
+    elementRect.height > 0 &&
+    elementRect.right > 0 &&
+    elementRect.left < viewportWidth &&
+    elementRect.bottom > 0 &&
+    elementRect.top < viewportHeight &&
+    elementStyle.display !== 'none' &&
+    elementStyle.visibility !== 'hidden' &&
+    elementStyle.visibility !== 'collapse' &&
     Number.isFinite(opacity) &&
     opacity > 0
   );
+}
+
+export function isSidebarRenderedVisible(sidebarRect, sidebarStyle, viewportWidth, viewportHeight) {
+  return isElementRenderedVisible(sidebarRect, sidebarStyle, viewportWidth, viewportHeight);
 }
 
 function probeExpression(state) {
@@ -490,9 +494,17 @@ function probeExpression(state) {
     const wrapperRect = wrapper.getBoundingClientRect();
     const contentRect = content.getBoundingClientRect();
     const sidebarStyle = getComputedStyle(sidebar);
-    const sidebarVisible = (${isSidebarRenderedVisible.toString()})(
+    const contentStyle = getComputedStyle(content);
+    const isRenderedVisible = ${isElementRenderedVisible.toString()};
+    const sidebarVisible = isRenderedVisible(
       sidebarRect,
       sidebarStyle,
+      window.innerWidth,
+      window.innerHeight
+    );
+    const contentVisible = isRenderedVisible(
+      contentRect,
+      contentStyle,
       window.innerWidth,
       window.innerHeight
     );
@@ -521,7 +533,18 @@ function probeExpression(state) {
       printMedia: matchMedia('print').matches,
       sidebarVariable: getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'),
       wrapper: { left: wrapperRect.left, right: wrapperRect.right, width: wrapperRect.width },
-      content: { left: contentRect.left, right: contentRect.right, width: contentRect.width },
+      content: {
+        left: contentRect.left,
+        right: contentRect.right,
+        top: contentRect.top,
+        bottom: contentRect.bottom,
+        width: contentRect.width,
+        height: contentRect.height
+      },
+      contentDisplay: contentStyle.display,
+      contentVisibility: contentStyle.visibility,
+      contentOpacity: contentStyle.opacity,
+      contentVisible,
       sidebarVisible,
       overlap: sidebarVisible && Math.min(sidebarRect.right, contentRect.right) - Math.max(sidebarRect.left, contentRect.left) > 1,
       bodyOverflow: document.documentElement.scrollWidth > window.innerWidth + 1
@@ -539,6 +562,15 @@ export function validateResponsiveProbe(probe, viewport, state, page) {
   if (probe.content.width <= 0 || probe.wrapper.width <= 0) {
     throw new MdbookResponsiveError(
       `Content has no usable width in ${page} at ${viewport.width}x${viewport.height}/${state}`
+    );
+  }
+  if (!probe.contentVisible) {
+    throw new MdbookResponsiveError(
+      `Content is not rendered in ${page} at ${viewport.width}x${viewport.height}/${state} ` +
+        `(left=${probe.content.left}, right=${probe.content.right}, top=${probe.content.top}, ` +
+        `bottom=${probe.content.bottom}, width=${probe.content.width}, ` +
+        `height=${probe.content.height}, display=${probe.contentDisplay}, ` +
+        `visibility=${probe.contentVisibility}, opacity=${probe.contentOpacity})`
     );
   }
   if (state === 'open' && !probe.sidebarVisible) {

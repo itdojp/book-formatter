@@ -6,6 +6,7 @@ import fs from 'fs-extra';
 
 import {
   checkMdbookResponsive,
+  isElementRenderedVisible,
   isSidebarRenderedVisible,
   MDBOOK_VIEWPORTS,
   MdbookResponsiveError,
@@ -135,7 +136,11 @@ describe('MdbookResponsiveChecker', () => {
       sidebarVisible: true,
       toggleChecked: false,
       wrapper: { left: 300, right: 390, width: 90 },
-      content: { left: 300, right: 390, width: 90 },
+      content: { left: 300, right: 390, top: 0, bottom: 844, width: 90, height: 844 },
+      contentDisplay: 'block',
+      contentVisibility: 'visible',
+      contentOpacity: '1',
+      contentVisible: true,
       overlap: false,
       bodyOverflow: false
     };
@@ -151,7 +156,7 @@ describe('MdbookResponsiveChecker', () => {
           sidebar: { left: -300, right: 0, width: 300 },
           sidebarVisible: false,
           wrapper: { left: 0, right: 390, width: 390 },
-          content: { left: 0, right: 390, width: 390 }
+          content: { left: 0, right: 390, top: 0, bottom: 844, width: 390, height: 844 }
         },
         viewport,
         'closed',
@@ -184,6 +189,39 @@ describe('MdbookResponsiveChecker', () => {
     ];
     for (const [rect, style] of hiddenCases) {
       assert.strictEqual(isSidebarRenderedVisible(rect, style, 390, 844), false);
+    }
+  });
+
+  test('contentのgeometryとcomputed visibilityを組み合わせて表示状態を判定する', () => {
+    const viewport = { width: 390, height: 844 };
+    const rect = { left: 0, right: 390, top: 0, bottom: 844, width: 390, height: 844 };
+    const visibleStyle = { display: 'block', visibility: 'visible', opacity: '1' };
+    assert.strictEqual(isElementRenderedVisible(rect, visibleStyle, 390, 844), true);
+
+    for (const style of [
+      { ...visibleStyle, display: 'none' },
+      { ...visibleStyle, visibility: 'hidden' },
+      { ...visibleStyle, visibility: 'collapse' },
+      { ...visibleStyle, opacity: '0' }
+    ]) {
+      const probe = {
+        viewportWidth: 390,
+        viewportHeight: 844,
+        sidebar: { left: -300, right: 0, top: 0, bottom: 844, width: 300, height: 844 },
+        sidebarVisible: false,
+        wrapper: { left: 0, right: 390, width: 390 },
+        content: rect,
+        contentDisplay: style.display,
+        contentVisibility: style.visibility,
+        contentOpacity: style.opacity,
+        contentVisible: isElementRenderedVisible(rect, style, 390, 844),
+        overlap: false,
+        bodyOverflow: false
+      };
+      assert.throws(
+        () => validateResponsiveProbe(probe, viewport, 'closed', 'book/index.html'),
+        /Content is not rendered in book\/index\.html at 390x844\/closed/
+      );
     }
   });
 
