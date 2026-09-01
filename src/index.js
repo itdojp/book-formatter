@@ -7,6 +7,12 @@ import { BookGenerator } from './BookGenerator.js';
 import { ConfigValidator } from './ConfigValidator.js';
 import { FileSystemUtils } from './FileSystemUtils.js';
 import { UxRollout } from './UxRollout.js';
+import {
+  AdapterBuildError,
+  buildStandardBookAdapter
+} from './AdapterBuild.js';
+import { VisibilityValidationError } from './VisibilityChecker.js';
+import { StandardBookValidationError } from './StandardBookValidator.js';
 
 const program = new Command();
 const bookGenerator = new BookGenerator();
@@ -245,6 +251,45 @@ program
     }
   });
 
+// build コマンド
+program
+  .command('build')
+  .description('標準書籍を出力先adapter向けに検証し、manifestを生成します')
+  .requiredOption('-b, --book <path>', 'book.yamlを含む標準書籍ディレクトリ')
+  .requiredOption('-t, --target <target>', '出力先adapter target')
+  .requiredOption('-e, --edition <id>', 'book.yamlで宣言したedition ID')
+  .option('-o, --out-dir <path>', 'target別ディレクトリを配置する出力root')
+  .option('--dry-run', '検証結果とmanifestを表示し、ファイルを書き込みません', false)
+  .action(async (options) => {
+    try {
+      const result = await buildStandardBookAdapter({
+        bookDirectory: options.book,
+        target: options.target,
+        editionId: options.edition,
+        outputRoot: options.outDir,
+        dryRun: options.dryRun
+      });
+
+      process.stdout.write(`${JSON.stringify(result.manifest, null, 2)}\n`);
+      if (result.written) {
+        console.error(chalk.green(`✅ adapter manifestを出力しました: ${result.manifestPath}`));
+      } else {
+        console.error(chalk.blue(`🔎 dry-run: 書き込みなし (${result.manifestPath})`));
+      }
+    } catch (error) {
+      if (
+        error instanceof AdapterBuildError ||
+        error instanceof VisibilityValidationError ||
+        error instanceof StandardBookValidationError
+      ) {
+        console.error(chalk.red(`❌ adapter build failed: ${error.message}`));
+      } else {
+        console.error(chalk.red(`❌ unexpected adapter build failure: ${error.message}`));
+      }
+      process.exitCode = 1;
+    }
+  });
+
 // init コマンド
 program
   .command('init')
@@ -330,7 +375,7 @@ program.on('command:*', () => {
 });
 
 // パースして実行
-program.parse(process.argv);
+await program.parseAsync(process.argv);
 
 // 引数がない場合はヘルプを表示
 if (!process.argv.slice(2).length) {
