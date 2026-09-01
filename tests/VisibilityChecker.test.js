@@ -332,6 +332,22 @@ describe('VisibilityChecker', () => {
     );
     assert.strictEqual(markerInsideInlineCodeLiteralReport.summary.safe, true);
 
+    const markerAfterEscapedFenceLiteral = await createArtifact(
+      '\\```\n:::paid\npublic\n',
+      'marker-after-escaped-fence-literal.md'
+    );
+    const markerAfterEscapedFenceLiteralReport = await checkBookVisibility(
+      SAMPLE_BOOK,
+      'free',
+      { artifactPath: markerAfterEscapedFenceLiteral }
+    );
+    assert.strictEqual(markerAfterEscapedFenceLiteralReport.summary.safe, false);
+    assert.ok(
+      markerAfterEscapedFenceLiteralReport.findings.some(
+        (finding) => finding.code === 'raw_protected_marker_in_artifact'
+      )
+    );
+
     const textareaMarkerArtifact = await createArtifact(
       '<textarea><code>\n:::paid\nliteral-looking marker\n</code></textarea>\n',
       'textarea-marker.html'
@@ -914,6 +930,28 @@ describe('VisibilityChecker', () => {
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );
+
+    const closedDialogInterruptionLeak = await createArtifact(
+      '<p>Premium<dialog>noise</dialog> only details</p>\n',
+      'closed-dialog-interruption.html'
+    );
+    const closedDialogInterruptionReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: closedDialogInterruptionLeak }
+    );
+    assert.strictEqual(closedDialogInterruptionReport.summary.safe, false);
+
+    const xhtmlClosedDialogInterruptionLeak = await createArtifact(
+      '<p>Premium<dialog>noise</dialog> only details</p>\n',
+      'closed-dialog-interruption.xhtml'
+    );
+    const xhtmlClosedDialogInterruptionReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: xhtmlClosedDialogInterruptionLeak }
+    );
+    assert.strictEqual(xhtmlClosedDialogInterruptionReport.summary.safe, false);
 
     const shortWrapperBook = await copySampleBook();
     await fs.writeFile(

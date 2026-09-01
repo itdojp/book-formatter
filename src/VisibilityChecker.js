@@ -282,11 +282,19 @@ function htmlBlockBoundary(tag) {
   return tagName && HTML_BLOCK_ELEMENTS.has(tagName.toLowerCase()) ? '\n' : '';
 }
 
-function hasHiddenHtmlAttribute(tag, openingTag) {
+function hasHtmlAttribute(tag, openingTag, attributeName) {
   const attributeText = tag
     .slice(openingTag[0].length)
     .replace(/"[^"]*"|'[^']*'/gu, ' quoted-value ');
-  return /(?:^|\s)hidden(?:\s*=\s*[^\s/>]+)?(?=[\s/>])/iu.test(attributeText);
+  const pattern = new RegExp(
+    `(?:^|\\s)${attributeName}(?:\\s*=\\s*[^\\s/>]+)?(?=[\\s/>])`,
+    'iu'
+  );
+  return pattern.test(attributeText);
+}
+
+function hasHiddenHtmlAttribute(tag, openingTag) {
+  return hasHtmlAttribute(tag, openingTag, 'hidden');
 }
 
 function isSelfClosingElement(tag, tagName, xmlMode) {
@@ -357,9 +365,12 @@ function collectHtmlNonRenderedRanges(source) {
   const document = parseHtml(String(source || ''), { sourceCodeLocationInfo: true });
   const visit = (node) => {
     const tagName = String(node.tagName || '').toLowerCase();
+    const hasAttribute = (name) =>
+      node.attrs?.some((attribute) => attribute.name.toLowerCase() === name);
     const isNonRendered =
       ['script', 'style', 'template', 'title'].includes(tagName) ||
-      node.attrs?.some((attribute) => attribute.name.toLowerCase() === 'hidden');
+      hasAttribute('hidden') ||
+      (tagName === 'dialog' && !hasAttribute('open'));
     const location = node.sourceCodeLocation;
     if (
       isNonRendered &&
@@ -439,7 +450,9 @@ function stripHtmlCodeElementContents(
       stripNonRendered &&
       xmlMode &&
       openingTag &&
-      hasHiddenHtmlAttribute(tag, openingTag)
+      (hasHiddenHtmlAttribute(tag, openingTag) ||
+        (openingTag[1].toLowerCase() === 'dialog' &&
+          !hasHtmlAttribute(tag, openingTag, 'open')))
     ) {
       if (isSelfClosingElement(tag, openingTag[1], xmlMode)) {
         ranges.push([index, endIndex + 1]);
@@ -1201,7 +1214,7 @@ async function scanArtifact(artifactPath, protectedFragments) {
     const renderedDelimiterLine =
       readerVisibleCandidates
         .map((candidate) =>
-          findRawProtectedDelimiter(candidate, false, allowMarkdownFences)
+          findRawProtectedDelimiter(candidate, false, false)
         )
         .find((line) => line !== null) ?? null;
     const delimiterLine =
