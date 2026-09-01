@@ -165,6 +165,10 @@ function stripHtmlTags(value, separator = '') {
       inTag = false;
       const tag = source.slice(tagStart, index + 1);
       result += typeof separator === 'function' ? separator(tag) : separator;
+      const imageAlt = tag.match(
+        /^<\s*img(?=[\s/>])[^>]*?\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu
+      );
+      if (imageAlt) result += imageAlt[1] ?? imageAlt[2] ?? imageAlt[3] ?? '';
       tagStart = -1;
     }
   }
@@ -281,6 +285,11 @@ function collectMarkdownTextFragments(value) {
       })
       .join('');
     if (normalizeComparableText(projectedText)) fragments.push(projectedText);
+    for (const child of token.children) {
+      if (child.type === 'image' && normalizeComparableText(child.content)) {
+        fragments.push(child.content);
+      }
+    }
     if (token.children.some((child) => child.type === 'footnote_ref')) {
       for (const child of token.children) {
         if (child.type === 'text' && normalizeComparableText(child.content)) {
@@ -289,6 +298,67 @@ function collectMarkdownTextFragments(value) {
       }
     }
   }
+  return fragments;
+}
+
+function collectCanonicalMathFragments(value) {
+  const fragments = [];
+  const inlineTokens = MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {}).filter(
+    (token) => token.type === 'inline' && token.children
+  );
+
+  for (const token of inlineTokens) {
+    const mathSource = token.children
+      .map((child) => {
+        if (child.type === 'text') return child.content;
+        if (child.type === 'softbreak' || child.type === 'hardbreak') return '\n';
+        return '\u0000';
+      })
+      .join('');
+    const lines = mathSource.split('\n');
+    const displayLines = new Set();
+
+    for (let index = 0; index < lines.length; index += 1) {
+      if (lines[index].trim() !== '$$') continue;
+      const closingIndex = lines.findIndex(
+        (line, candidateIndex) => candidateIndex > index && line.trim() === '$$'
+      );
+      if (closingIndex === -1) break;
+      const body = lines.slice(index + 1, closingIndex).join('\n');
+      if (normalizeComparableText(body)) fragments.push(body);
+      for (let lineIndex = index; lineIndex <= closingIndex; lineIndex += 1) {
+        displayLines.add(lineIndex);
+      }
+      index = closingIndex;
+    }
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      if (displayLines.has(lineIndex)) continue;
+      const line = lines[lineIndex];
+      for (let index = 0; index < line.length; index += 1) {
+        if (
+          line[index] !== '$' ||
+          line[index - 1] === '\\' ||
+          line[index - 1] === '$' ||
+          line[index + 1] === '$'
+        ) {
+          continue;
+        }
+        const closingIndex = line.indexOf('$', index + 1);
+        if (
+          closingIndex === -1 ||
+          line[closingIndex - 1] === '\\' ||
+          line[closingIndex + 1] === '$'
+        ) {
+          continue;
+        }
+        const body = line.slice(index + 1, closingIndex);
+        if (normalizeComparableText(body)) fragments.push(body);
+        index = closingIndex;
+      }
+    }
+  }
+
   return fragments;
 }
 
@@ -320,6 +390,9 @@ function createProtectedFragments(value, source, visibility) {
   }
 
   for (const fragment of collectMarkdownTextFragments(normalizedValue)) {
+    addFragment(fragment);
+  }
+  for (const fragment of collectCanonicalMathFragments(normalizedValue)) {
     addFragment(fragment);
   }
 

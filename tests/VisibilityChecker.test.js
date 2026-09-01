@@ -424,6 +424,48 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const mathBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(mathBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\nInline formula: $PAID_MATH_INLINE$.\n\n$$\nPAID_MATH_BLOCK\n$$\n:::\n'
+    );
+    const mathLeaks = [
+      ['<p>Inline formula: <span class="math">PAID_MATH_INLINE</span>.</p>\n', 'inline-math.html'],
+      ['<div class="math">PAID_MATH_BLOCK</div>\n', 'display-math.html']
+    ];
+    for (const [artifact, filename] of mathLeaks) {
+      const mathLeak = await createArtifact(artifact, filename);
+      const mathReport = await checkBookVisibility(mathBook, 'free', {
+        artifactPath: mathLeak
+      });
+      assert.strictEqual(mathReport.summary.safe, false, filename);
+      assert.ok(
+        mathReport.findings.some(
+          (finding) => finding.code === 'protected_content_in_artifact'
+        ),
+        filename
+      );
+    }
+
+    const imageAltBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(imageAltBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\nPremium ![PAID_CHART](chart.png) details\n:::\n'
+    );
+    const imageAltLeak = await createArtifact(
+      '<p>Premium <img alt="PAID_CHART" src="chart.png"> details</p>\n',
+      'image-alt.html'
+    );
+    const imageAltReport = await checkBookVisibility(imageAltBook, 'free', {
+      artifactPath: imageAltLeak
+    });
+    assert.strictEqual(imageAltReport.summary.safe, false);
+    assert.ok(
+      imageAltReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
     const renderedMarkdownBook = await copySampleBook();
     await fs.writeFile(
       path.join(renderedMarkdownBook, 'manuscript/01-introduction.md'),
