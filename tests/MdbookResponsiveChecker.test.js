@@ -187,18 +187,42 @@ describe('MdbookResponsiveChecker', () => {
     }
   });
 
-  test('generated content pageのresponsive DOM driftをsupport page扱いせず拒否する', async () => {
-    const root = await fixture();
-    const index = await fs.readFile(path.join(root, 'book/index.html'), 'utf8');
-    await fs.writeFile(
-      path.join(root, 'book/chapter.html'),
-      index.replace('id="mdbook-content"', 'id="missing-mdbook-content"')
-    );
+  test('全generated content pageでresponsive DOM・viewport・CSS契約を検証する', async () => {
+    const cases = [
+      {
+        mutate: (source) => source.replace(
+          'id="mdbook-content"',
+          'id="missing-mdbook-content"'
+        ),
+        error: /Built mdBook content page lacks responsive IDs in chapters\/chapter\.html: mdbook-content/
+      },
+      {
+        mutate: (source) => source.replace(
+          'name="viewport"',
+          'name="missing-viewport"'
+        ),
+        error: /Built mdBook content page lacks the device-width viewport contract: chapters\/chapter\.html/
+      },
+      {
+        mutate: (source) => source.replace(
+          'theme/css/itdo-mdbook-a1b2.css',
+          'css/general.css'
+        ),
+        error: /Built mdBook content page does not link the shared additional CSS: chapters\/chapter\.html/
+      }
+    ];
 
-    await assert.rejects(
-      checkMdbookResponsive(root, { staticOnly: true }),
-      /Built mdBook content page lacks responsive IDs in chapter\.html: mdbook-content/
-    );
+    for (const { mutate, error } of cases) {
+      const root = await fixture();
+      const index = await fs.readFile(path.join(root, 'book/index.html'), 'utf8');
+      await fs.ensureDir(path.join(root, 'book/chapters'));
+      const nested = index.replace(
+        'theme/css/itdo-mdbook-a1b2.css',
+        '../theme/css/itdo-mdbook-a1b2.css'
+      );
+      await fs.writeFile(path.join(root, 'book/chapters/chapter.html'), mutate(nested));
+      await assert.rejects(checkMdbookResponsive(root, { staticOnly: true }), error);
+    }
   });
 
   test('Chrome profile cleanupは一時的なENOTEMPTYをbounded retryする', async () => {
@@ -227,7 +251,7 @@ describe('MdbookResponsiveChecker', () => {
     await fs.writeFile(path.join(missingDom, 'book/index.html'), '<html><body></body></html>');
     await assert.rejects(
       checkMdbookResponsive(missingDom, { staticOnly: true }),
-      (error) => error instanceof MdbookResponsiveError && /missing required IDs/.test(error.message)
+      (error) => error instanceof MdbookResponsiveError && /lacks responsive IDs/.test(error.message)
     );
 
     const wrongCss = await fixture();

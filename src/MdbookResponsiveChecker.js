@@ -68,7 +68,7 @@ async function requireRegularFile(projectRoot, relativePath) {
   return candidate;
 }
 
-function inspectBuiltHtml(source) {
+function inspectBuiltHtml(source, relativePath) {
   const document = parseHtml(source);
   const requiredIds = new Set(REQUIRED_RESPONSIVE_IDS);
   let hasViewport = false;
@@ -81,19 +81,32 @@ function inspectBuiltHtml(source) {
       hasViewport = /width=device-width/u.test(attribute(node, 'content') || '');
     }
     if (node.tagName === 'link' && attribute(node, 'rel') === 'stylesheet') {
+      const href = attribute(node, 'href') || '';
+      const projectRelativeHref = path.posix.normalize(
+        path.posix.join(path.posix.dirname(relativePath), href)
+      );
       hasAdditionalCss ||= /^theme\/css\/itdo-mdbook(?:-[a-f0-9]+)?\.css$/u.test(
-        attribute(node, 'href') || ''
+        projectRelativeHref
       );
     }
   });
 
   if (requiredIds.size > 0) {
     throw new MdbookResponsiveError(
-      `Built mdBook DOM is missing required IDs: ${[...requiredIds].join(', ')}`
+      `Built mdBook content page lacks responsive IDs in ${relativePath}: ` +
+        `${[...requiredIds].join(', ')}`
     );
   }
-  if (!hasViewport) throw new MdbookResponsiveError('Built mdBook lacks the device-width viewport contract.');
-  if (!hasAdditionalCss) throw new MdbookResponsiveError('Built mdBook does not link the shared additional CSS.');
+  if (!hasViewport) {
+    throw new MdbookResponsiveError(
+      `Built mdBook content page lacks the device-width viewport contract: ${relativePath}`
+    );
+  }
+  if (!hasAdditionalCss) {
+    throw new MdbookResponsiveError(
+      `Built mdBook content page does not link the shared additional CSS: ${relativePath}`
+    );
+  }
 }
 
 async function collectBuiltFiles(directory, root = directory, files = []) {
@@ -149,13 +162,12 @@ async function inspectBuiltLinks(buildRoot) {
     .filter((file) => path.extname(file).toLowerCase() === '.html')
     .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
   const contractByPath = new Map();
-  for (const file of htmlFiles) {
-    contractByPath.set(file, parseHtmlContract(await fs.readFile(file, 'utf8')));
-  }
   const responsiveHtmlFiles = [];
   for (const file of htmlFiles) {
+    const source = await fs.readFile(file, 'utf8');
     const relativePath = path.relative(buildRoot, file).split(path.sep).join('/');
-    const contract = contractByPath.get(file);
+    const contract = parseHtmlContract(source);
+    contractByPath.set(file, contract);
     const supportClass = MDBOOK_SUPPORT_HTML[relativePath];
     if (supportClass) {
       if (!contract.bodyClasses.has(supportClass)) {
@@ -165,12 +177,7 @@ async function inspectBuiltLinks(buildRoot) {
       }
       continue;
     }
-    const missingIds = REQUIRED_RESPONSIVE_IDS.filter((id) => !contract.ids.has(id));
-    if (missingIds.length > 0) {
-      throw new MdbookResponsiveError(
-        `Built mdBook content page lacks responsive IDs in ${relativePath}: ${missingIds.join(', ')}`
-      );
-    }
+    inspectBuiltHtml(source, relativePath);
     responsiveHtmlFiles.push(file);
   }
   if (responsiveHtmlFiles.length === 0) {
@@ -742,11 +749,10 @@ export async function checkMdbookResponsive(projectDirectory, options = {}) {
   for (const relativePath of REQUIRED_PROJECT_FILES) {
     files[relativePath] = await requireRegularFile(projectRoot, relativePath);
   }
-  const [bookToml, css, manifestSource, html] = await Promise.all([
+  const [bookToml, css, manifestSource] = await Promise.all([
     fs.readFile(files['book.toml'], 'utf8'),
     fs.readFile(files['theme/css/itdo-mdbook.css'], 'utf8'),
-    fs.readFile(files['manifest.json'], 'utf8'),
-    fs.readFile(files['book/index.html'], 'utf8')
+    fs.readFile(files['manifest.json'], 'utf8')
   ]);
   let manifest;
   try {
@@ -755,7 +761,6 @@ export async function checkMdbookResponsive(projectDirectory, options = {}) {
     throw new MdbookResponsiveError('manifest.json is not valid JSON.');
   }
   inspectProjectContract(bookToml, css, manifest);
-  inspectBuiltHtml(html);
   const buildRoot = path.join(projectRoot, 'book');
   const builtLinks = await inspectBuiltLinks(buildRoot);
   const expectedBrowserProbes = builtLinks.responsiveHtmlFiles.length * MDBOOK_VIEWPORTS.length * 2;
