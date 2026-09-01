@@ -161,6 +161,14 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const yamlEndBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(yamlEndBook, 'manuscript/01-introduction.md'),
+      '---\ntitle: 公開章\n...\n\n# 公開章\n\n公開本文です。\n'
+    );
+    const yamlEndReport = await checkBookVisibility(yamlEndBook, 'free');
+    assert.strictEqual(yamlEndReport.summary.safe, true);
+
     const mutations = [
       ['  :::paid\nsecret\n:::\n', 'invalid_callout_delimiter'],
       [':::future\nsecret\n:::\n', 'unknown_callout_type'],
@@ -182,6 +190,15 @@ describe('VisibilityChecker', () => {
     });
     assert.strictEqual(safeReport.summary.safe, true);
     assert.strictEqual(safeReport.summary.artifactFiles, 1);
+
+    const frontMatterArtifact = await createArtifact(
+      '---\nmarker_example: |\n  :::paid\n...\n\n# 公開版\n',
+      'front-matter.md'
+    );
+    const frontMatterArtifactReport = await checkBookVisibility(SAMPLE_BOOK, 'free', {
+      artifactPath: frontMatterArtifact
+    });
+    assert.strictEqual(frontMatterArtifactReport.summary.safe, true);
 
     const cases = [
       ['free', `# leak\n\n${PAID_BLOCK_TEXT}\n`],
@@ -315,6 +332,25 @@ describe('VisibilityChecker', () => {
     assert.strictEqual(listReport.summary.safe, false);
     assert.ok(
       listReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
+    const inlineBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(inlineBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\n[PAID_LINK_TEXT](https://docs.example/paid)\n:::\n'
+    );
+    const inlineLeak = await createArtifact(
+      '<a href="https://docs.example/paid">PAID_LINK_TEXT</a>\n',
+      'inline.html'
+    );
+    const inlineReport = await checkBookVisibility(inlineBook, 'free', {
+      artifactPath: inlineLeak
+    });
+    assert.strictEqual(inlineReport.summary.safe, false);
+    assert.ok(
+      inlineReport.findings.some(
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 
 import fs from 'fs-extra';
+import MarkdownIt from 'markdown-it';
 
 import {
   detectStandardFenceOpen,
@@ -15,6 +16,11 @@ export const VISIBILITY_CONTRACT_VERSION = 1;
 export const VISIBILITY_VALUES = Object.freeze(['free', 'sample', 'paid', 'internal']);
 
 const VISIBILITY_RANK = new Map(VISIBILITY_VALUES.map((value, index) => [value, index]));
+const MARKDOWN_TEXT_EXTRACTOR = new MarkdownIt({
+  html: false,
+  linkify: false,
+  typographer: false
+});
 const ARTIFACT_TEXT_EXTENSIONS = new Set([
   '.css',
   '.csv',
@@ -61,6 +67,40 @@ function normalizeComparableText(value) {
     .trim();
 }
 
+function findFrontMatterClosingIndex(lines) {
+  if (!/^---[\t ]*$/u.test(lines[0] || '')) return null;
+  return lines.findIndex(
+    (line, index) => index > 0 && /^(?:---|\.\.\.)[\t ]*$/u.test(line)
+  );
+}
+
+function stripValidFrontMatter(value) {
+  const normalizedValue = String(value || '')
+    .replace(/^\uFEFF/u, '')
+    .replace(/\r\n?/g, '\n');
+  const lines = normalizedValue.split('\n');
+  const closingIndex = findFrontMatterClosingIndex(lines);
+  return closingIndex !== null && closingIndex >= 0
+    ? lines.slice(closingIndex + 1).join('\n')
+    : normalizedValue;
+}
+
+function collectMarkdownTextFragments(value) {
+  const fragments = [];
+  for (const token of MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {})) {
+    if (token.type !== 'inline' || !token.children) continue;
+    const projectedText = token.children
+      .map((child) => {
+        if (['text', 'code_inline', 'image'].includes(child.type)) return child.content;
+        if (child.type === 'softbreak' || child.type === 'hardbreak') return ' ';
+        return '';
+      })
+      .join('');
+    if (normalizeComparableText(projectedText)) fragments.push(projectedText);
+  }
+  return fragments;
+}
+
 function createProtectedFragments(value, source, visibility) {
   const normalizedValue = String(value || '').replace(/\r\n?/g, '\n');
   const fragments = new Map();
@@ -86,6 +126,10 @@ function createProtectedFragments(value, source, visibility) {
       /^\s*(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?(.+)$/u
     );
     if (listItem) addFragment(listItem[1]);
+  }
+
+  for (const fragment of collectMarkdownTextFragments(normalizedValue)) {
+    addFragment(fragment);
   }
 
   const lines = normalizedValue.split('\n');
@@ -121,10 +165,9 @@ function parseVisibilityRegions(content, sourcePath) {
   let callout = null;
   let contentStartIndex = 0;
 
-  if (/^---[\t ]*$/u.test(lines[0] || '')) {
-    const closingIndex = lines.findIndex(
-      (line, index) => index > 0 && /^---[\t ]*$/u.test(line)
-    );
+  const frontMatterClosingIndex = findFrontMatterClosingIndex(lines);
+  if (frontMatterClosingIndex !== null) {
+    const closingIndex = frontMatterClosingIndex;
     if (closingIndex === -1) {
       findings.push({
         code: 'unclosed_front_matter',
@@ -328,8 +371,13 @@ function findRawProtectedDelimiter(content) {
     .replace(/\r\n?/g, '\n')
     .split('\n');
   let fence = null;
+  const frontMatterClosingIndex = findFrontMatterClosingIndex(lines);
+  const contentStartIndex =
+    frontMatterClosingIndex !== null && frontMatterClosingIndex >= 0
+      ? frontMatterClosingIndex + 1
+      : 0;
 
-  for (let index = 0; index < lines.length; index += 1) {
+  for (let index = contentStartIndex; index < lines.length; index += 1) {
     const line = lines[index];
     if (fence) {
       if (isStandardFenceClose(line, fence)) fence = null;
@@ -357,7 +405,7 @@ async function scanArtifact(artifactPath, protectedFragments) {
 
   for (const file of files) {
     const content = await fs.readFile(file.absolutePath, 'utf8');
-    const comparableArtifact = normalizeComparableText(content);
+    const comparableArtifact = normalizeComparableText(stripValidFrontMatter(content));
     const delimiterLine = findRawProtectedDelimiter(content);
     if (delimiterLine !== null) {
       findings.push({
