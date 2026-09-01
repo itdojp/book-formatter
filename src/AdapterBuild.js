@@ -8,6 +8,13 @@ import {
   VISIBILITY_CONTRACT_VERSION
 } from './VisibilityChecker.js';
 import { validateStandardBook } from './StandardBookValidator.js';
+import {
+  DEFAULT_WEB_MDBOOK_CSS,
+  WEB_MDBOOK_COMPATIBILITY_VERSION,
+  WEB_MDBOOK_IMPLEMENTATION,
+  WebMdbookAdapterError,
+  writeWebMdbookProject
+} from './WebMdbookAdapter.js';
 
 export const ADAPTER_MANIFEST_VERSION = 1;
 
@@ -80,7 +87,133 @@ async function rejectSymlinkComponents(outputDirectory) {
   }
 }
 
+function sameFileSystemIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function fileSystemIdentityKey(stat) {
+  return `${stat.dev}:${stat.ino}`;
+}
+
+function outputOverlapError(outputDirectory) {
+  return new AdapterBuildError(
+    `Output directory must not overlap the canonical book or declared sources: ${outputDirectory}`
+  );
+}
+
+export async function assertOutputDoesNotOverlapBookSources(
+  bookRoot,
+  sourceDirectories,
+  outputDirectory,
+  {
+    lstat = lstatIfExists,
+    readdir = fs.readdir,
+    realpath = fs.realpath,
+    stat = fs.stat
+  } = {}
+) {
+  if (isPathInside(outputDirectory, bookRoot)) {
+    throw outputOverlapError(outputDirectory);
+  }
+  for (const sourceDirectory of sourceDirectories) {
+    if (isPathInside(sourceDirectory, outputDirectory)) throw outputOverlapError(outputDirectory);
+  }
+
+  const protectedRoots = [bookRoot, ...sourceDirectories];
+  const physicalProtectedRoots = await Promise.all(protectedRoots.map((root) => realpath(root)));
+  const protectedRootIdentities = await Promise.all(physicalProtectedRoots.map((root) => stat(root)));
+  const protectedIdentityKeys = new Set();
+
+  async function collectProtectedTree(candidate, ancestorIdentities = new Set()) {
+    const entry = await lstat(candidate);
+    if (!entry || entry.isSymbolicLink()) return;
+
+    const identity = await stat(candidate);
+    const identityKey = fileSystemIdentityKey(identity);
+    protectedIdentityKeys.add(identityKey);
+    if (!entry.isDirectory() || ancestorIdentities.has(identityKey)) return;
+
+    const nextAncestors = new Set(ancestorIdentities);
+    nextAncestors.add(identityKey);
+    const names = (await readdir(candidate)).sort();
+    for (const name of names) {
+      await collectProtectedTree(path.join(candidate, name), nextAncestors);
+    }
+  }
+
+  for (const sourceDirectory of physicalProtectedRoots.slice(1)) {
+    await collectProtectedTree(sourceDirectory);
+  }
+  await collectProtectedTree(path.join(physicalProtectedRoots[0], 'book.yaml'));
+
+  let existingAncestor = outputDirectory;
+  while (!(await lstat(existingAncestor))) {
+    const parent = path.dirname(existingAncestor);
+    if (parent === existingAncestor) break;
+    existingAncestor = parent;
+  }
+
+  for (let current = existingAncestor; ; current = path.dirname(current)) {
+    const currentEntry = await lstat(current);
+    if (currentEntry) {
+      const currentIdentity = await stat(current);
+      if (
+        protectedRootIdentities.slice(1).some((identity) =>
+          sameFileSystemIdentity(currentIdentity, identity)) ||
+        protectedIdentityKeys.has(fileSystemIdentityKey(currentIdentity))
+      ) {
+        throw outputOverlapError(outputDirectory);
+      }
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+  }
+
+  const outputEntry = await lstat(outputDirectory);
+  if (!outputEntry) return;
+
+  const physicalOutput = await realpath(outputDirectory);
+  for (const [index, protectedRoot] of physicalProtectedRoots.entries()) {
+    if (
+      isPathInside(physicalOutput, protectedRoot) ||
+      (index > 0 && isPathInside(protectedRoot, physicalOutput))
+    ) {
+      throw outputOverlapError(outputDirectory);
+    }
+  }
+
+  async function scanOutputTree(candidate, ancestorIdentities = new Set()) {
+    const entry = await lstat(candidate);
+    if (!entry) return;
+    // Recursive removal unlinks a symbolic link instead of following it, so it
+    // cannot expose a protected directory identity to backup cleanup.
+    if (entry.isSymbolicLink()) return;
+    const candidateIdentity = await stat(candidate);
+    const candidateIdentityKey = fileSystemIdentityKey(candidateIdentity);
+    if (
+      protectedRootIdentities.some((identity) =>
+        sameFileSystemIdentity(candidateIdentity, identity)) ||
+      protectedIdentityKeys.has(candidateIdentityKey)
+    ) {
+      throw outputOverlapError(outputDirectory);
+    }
+    if (!entry.isDirectory() || ancestorIdentities.has(candidateIdentityKey)) return;
+
+    const nextAncestors = new Set(ancestorIdentities);
+    nextAncestors.add(candidateIdentityKey);
+    const names = (await readdir(candidate)).sort();
+    for (const name of names) {
+      await scanOutputTree(path.join(candidate, name), nextAncestors);
+    }
+  }
+
+  await scanOutputTree(outputDirectory);
+}
+
 async function validateOutputDestination(bookRoot, metadata, outputDirectory) {
+  const sourceDirectories = Object.values(metadata.source).map(
+    (relativeSource) => path.resolve(bookRoot, relativeSource)
+  );
   for (const [sourceName, relativeSource] of Object.entries(metadata.source)) {
     const sourceDirectory = path.resolve(bookRoot, relativeSource);
     if (isPathInside(sourceDirectory, outputDirectory)) {
@@ -91,6 +224,11 @@ async function validateOutputDestination(bookRoot, metadata, outputDirectory) {
   }
 
   await rejectSymlinkComponents(outputDirectory);
+  await assertOutputDoesNotOverlapBookSources(
+    bookRoot,
+    sourceDirectories,
+    outputDirectory
+  );
 
   const outputStat = await lstatIfExists(outputDirectory);
   if (outputStat) {
@@ -110,6 +248,18 @@ async function validateOutputDestination(bookRoot, metadata, outputDirectory) {
   }
 
   return manifestPath;
+}
+
+async function assertReplacementDirectorySafe(bookRoot, metadata, outputDirectory) {
+  const sourceDirectories = Object.values(metadata.source).map(
+    (relativeSource) => path.resolve(bookRoot, relativeSource)
+  );
+  await rejectSymlinkComponents(outputDirectory);
+  await assertOutputDoesNotOverlapBookSources(
+    bookRoot,
+    sourceDirectories,
+    outputDirectory
+  );
 }
 
 function createManifest(metadata, target, edition, visibilityReport) {
@@ -135,7 +285,14 @@ function createManifest(metadata, target, edition, visibilityReport) {
     kind: 'book-formatter.adapter-build',
     adapter: {
       target,
-      implementation: 'skeleton'
+      implementation: target === 'web-mdbook' ? WEB_MDBOOK_IMPLEMENTATION : 'skeleton',
+      ...(target === 'web-mdbook'
+        ? {
+          project_format: 'mdbook',
+          verified_mdbook_version: WEB_MDBOOK_COMPATIBILITY_VERSION,
+          build_directory: 'book'
+        }
+        : {})
     },
     book: {
       id: metadata.id,
@@ -209,11 +366,17 @@ export async function buildStandardBookAdapter(options) {
     ? path.resolve(outputRoot)
     : path.join(standardBook.bookRoot, 'dist');
   const outputDirectory = path.join(resolvedOutputRoot, target);
-  const manifestPath = await validateOutputDestination(
+  const revalidateOutputDestination = () => validateOutputDestination(
     standardBook.bookRoot,
     standardBook.metadata,
     outputDirectory
   );
+  const revalidateReplacementDirectory = (candidate) => assertReplacementDirectorySafe(
+    standardBook.bookRoot,
+    standardBook.metadata,
+    candidate
+  );
+  const manifestPath = await revalidateOutputDestination();
   const manifest = createManifest(
     standardBook.metadata,
     target,
@@ -221,7 +384,26 @@ export async function buildStandardBookAdapter(options) {
     visibilityReport
   );
 
-  if (!dryRun) await writeManifest(manifestPath, manifest);
+  if (target === 'web-mdbook') {
+    try {
+      await writeWebMdbookProject({
+        standardBook,
+        edition,
+        visibilityReport,
+        outputDirectory,
+        manifest,
+        sharedCssPath: DEFAULT_WEB_MDBOOK_CSS,
+        revalidateOutputDestination,
+        revalidateReplacementDirectory,
+        validateOnly: dryRun
+      });
+    } catch (error) {
+      if (error instanceof WebMdbookAdapterError) throw new AdapterBuildError(error.message);
+      throw error;
+    }
+  } else if (!dryRun) {
+    await writeManifest(manifestPath, manifest);
+  }
 
   return {
     manifest,

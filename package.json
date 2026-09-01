@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test --test-concurrency=1 tests/AdapterBuild.test.js tests/BookGenerator.test.js tests/BookRegistry.test.js tests/ConfigValidator.test.js tests/StandardBookFormat.test.js tests/VisibilityChecker.test.js tests/UxRollout.test.js tests/UnicodeChecker.test.js tests/CheckLinks.test.js tests/CheckTextlint.test.js tests/CheckLayoutRisk.test.js tests/CheckMarkdownStructure.test.js tests/SvgFontNormalize.test.js tests/Node24Actions.test.js tests/BookSyncSafety.test.js && node tests/GitHubPagesHandler.test.js",
+    "test": "node --test --test-concurrency=1 tests/AdapterBuild.test.js tests/WebMdbookAdapter.test.js tests/MdbookResponsiveChecker.test.js tests/BookGenerator.test.js tests/BookRegistry.test.js tests/ConfigValidator.test.js tests/StandardBookFormat.test.js tests/VisibilityChecker.test.js tests/UxRollout.test.js tests/UnicodeChecker.test.js tests/CheckLinks.test.js tests/CheckTextlint.test.js tests/CheckLayoutRisk.test.js tests/CheckMarkdownStructure.test.js tests/SvgFontNormalize.test.js tests/Node24Actions.test.js tests/BookSyncSafety.test.js && node tests/GitHubPagesHandler.test.js",
     "format": "prettier --write .",
     "lint": "eslint src/ tests/",
     "build": "node scripts/build.js",
@@ -29,7 +29,8 @@
     "health-check": "node scripts/diagnose.js --export",
     "validate:standard-book": "node scripts/validate-standard-book.js",
     "validate:book-registry": "node scripts/validate-book-registry.js",
-    "check-visibility": "node scripts/check-visibility.js"
+    "check-visibility": "node scripts/check-visibility.js",
+    "check-mdbook-responsive": "node scripts/check-mdbook-responsive.js"
   },
   "keywords": [
     "book",
@@ -58,6 +59,7 @@
     "textlint": "^15.8.0",
     "textlint-rule-preset-ja-technical-writing": "^12.0.2",
     "textlint-rule-prh": "^6.1.0",
+    "ws": "^8.21.3",
     "yaml": "^2.4.1"
   },
   "devDependencies": {

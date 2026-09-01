@@ -224,9 +224,56 @@ jobs:
           name: markdown-structure-report
           path: markdown-structure-report.json
 
+  web-mdbook-adapter:
+    name: Web mdBook Adapter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install verified mdBook 0.5.4 binary
+        env:
+          MDBOOK_URL: https://github.com/rust-lang/mdBook/releases/download/v0.5.4/mdbook-v0.5.4-x86_64-unknown-linux-gnu.tar.gz
+          MDBOOK_SHA256: 3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
+        run: |
+          mkdir -p "$RUNNER_TEMP/mdbook/bin"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/mdbook/mdbook.tar.gz" "$MDBOOK_URL"
+          echo "$MDBOOK_SHA256  $RUNNER_TEMP/mdbook/mdbook.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file "$RUNNER_TEMP/mdbook/mdbook.tar.gz" --directory "$RUNNER_TEMP/mdbook/bin"
+          echo "$RUNNER_TEMP/mdbook/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/mdbook/bin/mdbook" --version
+
+      - name: Build standard sample with web-mdbook adapter
+        run: |
+          npm start build -- \
+            --book examples/standard-book \
+            --target web-mdbook \
+            --edition free \
+            --out-dir "$RUNNER_TEMP/book-formatter-output"
+          mdbook build "$RUNNER_TEMP/book-formatter-output/web-mdbook"
+
+      - name: Verify responsive geometry and edition visibility
+        run: |
+          npm run check-mdbook-responsive -- \
+            --book "$RUNNER_TEMP/book-formatter-output/web-mdbook"
+          npm run check-visibility -- \
+            examples/standard-book \
+            --edition free \
+            --artifact "$RUNNER_TEMP/book-formatter-output/web-mdbook/book"
+
   summary:
     name: Quality Summary
-    needs: [lint-and-test, validate-templates, security-scan, book-generation-test, markdown-quality]
+    needs: [lint-and-test, validate-templates, security-scan, book-generation-test, markdown-quality, web-mdbook-adapter]
     runs-on: ubuntu-latest
     if: always()
     
@@ -272,6 +319,12 @@ jobs:
             echo "| Markdown Quality | ✅ Success |" >> $GITHUB_STEP_SUMMARY
           else
             echo "| Markdown Quality | ⚠️ Warning |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.web-mdbook-adapter.result }}" = "success" ]; then
+            echo "| Web mdBook Adapter | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Web mdBook Adapter | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY

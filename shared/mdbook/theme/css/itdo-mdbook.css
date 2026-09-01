@@ -1,0 +1,49 @@
+/*
+ * itdo/book-formatter shared mdBook additions.
+ * Compatibility baseline: mdBook 0.5.4.
+ * Keep this file additive; do not copy or replace mdBook's built-in theme.
+ */
+
+:root {
+  --itdo-callout-border: var(--links);
+}
+
+#mdbook-page-wrapper,
+.page,
+.content,
+.content main {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.content pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.content blockquote {
+  border-inline-start: 0.25rem solid var(--itdo-callout-border);
+  margin-inline: 0;
+  padding: 0.5rem 1rem;
+}
+
+@media only screen and (max-width: 619px) {
+  :root {
+    --sidebar-target-width: min(300px, 86vw);
+    --page-padding: clamp(0.75rem, 4vw, 1.25rem);
+  }
+}
+
+@media only screen and (min-width: 620px) and (max-width: 1080px) {
+  :root {
+    --sidebar-target-width: min(300px, 36vw);
+    --page-padding: clamp(1rem, 3vw, 2rem);
+  }
+}

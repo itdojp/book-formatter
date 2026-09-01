@@ -50,7 +50,7 @@ afterEach(async () => {
 });
 
 describe('AdapterBuild', () => {
-  test('有限targetのskeleton READMEが共通registryと一致する', async () => {
+  test('有限targetのREADMEが実装状態registryと一致する', async () => {
     assert.deepStrictEqual(ADAPTER_TARGETS, [
       'web-mdbook',
       'web-jekyll-legacy',
@@ -66,7 +66,12 @@ describe('AdapterBuild', () => {
         'utf8'
       );
       assert.match(readme, new RegExp(`^# ${target} adapter`, 'm'));
-      assert.match(readme, /実装状態: skeleton/);
+      assert.match(
+        readme,
+        target === 'web-mdbook'
+          ? /実装状態: implemented \(`web-mdbook-v1`\)/
+          : /実装状態: skeleton/
+      );
     }
   });
 
@@ -95,7 +100,8 @@ describe('AdapterBuild', () => {
     assert.strictEqual(first.written, false);
     assert.strictEqual(first.manifest.manifest_version, ADAPTER_MANIFEST_VERSION);
     assert.strictEqual(first.manifest.adapter.target, 'web-mdbook');
-    assert.strictEqual(first.manifest.adapter.implementation, 'skeleton');
+    assert.strictEqual(first.manifest.adapter.implementation, 'web-mdbook-v1');
+    assert.strictEqual(first.manifest.adapter.verified_mdbook_version, '0.5.4');
     assert.strictEqual(first.manifest.visibility.safe, true);
     assert.deepStrictEqual(
       first.manifest.documents.map((document) => document.id),
