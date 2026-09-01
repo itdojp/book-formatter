@@ -193,6 +193,13 @@ function htmlBlockBoundary(tag) {
   return tagName && HTML_BLOCK_ELEMENTS.has(tagName.toLowerCase()) ? '\n' : '';
 }
 
+function hasHiddenHtmlAttribute(tag, openingTag) {
+  const attributeText = tag
+    .slice(openingTag[0].length)
+    .replace(/"[^"]*"|'[^']*'/gu, ' quoted-value ');
+  return /(?:^|\s)hidden(?:\s*=\s*[^\s/>]+)?(?=[\s/>])/iu.test(attributeText);
+}
+
 function stripHtmlCodeElementContents(
   value,
   { stripCode = true, stripNonRendered = false } = {}
@@ -243,6 +250,22 @@ function stripHtmlCodeElementContents(
       ) {
         ranges.push([index, closingPattern.lastIndex]);
       }
+      index = closingPattern.lastIndex - 1;
+      continue;
+    }
+
+    const openingTag = tag.match(/^<\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
+    if (
+      stripNonRendered &&
+      openingTag &&
+      hasHiddenHtmlAttribute(tag, openingTag) &&
+      !/\/\s*>$/u.test(tag)
+    ) {
+      const closingPattern = new RegExp(`<\\/\\s*${openingTag[1]}\\s*>`, 'igu');
+      closingPattern.lastIndex = endIndex + 1;
+      const closingTag = closingPattern.exec(source);
+      if (!closingTag) break;
+      ranges.push([index, closingPattern.lastIndex]);
       index = closingPattern.lastIndex - 1;
       continue;
     }

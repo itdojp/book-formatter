@@ -587,6 +587,30 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const hiddenInterruptionLeak = await createArtifact(
+      '<p>Premium<span hidden>noise</span> only details</p>\n',
+      'hidden-interruption.html'
+    );
+    const hiddenInterruptionReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: hiddenInterruptionLeak }
+    );
+    assert.strictEqual(hiddenInterruptionReport.summary.safe, false);
+    assert.ok(
+      hiddenInterruptionReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+    const hiddenClassTextArtifact = await createArtifact(
+      '<p>Premium<span class="visible hidden label">noise</span> only details</p>\n',
+      'hidden-class-text.html'
+    );
+    const hiddenClassTextReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: hiddenClassTextArtifact
+    });
+    assert.strictEqual(hiddenClassTextReport.summary.safe, true);
+
     const blockBoundaryBook = await copySampleBook();
     await fs.writeFile(
       path.join(blockBoundaryBook, 'manuscript/01-introduction.md'),
