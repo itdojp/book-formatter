@@ -1,0 +1,215 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/itdojp/book-formatter/shared/schema/book.schema.json",
+  "title": "Standard Book Metadata",
+  "description": "Canonical metadata for the book-formatter standard source format.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "title",
+    "language",
+    "authors",
+    "publisher",
+    "repository",
+    "source",
+    "structure",
+    "editions",
+    "license",
+    "version"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Version of this metadata contract.",
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/definitions/id"
+    },
+    "title": {
+      "$ref": "#/definitions/nonEmptyString"
+    },
+    "language": {
+      "description": "BCP 47-style primary language tag.",
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+    },
+    "authors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "$ref": "#/definitions/nonEmptyString"
+          },
+          "url": {
+            "$ref": "#/definitions/httpsUrl"
+          }
+        }
+      }
+    },
+    "publisher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "url": {
+          "$ref": "#/definitions/httpsUrl"
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "default_branch"],
+      "properties": {
+        "url": {
+          "$ref": "#/definitions/httpsUrl"
+        },
+        "default_branch": {
+          "type": "string",
+          "pattern": "^(?!@$)(?!-)(?!/)(?!\\.)(?!.*\\/\\.)(?!.*\\.\\.)(?!.*@\\{)(?!.*//)(?![^/]*\\.lock(?:/|$))(?!.*\\/[^/]*\\.lock(?:/|$))(?!.*[\\u0000-\\u0020\\u007F~^:?*\\[\\]\\\\])(?!.*[/.]$).+$"
+        }
+      }
+    },
+    "source": {
+      "description": "Canonical source directories, relative to book.yaml.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manuscript",
+        "assets",
+        "frontmatter",
+        "backmatter",
+        "editions"
+      ],
+      "properties": {
+        "manuscript": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "assets": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "frontmatter": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "backmatter": {
+          "$ref": "#/definitions/relativePath"
+        },
+        "editions": {
+          "$ref": "#/definitions/relativePath"
+        }
+      }
+    },
+    "structure": {
+      "description": "Ordered canonical source documents.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frontmatter", "chapters", "backmatter"],
+      "properties": {
+        "frontmatter": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/structureEntry"
+          }
+        },
+        "chapters": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/chapterEntry"
+          }
+        },
+        "backmatter": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/structureEntry"
+          }
+        }
+      }
+    },
+    "editions": {
+      "description": "Named publication editions. Visibility rules are defined separately.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "status"],
+        "properties": {
+          "id": {
+            "$ref": "#/definitions/id"
+          },
+          "title": {
+            "$ref": "#/definitions/nonEmptyString"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "published", "archived"]
+          },
+          "description": {
+            "$ref": "#/definitions/nonEmptyString"
+          }
+        }
+      }
+    },
+    "license": {
+      "description": "SPDX identifier or an explicit project license expression.",
+      "$ref": "#/definitions/nonEmptyString"
+    },
+    "version": {
+      "description": "Semantic version of the canonical book source.",
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"
+    }
+  },
+  "definitions": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "httpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[^\\s]+$"
+    },
+    "relativePath": {
+      "type": "string",
+      "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))(?!/)(?!.*\\\\)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"
+    },
+    "markdownPath": {
+      "type": "string",
+      "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))(?!/)(?!.*\\\\)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.md$"
+    },
+    "structureEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "path"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "title": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "path": {
+          "$ref": "#/definitions/markdownPath"
+        }
+      }
+    },
+    "chapterEntry": {
+      "$ref": "#/definitions/structureEntry"
+    }
+  }
+}
