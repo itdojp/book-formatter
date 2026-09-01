@@ -193,7 +193,10 @@ function htmlBlockBoundary(tag) {
   return tagName && HTML_BLOCK_ELEMENTS.has(tagName.toLowerCase()) ? '\n' : '';
 }
 
-function stripHtmlCodeElementContents(value) {
+function stripHtmlCodeElementContents(
+  value,
+  { stripCode = true, stripNonRendered = false } = {}
+) {
   const source = String(value || '');
   const stack = [];
   const ranges = [];
@@ -232,12 +235,18 @@ function stripHtmlCodeElementContents(value) {
       closingPattern.lastIndex = endIndex + 1;
       const closingTag = closingPattern.exec(source);
       if (!closingTag) break;
+      if (
+        stripNonRendered &&
+        ['script', 'style'].includes(rawTextTag[1].toLowerCase())
+      ) {
+        ranges.push([index, closingPattern.lastIndex]);
+      }
       index = closingPattern.lastIndex - 1;
       continue;
     }
 
     const codeTag = tag.match(/^<\s*(\/?)\s*(pre|code)(?=[\s/>])/iu);
-    if (codeTag) {
+    if (stripCode && codeTag) {
       if (codeTag[1]) {
         const current = stack.at(-1);
         if (!current || current.name !== codeTag[2].toLowerCase()) {
@@ -270,12 +279,16 @@ function createArtifactComparables(value, allowFrontMatter) {
     : [completeBody];
   const artifactComparables = candidateBodies.flatMap((candidateBody) => {
     const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(candidateBody);
+    const readerVisibleBody = stripHtmlCodeElementContents(decodedBody, {
+      stripCode: false,
+      stripNonRendered: true
+    });
     return [
       candidateBody,
       decodedBody,
-      stripHtmlTags(decodedBody),
-      stripHtmlTags(decodedBody, ' '),
-      stripHtmlTags(decodedBody, htmlBlockBoundary)
+      stripHtmlTags(readerVisibleBody),
+      stripHtmlTags(readerVisibleBody, ' '),
+      stripHtmlTags(readerVisibleBody, htmlBlockBoundary)
     ];
   });
   if (allowFrontMatter) {
@@ -411,7 +424,9 @@ function collectMarkdownTextFragments(value) {
         return '';
       })
       .join('');
-    if (normalizeComparableText(projectedText)) fragments.push(projectedText);
+    if (hasSufficientIndependentFragmentContext(projectedText)) {
+      fragments.push(projectedText);
+    }
     const mathProjection = projectInlineChildrenWithCanonicalMath(token.children);
     const projectedMathText = normalizeComparableText(mathProjection.projected);
     const standaloneMath = mathProjection.fragments.some(
@@ -419,12 +434,16 @@ function collectMarkdownTextFragments(value) {
     );
     if (
       projectedMathText &&
+      mathProjection.fragments.length > 0 &&
       (!standaloneMath || hasSufficientIndependentFragmentContext(projectedMathText))
     ) {
       fragments.push(mathProjection.projected);
     }
     for (const child of token.children) {
-      if (child.type === 'image' && normalizeComparableText(child.content)) {
+      if (
+        child.type === 'image' &&
+        hasSufficientIndependentFragmentContext(child.content)
+      ) {
         fragments.push(child.content);
       }
     }
@@ -481,7 +500,9 @@ function createProtectedFragments(value, source, visibility) {
     const listItem = line.match(
       /^\s*(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?(.+)$/u
     );
-    if (listItem) addFragment(listItem[1]);
+    if (listItem && hasSufficientIndependentFragmentContext(listItem[1])) {
+      addFragment(listItem[1]);
+    }
   }
 
   for (const fragment of collectMarkdownTextFragments(normalizedValue)) {
@@ -779,7 +800,10 @@ async function scanArtifact(artifactPath, protectedFragments) {
       : content;
     const artifactComparables = createArtifactComparables(content, allowFrontMatter);
     const readerVisibleBase = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
-      stripHtmlCodeElementContents(normalizeArtifactBody(content, allowFrontMatter))
+      stripHtmlCodeElementContents(
+        normalizeArtifactBody(content, allowFrontMatter),
+        { stripNonRendered: true }
+      )
     );
     const readerVisibleCandidates = [
       stripHtmlTags(readerVisibleBase),

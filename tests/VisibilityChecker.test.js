@@ -414,6 +414,20 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const shortListBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(shortListBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\n- A\n:::\n'
+    );
+    const unrelatedShortListArtifact = await createArtifact(
+      '<script>const SAFE_VALUE = 1;</script>\n<p>Public content</p>\n',
+      'unrelated-short-list.html'
+    );
+    const unrelatedShortListReport = await checkBookVisibility(shortListBook, 'free', {
+      artifactPath: unrelatedShortListArtifact
+    });
+    assert.strictEqual(unrelatedShortListReport.summary.safe, true);
+
     const inlineBook = await copySampleBook();
     await fs.writeFile(
       path.join(inlineBook, 'manuscript/01-introduction.md'),
@@ -523,6 +537,22 @@ describe('VisibilityChecker', () => {
     assert.strictEqual(renderedMarkdownReport.summary.safe, false);
     assert.ok(
       renderedMarkdownReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
+    const nonRenderedInterruptionLeak = await createArtifact(
+      '<p>Premium<script>0</script> only details</p>\n',
+      'non-rendered-interruption.html'
+    );
+    const nonRenderedInterruptionReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: nonRenderedInterruptionLeak }
+    );
+    assert.strictEqual(nonRenderedInterruptionReport.summary.safe, false);
+    assert.ok(
+      nonRenderedInterruptionReport.findings.some(
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );
