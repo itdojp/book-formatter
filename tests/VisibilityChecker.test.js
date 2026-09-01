@@ -424,6 +424,25 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const renderedMarkdownBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(renderedMarkdownBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\nPremium only details\n:::\n'
+    );
+    const renderedMarkdownLeak = await createArtifact(
+      '# 公開版\n\nPremium **only** details\n',
+      'rendered-markdown.md'
+    );
+    const renderedMarkdownReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: renderedMarkdownLeak
+    });
+    assert.strictEqual(renderedMarkdownReport.summary.safe, false);
+    assert.ok(
+      renderedMarkdownReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
     const adjacentInlineBook = await copySampleBook();
     await fs.writeFile(
       path.join(adjacentInlineBook, 'manuscript/01-introduction.md'),

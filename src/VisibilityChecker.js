@@ -251,16 +251,19 @@ function createArtifactComparables(value, allowFrontMatter) {
   const candidateBodies = allowFrontMatter
     ? [normalizeArtifactBody(value, true), completeBody]
     : [completeBody];
-  return candidateBodies
-    .flatMap((candidateBody) => {
-      const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(candidateBody);
-      return [
-        candidateBody,
-        decodedBody,
-        stripHtmlTags(decodedBody),
-        stripHtmlTags(decodedBody, ' ')
-      ];
-    })
+  const artifactComparables = candidateBodies.flatMap((candidateBody) => {
+    const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(candidateBody);
+    return [
+      candidateBody,
+      decodedBody,
+      stripHtmlTags(decodedBody),
+      stripHtmlTags(decodedBody, ' ')
+    ];
+  });
+  if (allowFrontMatter) {
+    artifactComparables.push(...collectMarkdownTextFragments(candidateBodies[0]));
+  }
+  return artifactComparables
     .map((candidate) => normalizeComparableText(candidate))
     .filter(Boolean);
 }
