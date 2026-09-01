@@ -257,11 +257,32 @@ describe('WebMdbookAdapter', () => {
       ],
       [
         '[use][I]\n\n[ı]: https://example.invalid\n[I]: java&#x09;script:alert(2)',
-        /Unsupported external link/
+        /Markdown reference definitions are not supported/
       ],
       ['[danger](java&NewLine;script:alert(3))', /Unsupported external link/],
       ['[danger](java&#13;script:alert(4))', /Unsupported external link/],
       ['\\\\[danger](javascript:alert(5))', /Unsupported external link/],
+      ['[danger\\]ous](javascript:alert(8))', /Unsupported external link/],
+      ['[outer [inner]](javascript:alert(9))', /Unsupported external link/],
+      ['[danger\\]ous](java&#x09;script:alert(10))', /Unsupported external link/],
+      ['[danger\\]ous](java&NewLine;script:alert(11))', /Unsupported external link/],
+      ['[danger\\]ous](java&#13;script:alert(12))', /Unsupported external link/],
+      ['[outer [inner]](java&#x09;script:alert(13))', /Unsupported external link/],
+      ['![danger\\]ous](da&#x09;ta:image/png;base64,AAAA)', /Unsupported external image/],
+      [
+        '[collision][I]\n\n[ı]: https://safe.invalid\n[I]:\n  javascript:alert(14)',
+        /Markdown reference definitions are not supported/
+      ],
+      [
+        '[collision][I]\n\n[ı]: https://safe.invalid\n[I]:\njavascript:alert(15)',
+        /Markdown reference definitions are not supported/
+      ],
+      ['[unused]: javascript:alert(16)', /Markdown reference definitions are not supported/],
+      ['[safe][reference]\n\n[reference]: https://example.invalid', /reference definitions/],
+      [
+        '> [collision][I]\n>\n> [ı]: https://safe.invalid\n> [I]:\n> javascript:alert(17)',
+        /Markdown reference definitions are not supported/
+      ],
       [
         '```text\n[open](javascript:example)\n```\n[danger](javascript:alert(6))',
         /Unsupported external link/
@@ -307,6 +328,11 @@ describe('WebMdbookAdapter', () => {
         'URL scheme名 javascript: / data: はlink destinationではない。\n' +
         '&lbrack;example]: javascript:example はreference definitionではない。\n' +
         'Escaped構文例: \\[open](javascript:example) と !\\[image](data:image/png;base64,AAAA)\n' +
+        'Escaped label link: [visible\\] label](https://example.invalid)\n' +
+        'Nested label link: [outer [inner]](https://example.invalid)\n' +
+        '\n[not a reference\n\n```text\ninert\n```\n\n]: javascript:example\n' +
+        '\n`\n[documented]:\n  javascript:example\n`\n' +
+        '\nFootnote text[^audit-note].\n\n[^audit-note]: Reader-visible footnote.\n' +
         `深いinline code例: \`${'['.repeat(129)}\`\n` +
         `\n\`\`\`text\n${'['.repeat(129)}\n\`\`\`\n` +
         `\n> \`\`\`text\n> ${'['.repeat(129)}\n> \`\`\`\n` +

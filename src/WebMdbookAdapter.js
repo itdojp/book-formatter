@@ -27,6 +27,16 @@ const MARKDOWN = new MarkdownIt({
   typographer: false,
   maxNesting: 1024
 }).use(markdownItFootnote);
+const SOURCE_AUDIT_MARKDOWN = new MarkdownIt({
+  html: true,
+  linkify: false,
+  typographer: false,
+  maxNesting: 1024
+}).use(markdownItFootnote);
+SOURCE_AUDIT_MARKDOWN.validateLink = () => true;
+// Keep entity-decoded control characters visible to destinationScheme(); markdown-it's
+// default URL normalizer percent-encodes them before the source-policy audit can run.
+SOURCE_AUDIT_MARKDOWN.normalizeLink = (destination) => destination;
 const MAX_MARKDOWN_AUDIT_DEPTH = 128;
 const HTML_ENTITY = /&(?:#[xX][0-9A-Fa-f]+|#\d+|[A-Za-z][A-Za-z0-9]+);?/gu;
 
@@ -439,12 +449,7 @@ function rejectUnsupportedSourceDestinations(source, sourcePath, tokens) {
     const visibleSource = maskEscapedLinkOpeners(maskSingleLineCodeSpans(line));
     auditedLines.push(visibleSource);
     const patterns = [
-      { pattern: /(!?)\[[^\]]*\]\(\s*<?([^)>\s]+)/gu, destination: 2, image: 1 },
-      {
-        pattern: /^\s{0,3}\[(?:\\.|[^\x5b\x5c\x5d])+\]:\s*<?([^>\s]+)/gu,
-        destination: 1,
-        image: null
-      }
+      { pattern: /(!?)\[[^\]]*\]\(\s*<?([^)>\s]+)/gu, destination: 2, image: 1 }
     ];
     for (const entry of patterns) {
       for (const match of visibleSource.matchAll(entry.pattern)) {
@@ -460,6 +465,31 @@ function rejectUnsupportedSourceDestinations(source, sourcePath, tokens) {
     }
   }
   assertMarkdownAuditDepth(auditedLines.join('\n'), sourcePath);
+
+  const sourceAuditEnvironment = {};
+  const sourceAuditTokens = collectTokens(
+    SOURCE_AUDIT_MARKDOWN.parse(source, sourceAuditEnvironment)
+  );
+  if (Object.keys(sourceAuditEnvironment.references || {}).length > 0) {
+    throw new WebMdbookAdapterError(
+      `Markdown reference definitions are not supported by web-mdbook: ${sourcePath}`
+    );
+  }
+  for (const token of sourceAuditTokens) {
+    const destination = token.type === 'link_open'
+      ? token.attrGet('href')
+      : token.type === 'image'
+        ? token.attrGet('src')
+        : null;
+    if (!destination) continue;
+    const scheme = destinationScheme(destination);
+    if (scheme && scheme.toLowerCase() !== 'https') {
+      const kind = token.type === 'image' ? 'image' : 'link';
+      throw new WebMdbookAdapterError(
+        `Unsupported external ${kind} in ${sourcePath}: ${scheme}:`
+      );
+    }
+  }
 }
 
 function rejectMdbookFileDirectives(source, sourcePath) {

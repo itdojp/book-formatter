@@ -44,6 +44,8 @@ Web正本のreader-visible raw HTMLはfail closedで禁止します。fenced cod
 
 相対linkは、同じeditionに含まれるMarkdown、生成した`book.yaml`、または宣言済み`assets/`内の実fileだけを許可します。assetは参照されたfileだけを複製し、画像、font、audio/video、有限なtext/data形式のpassive extension allowlistへ限定します。HTML/XHTML/XMLなどのactive document形式はcopyしません。SVGはcopy前に有限なactive-content検査を行い、script、event handler、foreign content、animation、style、外部参照を拒否します。外部linkは資格情報を含まないHTTPSだけを許可し、外部画像hotlinkと危険schemeを拒否します。structure titleは`SUMMARY.md`へdisplay textとして出力し、HTMLの`&`、`<`、`>`とMarkdown labelのbackslash/bracketをescapeします。
 
+mdBookと監査parserで参照ラベルのUnicode正規化が一致しないため、`web-mdbook-v1`はMarkdownのreference definition（`[label]: destination`）をfail closedで拒否します。linkはinline形式（`[label](destination)`）を使用してください。footnote definitionはこの制限の対象外です。
+
 mdBookの`{{#include ...}}`、`{{#rustdoc_include ...}}`、file-backed `{{#playground ...}}`は、fenced code内でもpreprocessorがlocal fileを読み得るため使用禁止です。editionで選択済みの文書と宣言済みassetだけを生成物へ入れる境界を迂回させません。構文を説明する場合もdirective文字列をそのまま正本へ置かず、通常の文章へ書き換えます。
 
 ## Buildとレスポンシブ検証
