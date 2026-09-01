@@ -24,6 +24,11 @@ const MARKDOWN_TEXT_EXTRACTOR = new MarkdownIt({
   linkify: false,
   typographer: false
 }).use(markdownItFootnote);
+const MARKDOWN_ARTIFACT_RENDERER = new MarkdownIt({
+  html: true,
+  linkify: false,
+  typographer: false
+}).use(markdownItFootnote);
 const ARTIFACT_TEXT_EXTENSIONS = new Set([
   '.css',
   '.csv',
@@ -347,36 +352,7 @@ function findMatchingHtmlClosingTag(source, startIndex, tagName, xmlMode) {
   return null;
 }
 
-function collectMarkdownFenceRanges(source) {
-  const ranges = [];
-  let fence = null;
-  let fenceStart = null;
-  for (const match of String(source || '').matchAll(/[^\r\n]*(?:\r\n|\r|\n|$)/gu)) {
-    if (!match[0]) continue;
-    const line = match[0].replace(/(?:\r\n|\r|\n)$/u, '');
-    if (fence) {
-      if (isStandardFenceClose(line, fence)) {
-        ranges.push([fenceStart, match.index + match[0].length]);
-        fence = null;
-        fenceStart = null;
-      }
-      continue;
-    }
-    const opening = detectStandardFenceOpen(line);
-    if (opening && !opening.invalidInfoString) {
-      fence = opening;
-      fenceStart = match.index;
-    }
-  }
-  if (fence) ranges.push([fenceStart, String(source || '').length]);
-  return ranges;
-}
-
-function containingRange(ranges, index) {
-  return ranges.find(([start, end]) => index >= start && index < end) || null;
-}
-
-function collectHtmlNonRenderedRanges(source, ignoredRanges) {
+function collectHtmlNonRenderedRanges(source) {
   const ranges = [];
   const document = parseHtml(String(source || ''), { sourceCodeLocationInfo: true });
   const visit = (node) => {
@@ -388,8 +364,7 @@ function collectHtmlNonRenderedRanges(source, ignoredRanges) {
     if (
       isNonRendered &&
       Number.isInteger(location?.startOffset) &&
-      Number.isInteger(location?.endOffset) &&
-      !containingRange(ignoredRanges, location.startOffset)
+      Number.isInteger(location?.endOffset)
     ) {
       ranges.push([location.startOffset, location.endOffset]);
       return;
@@ -403,28 +378,13 @@ function collectHtmlNonRenderedRanges(source, ignoredRanges) {
 
 function stripHtmlCodeElementContents(
   value,
-  {
-    stripCode = true,
-    stripNonRendered = false,
-    rangeSeparator = ' ',
-    xmlMode = false,
-    markdownFences = false
-  } = {}
+  { stripCode = true, stripNonRendered = false, rangeSeparator = ' ', xmlMode = false } = {}
 ) {
   const source = String(value || '');
   const stack = [];
-  const ignoredRanges = markdownFences ? collectMarkdownFenceRanges(source) : [];
-  const ranges =
-    stripNonRendered && !xmlMode
-      ? collectHtmlNonRenderedRanges(source, ignoredRanges)
-      : [];
+  const ranges = stripNonRendered && !xmlMode ? collectHtmlNonRenderedRanges(source) : [];
 
   for (let index = 0; index < source.length; index += 1) {
-    const ignoredRange = containingRange(ignoredRanges, index);
-    if (ignoredRange) {
-      index = ignoredRange[1] - 1;
-      continue;
-    }
     if (source[index] !== '<' || !/[A-Za-z!/]/u.test(source[index + 1] || '')) continue;
 
     if (source.startsWith('<!--', index)) {
@@ -579,7 +539,7 @@ function collectExactMarkdownTextFragments(value) {
   return fragments;
 }
 
-function collectExactHtmlTextFragments(value, { preserveCdata, xmlMode, markdownFences }) {
+function collectExactHtmlTextFragments(value, { preserveCdata, xmlMode }) {
   const fragments = [];
   for (const rangeSeparator of ['', ' ']) {
     const source = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
@@ -587,8 +547,7 @@ function collectExactHtmlTextFragments(value, { preserveCdata, xmlMode, markdown
         stripCode: false,
         stripNonRendered: true,
         rangeSeparator,
-        xmlMode,
-        markdownFences
+        xmlMode
       })
     );
     const stack = [];
@@ -661,8 +620,7 @@ function createArtifactComparables(value, allowFrontMatter, xmlMode) {
         stripCode: false,
         stripNonRendered: true,
         rangeSeparator,
-        xmlMode,
-        markdownFences: allowFrontMatter
+        xmlMode
       })
     );
     return [
@@ -680,11 +638,7 @@ function createArtifactComparables(value, allowFrontMatter, xmlMode) {
     artifactComparables.push(...collectExactMarkdownTextFragments(candidateBodies[0]));
   }
   artifactComparables.push(
-    ...collectExactHtmlTextFragments(completeBody, {
-      preserveCdata,
-      xmlMode,
-      markdownFences: allowFrontMatter
-    })
+    ...collectExactHtmlTextFragments(completeBody, { preserveCdata, xmlMode })
   );
   return artifactComparables
     .map((candidate) => normalizeComparableText(candidate))
@@ -1214,21 +1168,22 @@ async function scanArtifact(artifactPath, protectedFragments) {
     const allowFrontMatter = fileExtension === '.md';
     const allowMarkdownFences = fileExtension === '.md';
     const xmlMode = ['.svg', '.xhtml', '.xml'].includes(fileExtension);
-    const rawMarkerContent = HTML_MARKUP_EXTENSIONS.has(fileExtension)
-      ? stripHtmlCodeElementContents(content, {
-        xmlMode,
-        markdownFences: allowMarkdownFences
-      })
-      : content;
     const artifactComparables = createArtifactComparables(content, allowFrontMatter, xmlMode);
     const normalizedArtifactBody = normalizeArtifactBody(content, allowFrontMatter);
+    const markdownRenderedBody = allowMarkdownFences
+      ? MARKDOWN_ARTIFACT_RENDERER.render(normalizedArtifactBody)
+      : null;
+    const rawMarkerContent = allowMarkdownFences
+      ? ''
+      : HTML_MARKUP_EXTENSIONS.has(fileExtension)
+        ? stripHtmlCodeElementContents(content, { xmlMode })
+        : content;
     const readerVisibleCandidates = ['', ' '].flatMap((rangeSeparator) => {
       const readerVisibleBase = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
-        stripHtmlCodeElementContents(normalizedArtifactBody, {
+        stripHtmlCodeElementContents(markdownRenderedBody ?? normalizedArtifactBody, {
           stripNonRendered: true,
           rangeSeparator,
-          xmlMode,
-          markdownFences: allowMarkdownFences
+          xmlMode
         })
       );
       return [
