@@ -161,9 +161,16 @@ describe('MdbookResponsiveChecker', () => {
   });
 
   test('sidebarのgeometryとcomputed visibilityを組み合わせて表示状態を判定する', () => {
-    const visibleRect = { left: 0, right: 300, width: 300, height: 844 };
+    const visibleRect = {
+      left: 0,
+      right: 300,
+      top: 0,
+      bottom: 844,
+      width: 300,
+      height: 844
+    };
     const visibleStyle = { display: 'block', visibility: 'visible', opacity: '1' };
-    assert.strictEqual(isSidebarRenderedVisible(visibleRect, visibleStyle, 390), true);
+    assert.strictEqual(isSidebarRenderedVisible(visibleRect, visibleStyle, 390, 844), true);
 
     const hiddenCases = [
       [{ ...visibleRect, height: 0 }, visibleStyle],
@@ -171,10 +178,12 @@ describe('MdbookResponsiveChecker', () => {
       [visibleRect, { ...visibleStyle, visibility: 'hidden' }],
       [visibleRect, { ...visibleStyle, visibility: 'collapse' }],
       [visibleRect, { ...visibleStyle, opacity: '0' }],
-      [{ ...visibleRect, left: -300, right: 0 }, visibleStyle]
+      [{ ...visibleRect, left: -300, right: 0 }, visibleStyle],
+      [{ ...visibleRect, top: -844, bottom: 0 }, visibleStyle],
+      [{ ...visibleRect, top: 844, bottom: 1688 }, visibleStyle]
     ];
     for (const [rect, style] of hiddenCases) {
-      assert.strictEqual(isSidebarRenderedVisible(rect, style, 390), false);
+      assert.strictEqual(isSidebarRenderedVisible(rect, style, 390, 844), false);
     }
   });
 

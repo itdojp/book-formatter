@@ -443,13 +443,15 @@ async function closeChrome(browser) {
   await removeChromeProfile(browser.profileDirectory);
 }
 
-export function isSidebarRenderedVisible(sidebarRect, sidebarStyle, viewportWidth) {
+export function isSidebarRenderedVisible(sidebarRect, sidebarStyle, viewportWidth, viewportHeight) {
   const opacity = Number.parseFloat(sidebarStyle.opacity);
   return (
     sidebarRect.width > 0 &&
     sidebarRect.height > 0 &&
     sidebarRect.right > 0 &&
     sidebarRect.left < viewportWidth &&
+    sidebarRect.bottom > 0 &&
+    sidebarRect.top < viewportHeight &&
     sidebarStyle.display !== 'none' &&
     sidebarStyle.visibility !== 'hidden' &&
     sidebarStyle.visibility !== 'collapse' &&
@@ -484,7 +486,8 @@ function probeExpression(state) {
     const sidebarVisible = (${isSidebarRenderedVisible.toString()})(
       sidebarRect,
       sidebarStyle,
-      window.innerWidth
+      window.innerWidth,
+      window.innerHeight
     );
     return {
       state: ${JSON.stringify(state)},
@@ -493,6 +496,8 @@ function probeExpression(state) {
       sidebar: {
         left: sidebarRect.left,
         right: sidebarRect.right,
+        top: sidebarRect.top,
+        bottom: sidebarRect.bottom,
         width: sidebarRect.width,
         height: sidebarRect.height
       },
@@ -532,8 +537,10 @@ export function validateResponsiveProbe(probe, viewport, state, page) {
   if (state === 'open' && !probe.sidebarVisible) {
     throw new MdbookResponsiveError(
       `Sidebar did not become visible in ${page} at ${viewport.width}x${viewport.height} ` +
-        `(left=${probe.sidebar.left}, right=${probe.sidebar.right}, width=${probe.sidebar.width}, ` +
-        `display=${probe.sidebarDisplay}, css-width=${probe.sidebarCssWidth}, ` +
+        `(left=${probe.sidebar.left}, right=${probe.sidebar.right}, top=${probe.sidebar.top}, ` +
+        `bottom=${probe.sidebar.bottom}, width=${probe.sidebar.width}, ` +
+        `display=${probe.sidebarDisplay}, visibility=${probe.sidebarVisibility}, ` +
+        `opacity=${probe.sidebarOpacity}, css-width=${probe.sidebarCssWidth}, ` +
         `class=${probe.sidebarClass}, print=${probe.printMedia}, ` +
         `--sidebar-width=${probe.sidebarVariable})`
     );
@@ -541,8 +548,10 @@ export function validateResponsiveProbe(probe, viewport, state, page) {
   if (state === 'closed' && probe.sidebarVisible) {
     throw new MdbookResponsiveError(
       `Sidebar remained visible in ${page} at ${viewport.width}x${viewport.height} ` +
-        `(left=${probe.sidebar.left}, right=${probe.sidebar.right}, width=${probe.sidebar.width}, ` +
-        `display=${probe.sidebarDisplay}, css-width=${probe.sidebarCssWidth}, ` +
+        `(left=${probe.sidebar.left}, right=${probe.sidebar.right}, top=${probe.sidebar.top}, ` +
+        `bottom=${probe.sidebar.bottom}, width=${probe.sidebar.width}, ` +
+        `display=${probe.sidebarDisplay}, visibility=${probe.sidebarVisibility}, ` +
+        `opacity=${probe.sidebarOpacity}, css-width=${probe.sidebarCssWidth}, ` +
         `class=${probe.sidebarClass}, toggle=${probe.toggleChecked})`
     );
   }
