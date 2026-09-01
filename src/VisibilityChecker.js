@@ -49,9 +49,13 @@ const HTML_BLOCK_ELEMENTS = new Set([
   'article',
   'aside',
   'blockquote',
+  'body',
   'br',
+  'caption',
+  'colgroup',
   'dd',
   'details',
+  'dialog',
   'div',
   'dl',
   'dt',
@@ -67,14 +71,18 @@ const HTML_BLOCK_ELEMENTS = new Set([
   'h5',
   'h6',
   'header',
+  'hgroup',
   'hr',
+  'html',
   'legend',
   'li',
   'main',
+  'menu',
   'nav',
   'ol',
   'p',
   'pre',
+  'search',
   'section',
   'summary',
   'table',
@@ -101,6 +109,32 @@ const HTML_VOID_ELEMENTS = new Set([
   'source',
   'track',
   'wbr'
+]);
+const SHORT_MARKDOWN_WRAPPER_PAIRS = new Map([
+  ['em_open', 'em_close'],
+  ['link_open', 'link_close'],
+  ['s_open', 's_close'],
+  ['strong_open', 'strong_close']
+]);
+const HTML_EXACT_FRAGMENT_ELEMENTS = new Set([
+  'a',
+  'b',
+  'code',
+  'del',
+  'em',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'i',
+  'mark',
+  's',
+  'small',
+  'strong',
+  'sub',
+  'sup'
 ]);
 
 export class VisibilityValidationError extends Error {
@@ -136,13 +170,26 @@ function findFrontMatterClosingIndex(lines) {
   );
 }
 
+function hasValidFrontMatter(lines, closingIndex) {
+  if (closingIndex === null || closingIndex < 0) return false;
+  try {
+    const frontMatter = YAML.parseDocument(lines.slice(1, closingIndex).join('\n'), {
+      strict: true,
+      uniqueKeys: true
+    });
+    return frontMatter.errors.length === 0;
+  } catch {
+    return false;
+  }
+}
+
 function stripValidFrontMatter(value) {
   const normalizedValue = String(value || '')
     .replace(/^\uFEFF/u, '')
     .replace(/\r\n?/g, '\n');
   const lines = normalizedValue.split('\n');
   const closingIndex = findFrontMatterClosingIndex(lines);
-  return closingIndex !== null && closingIndex >= 0
+  return hasValidFrontMatter(lines, closingIndex)
     ? lines.slice(closingIndex + 1).join('\n')
     : normalizedValue;
 }
@@ -154,16 +201,27 @@ function normalizeArtifactBody(value, allowFrontMatter) {
   return allowFrontMatter ? stripValidFrontMatter(normalizedValue) : normalizedValue;
 }
 
-function stripHtmlTags(value, separator = '') {
+function stripHtmlTags(value, separator = '', { preserveCdata = false } = {}) {
   const source = String(value || '');
   let result = '';
   let inTag = false;
   let quote = null;
   let tagStart = -1;
+  let svgDepth = 0;
 
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];
     if (!inTag) {
+      if ((preserveCdata || svgDepth > 0) && source.startsWith('<![CDATA[', index)) {
+        const cdataEnd = source.indexOf(']]>', index + 9);
+        if (cdataEnd === -1) {
+          result += source.slice(index);
+          break;
+        }
+        result += source.slice(index + 9, cdataEnd);
+        index = cdataEnd + 2;
+        continue;
+      }
       if (source.startsWith('<!--', index)) {
         const commentEnd = source.indexOf('-->', index + 4);
         if (commentEnd === -1) {
@@ -193,6 +251,14 @@ function stripHtmlTags(value, separator = '') {
     } else if (character === '>') {
       inTag = false;
       const tag = source.slice(tagStart, index + 1);
+      const parsedTag = tag.match(/^<\s*(\/?)\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
+      if (parsedTag?.[2].toLowerCase() === 'svg') {
+        if (parsedTag[1]) {
+          svgDepth = Math.max(0, svgDepth - 1);
+        } else if (!/\/\s*>$/u.test(tag)) {
+          svgDepth += 1;
+        }
+      }
       result += typeof separator === 'function' ? separator(tag) : separator;
       const imageAlt = tag.match(
         /^<\s*img(?=[\s/>])[^>]*?\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu
@@ -217,6 +283,10 @@ function hasHiddenHtmlAttribute(tag, openingTag) {
   return /(?:^|\s)hidden(?:\s*=\s*[^\s/>]+)?(?=[\s/>])/iu.test(attributeText);
 }
 
+function isSelfClosingElement(tag, tagName, xmlMode) {
+  return HTML_VOID_ELEMENTS.has(tagName.toLowerCase()) || (xmlMode && /\/\s*>$/u.test(tag));
+}
+
 function findHtmlTagEnd(source, startIndex) {
   let quote = null;
   for (let index = startIndex + 1; index < source.length; index += 1) {
@@ -232,7 +302,7 @@ function findHtmlTagEnd(source, startIndex) {
   return null;
 }
 
-function findMatchingHtmlClosingTag(source, startIndex, tagName) {
+function findMatchingHtmlClosingTag(source, startIndex, tagName, xmlMode) {
   let depth = 1;
   for (let index = startIndex; index < source.length; index += 1) {
     if (source.startsWith('<!--', index)) {
@@ -250,7 +320,7 @@ function findMatchingHtmlClosingTag(source, startIndex, tagName) {
       if (matchedTag[1]) {
         depth -= 1;
         if (depth === 0) return endIndex + 1;
-      } else if (!/\/\s*>$/u.test(tag)) {
+      } else if (!isSelfClosingElement(tag, matchedTag[2], xmlMode)) {
         depth += 1;
       }
     }
@@ -261,7 +331,7 @@ function findMatchingHtmlClosingTag(source, startIndex, tagName) {
 
 function stripHtmlCodeElementContents(
   value,
-  { stripCode = true, stripNonRendered = false, rangeSeparator = ' ' } = {}
+  { stripCode = true, stripNonRendered = false, rangeSeparator = ' ', xmlMode = false } = {}
 ) {
   const source = String(value || '');
   const stack = [];
@@ -284,10 +354,15 @@ function stripHtmlCodeElementContents(
     const rawTextTag = tag.match(
       /^<\s*(script|style|template|textarea|title)(?=[\s/>])/iu
     );
-    if (rawTextTag && !/\/\s*>$/u.test(tag)) {
+    if (rawTextTag && !isSelfClosingElement(tag, rawTextTag[1], xmlMode)) {
       let closingEnd;
       if (rawTextTag[1].toLowerCase() === 'template') {
-        closingEnd = findMatchingHtmlClosingTag(source, endIndex + 1, rawTextTag[1]);
+        closingEnd = findMatchingHtmlClosingTag(
+          source,
+          endIndex + 1,
+          rawTextTag[1],
+          xmlMode
+        );
       } else {
         const closingPattern = new RegExp(`<\\/\\s*${rawTextTag[1]}\\s*>`, 'igu');
         closingPattern.lastIndex = endIndex + 1;
@@ -311,15 +386,17 @@ function stripHtmlCodeElementContents(
       openingTag &&
       hasHiddenHtmlAttribute(tag, openingTag)
     ) {
-      if (
-        HTML_VOID_ELEMENTS.has(openingTag[1].toLowerCase()) ||
-        /\/\s*>$/u.test(tag)
-      ) {
+      if (isSelfClosingElement(tag, openingTag[1], xmlMode)) {
         ranges.push([index, endIndex + 1]);
         index = endIndex;
         continue;
       }
-      const closingEnd = findMatchingHtmlClosingTag(source, endIndex + 1, openingTag[1]);
+      const closingEnd = findMatchingHtmlClosingTag(
+        source,
+        endIndex + 1,
+        openingTag[1],
+        xmlMode
+      );
       if (closingEnd === null) break;
       ranges.push([index, closingEnd]);
       index = closingEnd - 1;
@@ -336,7 +413,7 @@ function stripHtmlCodeElementContents(
           stack.pop();
           if (stack.length === 0) ranges.push([current.start, endIndex + 1]);
         }
-      } else if (!/\/\s*>$/u.test(tag)) {
+      } else if (!isSelfClosingElement(tag, codeTag[2], xmlMode)) {
         stack.push({ name: codeTag[2].toLowerCase(), start: index });
       }
     }
@@ -364,7 +441,125 @@ function stripHtmlCodeElementContents(
   return result;
 }
 
-function createArtifactComparables(value, allowFrontMatter) {
+function collectExactMarkdownTextFragments(value) {
+  const fragments = [];
+  const tokens = MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {});
+  const projectChildren = (children) =>
+    children
+      .map((child) => {
+        if (['text', 'code_inline', 'image'].includes(child.type)) return child.content;
+        if (child.type === 'softbreak' || child.type === 'hardbreak') return ' ';
+        return '';
+      })
+      .join('');
+  const addShortFragment = (candidate) => {
+    if (
+      normalizeComparableText(candidate) &&
+      !hasSufficientIndependentFragmentContext(candidate)
+    ) {
+      fragments.push(candidate);
+    }
+  };
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== 'inline' || !token.children) continue;
+    if (tokens[index - 1]?.type === 'heading_open') {
+      addShortFragment(projectChildren(token.children));
+    }
+
+    for (let childIndex = 0; childIndex < token.children.length; childIndex += 1) {
+      const child = token.children[childIndex];
+      if (child.type === 'code_inline' || child.type === 'image') {
+        addShortFragment(child.content);
+        continue;
+      }
+      const closingType = SHORT_MARKDOWN_WRAPPER_PAIRS.get(child.type);
+      if (!closingType) continue;
+      let depth = 1;
+      let closingIndex = childIndex + 1;
+      for (; closingIndex < token.children.length; closingIndex += 1) {
+        if (token.children[closingIndex].type === child.type) depth += 1;
+        if (token.children[closingIndex].type === closingType) depth -= 1;
+        if (depth === 0) break;
+      }
+      if (depth !== 0) continue;
+      addShortFragment(projectChildren(token.children.slice(childIndex + 1, closingIndex)));
+    }
+  }
+  return fragments;
+}
+
+function collectExactHtmlTextFragments(value, { preserveCdata, xmlMode }) {
+  const fragments = [];
+  for (const rangeSeparator of ['', ' ']) {
+    const source = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
+      stripHtmlCodeElementContents(value, {
+        stripCode: false,
+        stripNonRendered: true,
+        rangeSeparator,
+        xmlMode
+      })
+    );
+    const stack = [];
+    let svgDepth = 0;
+    for (let index = 0; index < source.length; index += 1) {
+      if (source.startsWith('<!--', index)) {
+        const commentEnd = source.indexOf('-->', index + 4);
+        if (commentEnd === -1) break;
+        index = commentEnd + 2;
+        continue;
+      }
+      if (source[index] !== '<') continue;
+      const endIndex = findHtmlTagEnd(source, index);
+      if (endIndex === null) break;
+      const tag = source.slice(index, endIndex + 1);
+      const parsedTag = tag.match(/^<\s*(\/?)\s*([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/u);
+      if (!parsedTag) {
+        index = endIndex;
+        continue;
+      }
+      const tagName = parsedTag[2].toLowerCase();
+      if (!parsedTag[1] && tagName === 'img') {
+        const projected = stripHtmlTags(tag);
+        if (normalizeComparableText(projected)) fragments.push(projected);
+      } else if (HTML_EXACT_FRAGMENT_ELEMENTS.has(tagName)) {
+        if (parsedTag[1]) {
+          const openingIndex = stack.findLastIndex((entry) => entry.name === tagName);
+          if (openingIndex !== -1) {
+            const opening = stack[openingIndex];
+            stack.length = openingIndex;
+            const body = source.slice(opening.bodyStart, index);
+            for (const separator of ['', ' ', htmlBlockBoundary]) {
+              const projected = stripHtmlTags(body, separator, {
+                preserveCdata: opening.preserveCdata
+              });
+              if (normalizeComparableText(projected)) fragments.push(projected);
+            }
+          }
+        } else if (!isSelfClosingElement(tag, tagName, xmlMode)) {
+          stack.push({
+            name: tagName,
+            bodyStart: endIndex + 1,
+            preserveCdata: preserveCdata || svgDepth > 0
+          });
+        }
+      }
+      if (tagName === 'svg') {
+        if (parsedTag[1]) {
+          svgDepth = Math.max(0, svgDepth - 1);
+        } else if (!/\/\s*>$/u.test(tag)) {
+          svgDepth += 1;
+        }
+      }
+      index = endIndex;
+    }
+  }
+  return fragments;
+}
+
+function createArtifactComparables(value, allowFrontMatter, xmlMode) {
+  const preserveCdata = xmlMode;
   const completeBody = normalizeArtifactBody(value, false);
   const candidateBodies = allowFrontMatter
     ? [normalizeArtifactBody(value, true), completeBody]
@@ -375,22 +570,27 @@ function createArtifactComparables(value, allowFrontMatter) {
       stripHtmlCodeElementContents(decodedBody, {
         stripCode: false,
         stripNonRendered: true,
-        rangeSeparator
+        rangeSeparator,
+        xmlMode
       })
     );
     return [
       candidateBody,
       decodedBody,
       ...readerVisibleBodies.flatMap((readerVisibleBody) => [
-        stripHtmlTags(readerVisibleBody),
-        stripHtmlTags(readerVisibleBody, ' '),
-        stripHtmlTags(readerVisibleBody, htmlBlockBoundary)
+        stripHtmlTags(readerVisibleBody, '', { preserveCdata }),
+        stripHtmlTags(readerVisibleBody, ' ', { preserveCdata }),
+        stripHtmlTags(readerVisibleBody, htmlBlockBoundary, { preserveCdata })
       ])
     ];
   });
   if (allowFrontMatter) {
     artifactComparables.push(...collectMarkdownTextFragments(candidateBodies[0]));
+    artifactComparables.push(...collectExactMarkdownTextFragments(candidateBodies[0]));
   }
+  artifactComparables.push(
+    ...collectExactHtmlTextFragments(completeBody, { preserveCdata, xmlMode })
+  );
   return artifactComparables
     .map((candidate) => normalizeComparableText(candidate))
     .filter(Boolean);
@@ -576,15 +776,18 @@ function collectCanonicalMathFragments(value) {
 function createProtectedFragments(value, source, visibility) {
   const normalizedValue = String(value || '').replace(/\r\n?/g, '\n');
   const fragments = new Map();
-  const addFragment = (candidate) => {
+  const addFragment = (candidate, matchMode = 'substring') => {
     const comparableText = normalizeComparableText(candidate);
     if (!comparableText || /^:::(?:paid|internal)?$/u.test(comparableText)) return;
     const fragmentDigest = digest(comparableText);
+    const existing = fragments.get(fragmentDigest);
+    if (existing && (existing.matchMode === 'substring' || matchMode === 'exact')) return;
     fragments.set(fragmentDigest, {
       source,
       visibility,
       digest: fragmentDigest,
-      comparableText
+      comparableText,
+      matchMode
     });
   };
 
@@ -604,6 +807,9 @@ function createProtectedFragments(value, source, visibility) {
 
   for (const fragment of collectMarkdownTextFragments(normalizedValue)) {
     addFragment(fragment);
+  }
+  for (const fragment of collectExactMarkdownTextFragments(normalizedValue)) {
+    addFragment(fragment, 'exact');
   }
   for (const fragment of collectCanonicalMathFragments(normalizedValue)) {
     addFragment(fragment);
@@ -862,17 +1068,20 @@ async function inspectArtifactPath(artifactPath) {
   }
 
   await visit(requestedPath);
+  if (files.length === 0) {
+    throw new VisibilityValidationError(
+      `Artifact directory does not contain supported text files: ${requestedPath}`
+    );
+  }
   return files;
 }
 
 function findRawProtectedDelimiter(content, allowFrontMatter, allowMarkdownFences) {
   const lines = normalizeArtifactBody(content, false).split('\n');
   let fence = null;
-  const frontMatterClosingIndex = allowFrontMatter
-    ? findFrontMatterClosingIndex(lines)
-    : null;
+  const frontMatterClosingIndex = allowFrontMatter ? findFrontMatterClosingIndex(lines) : null;
   const contentStartIndex =
-    frontMatterClosingIndex !== null && frontMatterClosingIndex >= 0
+    hasValidFrontMatter(lines, frontMatterClosingIndex)
       ? frontMatterClosingIndex + 1
       : 0;
 
@@ -909,22 +1118,24 @@ async function scanArtifact(artifactPath, protectedFragments) {
     const fileExtension = path.extname(file.reportPath).toLowerCase();
     const allowFrontMatter = fileExtension === '.md';
     const allowMarkdownFences = fileExtension === '.md';
+    const xmlMode = ['.svg', '.xhtml', '.xml'].includes(fileExtension);
     const rawMarkerContent = HTML_MARKUP_EXTENSIONS.has(fileExtension)
-      ? stripHtmlCodeElementContents(content)
+      ? stripHtmlCodeElementContents(content, { xmlMode })
       : content;
-    const artifactComparables = createArtifactComparables(content, allowFrontMatter);
+    const artifactComparables = createArtifactComparables(content, allowFrontMatter, xmlMode);
     const normalizedArtifactBody = normalizeArtifactBody(content, allowFrontMatter);
     const readerVisibleCandidates = ['', ' '].flatMap((rangeSeparator) => {
       const readerVisibleBase = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
         stripHtmlCodeElementContents(normalizedArtifactBody, {
           stripNonRendered: true,
-          rangeSeparator
+          rangeSeparator,
+          xmlMode
         })
       );
       return [
-        stripHtmlTags(readerVisibleBase),
-        stripHtmlTags(readerVisibleBase, '\n'),
-        stripHtmlTags(readerVisibleBase, htmlBlockBoundary)
+        stripHtmlTags(readerVisibleBase, '', { preserveCdata: xmlMode }),
+        stripHtmlTags(readerVisibleBase, '\n', { preserveCdata: xmlMode }),
+        stripHtmlTags(readerVisibleBase, htmlBlockBoundary, { preserveCdata: xmlMode })
       ];
     });
     const renderedDelimiterLine =
@@ -953,7 +1164,11 @@ async function scanArtifact(artifactPath, protectedFragments) {
     for (const fragment of protectedFragments) {
       if (
         !fragment.comparableText ||
-        !artifactComparables.some((candidate) => candidate.includes(fragment.comparableText))
+        !artifactComparables.some((candidate) =>
+          fragment.matchMode === 'exact'
+            ? candidate === fragment.comparableText
+            : candidate.includes(fragment.comparableText)
+        )
       ) {
         continue;
       }
@@ -1099,14 +1314,15 @@ export async function checkBookVisibility(bookDirectory, editionId, options = {}
 
   let artifact = null;
   if (options.artifactPath) {
-    const uniqueFragments = [
-      ...new Map(
-        protectedFragments.map((fragment) => [
-          `${fragment.source}\u0000${fragment.visibility}\u0000${fragment.digest}`,
-          fragment
-        ])
-      ).values()
-    ];
+    const uniqueFragmentMap = new Map();
+    for (const fragment of protectedFragments) {
+      const key = `${fragment.source}\u0000${fragment.visibility}\u0000${fragment.digest}`;
+      const existing = uniqueFragmentMap.get(key);
+      if (!existing || (existing.matchMode === 'exact' && fragment.matchMode === 'substring')) {
+        uniqueFragmentMap.set(key, fragment);
+      }
+    }
+    const uniqueFragments = [...uniqueFragmentMap.values()];
     artifact = await scanArtifact(options.artifactPath, uniqueFragments);
     findings.push(...artifact.findings);
   }

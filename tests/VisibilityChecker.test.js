@@ -216,6 +216,22 @@ describe('VisibilityChecker', () => {
     });
     assert.strictEqual(frontMatterArtifactReport.summary.safe, true);
 
+    const malformedFrontMatterArtifact = await createArtifact(
+      '---\ntitle: [\n:::paid\n---\n\n# 公開版\n',
+      'malformed-front-matter.md'
+    );
+    const malformedFrontMatterArtifactReport = await checkBookVisibility(
+      SAMPLE_BOOK,
+      'free',
+      { artifactPath: malformedFrontMatterArtifact }
+    );
+    assert.strictEqual(malformedFrontMatterArtifactReport.summary.safe, false);
+    assert.ok(
+      malformedFrontMatterArtifactReport.findings.some(
+        (finding) => finding.code === 'raw_protected_marker_in_artifact'
+      )
+    );
+
     const frontMatterLeakArtifact = await createArtifact(
       `---\ntitle: "${PAID_BLOCK_TEXT}"\n---\n\n# 公開版\n`,
       'front-matter-leak.md'
@@ -571,6 +587,34 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const svgCdataLeak = await createArtifact(
+      '<svg xmlns="http://www.w3.org/2000/svg"><text>Premium<![CDATA[ only]]> details</text></svg>\n',
+      'rendered-inline.svg'
+    );
+    const svgCdataReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: svgCdataLeak
+    });
+    assert.strictEqual(svgCdataReport.summary.safe, false);
+    assert.ok(
+      svgCdataReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
+    const inlineSvgCdataLeak = await createArtifact(
+      '<html><body><svg><text>Premium<![CDATA[ only]]> details</text></svg></body></html>\n',
+      'rendered-inline-svg.html'
+    );
+    const inlineSvgCdataReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: inlineSvgCdataLeak
+    });
+    assert.strictEqual(inlineSvgCdataReport.summary.safe, false);
+    assert.ok(
+      inlineSvgCdataReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
     const nonRenderedInterruptionLeak = await createArtifact(
       '<p>Premium<script>0</script> only details</p>\n',
       'non-rendered-interruption.html'
@@ -670,6 +714,41 @@ describe('VisibilityChecker', () => {
     );
     assert.strictEqual(hiddenSelfClosingVoidReport.summary.safe, false);
 
+    const htmlSelfClosingHiddenLeak = await createArtifact(
+      '<p>Premium<span hidden />noise</span> only details</p>\n',
+      'hidden-self-closing-non-void.html'
+    );
+    const htmlSelfClosingHiddenReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: htmlSelfClosingHiddenLeak }
+    );
+    assert.strictEqual(htmlSelfClosingHiddenReport.summary.safe, false);
+
+    const xmlSelfClosingHiddenArtifact = await createArtifact(
+      '<p>Premium<span hidden />noise only details</p>\n',
+      'hidden-self-closing-non-void.xhtml'
+    );
+    const xmlSelfClosingHiddenReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: xmlSelfClosingHiddenArtifact }
+    );
+    assert.strictEqual(xmlSelfClosingHiddenReport.summary.safe, true);
+
+    for (const rawTextElement of ['script', 'style', 'template']) {
+      const htmlSelfClosingRawTextLeak = await createArtifact(
+        `<p>Premium<${rawTextElement}/>noise</${rawTextElement}> only details</p>\n`,
+        `self-closing-${rawTextElement}.html`
+      );
+      const htmlSelfClosingRawTextReport = await checkBookVisibility(
+        renderedMarkdownBook,
+        'free',
+        { artifactPath: htmlSelfClosingRawTextLeak }
+      );
+      assert.strictEqual(htmlSelfClosingRawTextReport.summary.safe, false, rawTextElement);
+    }
+
     const blockBoundaryBook = await copySampleBook();
     await fs.writeFile(
       path.join(blockBoundaryBook, 'manuscript/01-introduction.md'),
@@ -688,6 +767,77 @@ describe('VisibilityChecker', () => {
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );
+
+    const dialogBoundaryLeak = await createArtifact(
+      '<dialog open>Premium <strong>only</strong>.</dialog><dialog open>Details</dialog>\n',
+      'dialog-boundary.html'
+    );
+    const dialogBoundaryReport = await checkBookVisibility(blockBoundaryBook, 'free', {
+      artifactPath: dialogBoundaryLeak
+    });
+    assert.strictEqual(dialogBoundaryReport.summary.safe, false);
+    assert.ok(
+      dialogBoundaryReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
+    const shortWrapperBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(shortWrapperBook, 'backmatter/afterword.md'),
+      '# 有償版\n\n## PAID\n\n**秘密**\n\n[秘密](#)\n\n[GO](https://docs.example/paid)\n\n![MAP](map.png)\n'
+    );
+    const shortWrapperArtifacts = [
+      ['<h2>PAID</h2>\n', 'short-heading.html'],
+      ['<p><strong>秘密</strong></p>\n', 'short-emphasis.html'],
+      ['<p><a href="https://docs.example/paid">GO</a></p>\n', 'short-link.html'],
+      ['<p><img alt="MAP" src="map.png"></p>\n', 'short-image.html'],
+      ['## PAID\n', 'short-heading.md'],
+      ['public __秘密__ text\n', 'short-emphasis-with-context.md'],
+      [
+        '<p>public <strong>秘<script>0</script>密</strong> text</p>\n',
+        'short-emphasis-with-script.html'
+      ],
+      [
+        '<p>public <strong>秘<span hidden>noise</span>密</strong> text</p>\n',
+        'short-emphasis-with-hidden.html'
+      ],
+      [
+        '<p>public <strong data-note=">">秘密</strong> text</p>\n',
+        'short-emphasis-with-quoted-angle.html'
+      ],
+      [
+        '<p>public <svg><text><a href="#">秘<![CDATA[密]]></a></text></svg> text</p>\n',
+        'short-link-with-inline-svg-cdata.html'
+      ]
+    ];
+    for (const [content, filename] of shortWrapperArtifacts) {
+      const artifactPath = await createArtifact(content, filename);
+      const report = await checkBookVisibility(shortWrapperBook, 'free', { artifactPath });
+      assert.strictEqual(report.summary.safe, false, filename);
+    }
+    const unrelatedShortWrapperArtifact = await createArtifact(
+      '<p>UNPAID public text</p>\n',
+      'unrelated-short-wrapper.html'
+    );
+    const unrelatedShortWrapperReport = await checkBookVisibility(shortWrapperBook, 'free', {
+      artifactPath: unrelatedShortWrapperArtifact
+    });
+    assert.strictEqual(unrelatedShortWrapperReport.summary.safe, true);
+
+    const duplicateFragmentBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(duplicateFragmentBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\n秘密\n:::\n\n:::paid\n**秘密**\n:::\n'
+    );
+    const duplicateFragmentArtifact = await createArtifact(
+      '<p>public 秘密 text</p>\n',
+      'duplicate-fragment-modes.html'
+    );
+    const duplicateFragmentReport = await checkBookVisibility(duplicateFragmentBook, 'free', {
+      artifactPath: duplicateFragmentArtifact
+    });
+    assert.strictEqual(duplicateFragmentReport.summary.safe, false);
 
     const mathWrappedMarkdownLeak = await createArtifact(
       '# 公開版\n\nPremium $only$ details\n',
@@ -816,6 +966,18 @@ describe('VisibilityChecker', () => {
     await assert.rejects(
       checkBookVisibility(SAMPLE_BOOK, 'free', { artifactPath: binaryArtifact }),
       /extension is not supported for text scanning/
+    );
+  });
+
+  test('検査対象text fileがないartifact directoryをfail-closedで拒否する', async () => {
+    const binaryOnlyDirectory = await fs.mkdtemp(
+      path.join(REPOSITORY_ROOT, 'tests/tmp-visibility-binary-only-')
+    );
+    temporaryDirectories.push(binaryOnlyDirectory);
+    await fs.writeFile(path.join(binaryOnlyDirectory, 'edition.pdf'), '%PDF-1.7\n');
+    await assert.rejects(
+      checkBookVisibility(SAMPLE_BOOK, 'free', { artifactPath: binaryOnlyDirectory }),
+      /does not contain supported text files/
     );
   });
 

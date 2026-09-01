@@ -123,7 +123,7 @@ artifact checkは次を拒否する。
 - HTML imageのreader-visibleな`alt` text fragment
 - 指定artifact path自体、その親path component、artifact tree内のsymbolic link
 
-directory指定時は既知のtext artifact extensionだけを検査する。PDF、EPUB、
+directory指定時は既知のtext artifact extensionだけを検査し、検査対象が0件なら失敗する。PDF、EPUB、
 画像などのbinary内容と、adapterが大きく書き換えた本文はtarget-specific checkerで
 検査する。binary/未知extensionのfileを`--artifact`へ直接指定した場合は、検査済みと
 誤認しないようusage errorとして拒否する。
@@ -168,7 +168,8 @@ version 1は完全な情報漏えい対策ではない。
 
 - markerのない本文が意味的に有償・内部情報かは判定しない
 - paraphrase、翻訳、HTML構造化など大きく変換された本文の同一性は判定しない
-- fenced code本文、list item、footnote隣接text、standalone mathから独立抽出するfragmentが空白を除いて8 code point未満の場合、通常語中の1文字まで拾う誤検知を避けるため独立substringとして照合しない。周辺本文を含む投影と、adapterのvisibility plan/target固有検査で補完する
+- fenced code本文、list item、footnote隣接text、standalone mathから独立抽出するfragmentが空白を除いて8 code point未満の場合、通常語中の1文字まで拾う誤検知を避けるため独立substringとして照合しない。短い見出しと有限inline wrapperはreader-visible nodeとの完全一致だけを検査し、それ以外は周辺本文を含む投影とadapterのvisibility plan/target固有検査で補完する
+- inline styleや外部CSSだけで非表示になるtext、scriptによるDOM再構築は共通checkerで判定せず、target-specific checkerで検査する
 - binary artifact内部は共通checkerで判定しない
 - DRM、repository access、販売platform accessを設定しない
 - `structure`にないfileをadapterが独自に取り込む動作を許可しないが、adapter実装前には検証できない
