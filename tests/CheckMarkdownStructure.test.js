@@ -260,7 +260,10 @@ test('check-markdown-structure: indented callout delimiters should fail', async 
 
     assert.equal(result.status, 1, `expected exit code 1, got ${result.status}\n${result.stderr}`);
     assert.ok(report, 'report should be generated');
-    assert.equal(report.issues.filter((i) => i.kind === 'indented_callout_delimiter').length, 2);
+    assert.deepEqual(
+      report.issues.map((i) => i.kind),
+      ['indented_callout_delimiter', 'indented_callout_delimiter']
+    );
   });
 });
 
@@ -335,8 +338,10 @@ test('check-markdown-structure: invalid backtick info strings should not hide ca
 
     assert.equal(result.status, 1, `expected exit code 1, got ${result.status}\n${result.stderr}`);
     assert.ok(report, 'report should be generated');
-    assert.ok(report.issues.some((i) => i.kind === 'invalid_code_fence'));
-    assert.ok(report.issues.some((i) => i.kind === 'unknown_callout_type'));
+    assert.deepEqual(
+      report.issues.map((i) => i.kind),
+      ['invalid_code_fence', 'unknown_callout_type']
+    );
   });
 });
 

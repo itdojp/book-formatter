@@ -224,6 +224,7 @@ class MarkdownStructureRunner {
 
     let inFence = false;
     let fence = null;
+    let invalidFence = null;
     let fenceStartLine = null;
     let previousHeadingLevel = null;
     let h1Count = 0;
@@ -234,6 +235,11 @@ class MarkdownStructureRunner {
       const lineNumber = i + 1;
 
       if (!inFence) {
+        if (invalidFence && isFenceClose(lineText, invalidFence)) {
+          invalidFence = null;
+          continue;
+        }
+
         const open = detectFenceOpen(lineText);
         if (open) {
           if (open.invalidInfoString) {
@@ -245,6 +251,7 @@ class MarkdownStructureRunner {
               severity: 'error',
               message: 'Backtick code fence info strings cannot contain a backtick.'
             });
+            invalidFence = open;
             continue;
           }
 
@@ -276,6 +283,7 @@ class MarkdownStructureRunner {
               severity: 'error',
               message: 'Standard callout delimiters must start at the beginning of the line.'
             });
+            continue;
           }
 
           if (calloutDelimiter.kind === 'invalid') {
