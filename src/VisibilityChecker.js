@@ -85,6 +85,47 @@ function stripValidFrontMatter(value) {
     : normalizedValue;
 }
 
+function stripHtmlTags(value) {
+  const source = String(value || '');
+  let result = '';
+  let inTag = false;
+  let quote = null;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (!inTag) {
+      if (character === '<' && /[A-Za-z!/?]/u.test(source[index + 1] || '')) {
+        inTag = true;
+        result += ' ';
+      } else {
+        result += character;
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === '\'') {
+      quote = character;
+    } else if (character === '>') {
+      inTag = false;
+      result += ' ';
+    }
+  }
+
+  return result;
+}
+
+function createArtifactComparables(value) {
+  const readerBody = stripValidFrontMatter(value);
+  const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(readerBody);
+  return [readerBody, decodedBody, stripHtmlTags(decodedBody)]
+    .map((candidate) => normalizeComparableText(candidate))
+    .filter(Boolean);
+}
+
 function collectMarkdownTextFragments(value) {
   const fragments = [];
   for (const token of MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {})) {
@@ -405,7 +446,7 @@ async function scanArtifact(artifactPath, protectedFragments) {
 
   for (const file of files) {
     const content = await fs.readFile(file.absolutePath, 'utf8');
-    const comparableArtifact = normalizeComparableText(stripValidFrontMatter(content));
+    const artifactComparables = createArtifactComparables(content);
     const delimiterLine = findRawProtectedDelimiter(content);
     if (delimiterLine !== null) {
       findings.push({
@@ -418,7 +459,12 @@ async function scanArtifact(artifactPath, protectedFragments) {
     }
 
     for (const fragment of protectedFragments) {
-      if (!fragment.comparableText || !comparableArtifact.includes(fragment.comparableText)) continue;
+      if (
+        !fragment.comparableText ||
+        !artifactComparables.some((candidate) => candidate.includes(fragment.comparableText))
+      ) {
+        continue;
+      }
       findings.push({
         code: 'protected_content_in_artifact',
         severity: 'error',

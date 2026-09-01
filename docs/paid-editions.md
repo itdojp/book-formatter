@@ -119,7 +119,7 @@ artifact checkは次を拒否する。
 
 - fenced code block外に残ったraw `:::paid` / `:::internal` marker
 - editionで除外したsource regionと、Unicode NFC・改行・空白正規化後も同一なtext fragment
-- standard callout、fenced code、list、inline Markdownの有限wrapperを除いたreader-visible text fragment
+- standard callout、fenced code、list、inline Markdown、HTML tag/entityの有限wrapperを除いたreader-visible text fragment
 - 指定artifact path自体、その親path component、artifact tree内のsymbolic link
 
 directory指定時は既知のtext artifact extensionだけを検査する。PDF、EPUB、

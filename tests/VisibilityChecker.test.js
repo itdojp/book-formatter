@@ -354,6 +354,25 @@ describe('VisibilityChecker', () => {
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );
+
+    const renderedInlineBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(renderedInlineBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\nPremium **only** & details\n:::\n'
+    );
+    const renderedInlineLeak = await createArtifact(
+      '<p>Premium <strong>only</strong> &amp; details</p>\n',
+      'rendered-inline.html'
+    );
+    const renderedInlineReport = await checkBookVisibility(renderedInlineBook, 'free', {
+      artifactPath: renderedInlineLeak
+    });
+    assert.strictEqual(renderedInlineReport.summary.safe, false);
+    assert.ok(
+      renderedInlineReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
   });
 
   test('paidはpaid本文を許可してinternal本文を拒否し、internalは両方を許可する', async () => {
