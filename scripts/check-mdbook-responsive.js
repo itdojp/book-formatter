@@ -22,7 +22,8 @@ program
       });
       console.log(
         `✅ mdBook responsive check: static=success, ` +
-          `html=${report.htmlFiles}, local-links=${report.localLinks}, ` +
+          `html=${report.htmlFiles}, responsive-pages=${report.responsivePages}, ` +
+          `local-links=${report.localLinks}, ` +
           `viewports=${report.viewports}, browser-probes=${report.browserProbes}`
       );
     } catch (error) {

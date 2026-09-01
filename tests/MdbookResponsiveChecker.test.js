@@ -7,7 +7,8 @@ import fs from 'fs-extra';
 import {
   checkMdbookResponsive,
   MDBOOK_VIEWPORTS,
-  MdbookResponsiveError
+  MdbookResponsiveError,
+  removeChromeProfile
 } from '../src/MdbookResponsiveChecker.js';
 
 const ROOT = process.cwd();
@@ -73,8 +74,69 @@ describe('MdbookResponsiveChecker', () => {
     assert.strictEqual(report.static, true);
     assert.strictEqual(report.viewports, 6);
     assert.strictEqual(report.htmlFiles, 1);
+    assert.strictEqual(report.responsivePages, 1);
     assert.strictEqual(report.localLinks, 1);
+    assert.strictEqual(report.expectedBrowserProbes, 12);
     assert.strictEqual(report.browserProbes, 0);
+  });
+
+  test('全generated HTML pageを各viewportのopen/closed browser probeへ渡す', async () => {
+    const root = await fixture();
+    await fs.copyFile(
+      path.join(root, 'book/index.html'),
+      path.join(root, 'book/chapter.html')
+    );
+    await fs.writeFile(path.join(root, 'book/toc.html'), '<html><body>support page</body></html>\n');
+    let receivedPages = [];
+    const report = await checkMdbookResponsive(root, {
+      chrome: 'synthetic-chrome',
+      browserProbeRunner: async (_chrome, projectRoot, _buildRoot, htmlFiles) => {
+        receivedPages = htmlFiles.map((file) => path.relative(projectRoot, file));
+        return Array.from({ length: htmlFiles.length * MDBOOK_VIEWPORTS.length * 2 }, () => ({}));
+      }
+    });
+
+    assert.deepStrictEqual(receivedPages, ['book/chapter.html', 'book/index.html']);
+    assert.strictEqual(report.htmlFiles, 3);
+    assert.strictEqual(report.responsivePages, 2);
+    assert.strictEqual(report.expectedBrowserProbes, 24);
+    assert.strictEqual(report.browserProbes, 24);
+  });
+
+  test('一部pageだけをprobeしたbrowser runnerをfail-closedで拒否する', async () => {
+    const root = await fixture();
+    await fs.copyFile(
+      path.join(root, 'book/index.html'),
+      path.join(root, 'book/chapter.html')
+    );
+    await assert.rejects(
+      checkMdbookResponsive(root, {
+        chrome: 'synthetic-chrome',
+        browserProbeRunner: async () => Array.from({ length: 12 }, () => ({}))
+      }),
+      /Browser probe coverage mismatch: expected 24, observed 12/
+    );
+  });
+
+  test('Chrome profile cleanupは一時的なENOTEMPTYをbounded retryする', async () => {
+    let attempts = 0;
+    const waits = [];
+    await removeChromeProfile('/synthetic/chrome-profile', {
+      remove: async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          const error = new Error('profile is still being released');
+          error.code = 'ENOTEMPTY';
+          throw error;
+        }
+      },
+      wait: async (milliseconds) => waits.push(milliseconds),
+      maxAttempts: 3,
+      retryDelayMs: 25
+    });
+
+    assert.strictEqual(attempts, 3);
+    assert.deepStrictEqual(waits, [25, 50]);
   });
 
   test('mdBook DOMとadditional CSS契約のdriftを拒否する', async () => {

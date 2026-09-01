@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { pathToFileURL } from 'node:url';
 
 import fs from 'fs-extra';
 import { parse as parseHtml } from 'parse5';
@@ -23,6 +23,14 @@ const REQUIRED_PROJECT_FILES = Object.freeze([
   'src/book.yaml',
   'theme/css/itdo-mdbook.css',
   'book/index.html'
+]);
+
+const REQUIRED_RESPONSIVE_IDS = Object.freeze([
+  'mdbook-sidebar-toggle-anchor',
+  'mdbook-sidebar',
+  'mdbook-page-wrapper',
+  'mdbook-menu-bar',
+  'mdbook-content'
 ]);
 
 export class MdbookResponsiveError extends Error {
@@ -58,13 +66,7 @@ async function requireRegularFile(projectRoot, relativePath) {
 
 function inspectBuiltHtml(source) {
   const document = parseHtml(source);
-  const requiredIds = new Set([
-    'mdbook-sidebar-toggle-anchor',
-    'mdbook-sidebar',
-    'mdbook-page-wrapper',
-    'mdbook-menu-bar',
-    'mdbook-content'
-  ]);
+  const requiredIds = new Set(REQUIRED_RESPONSIVE_IDS);
   let hasViewport = false;
   let hasAdditionalCss = false;
 
@@ -133,10 +135,19 @@ function decodeUrlPart(value, sourcePath) {
 
 async function inspectBuiltLinks(buildRoot) {
   const files = await collectBuiltFiles(buildRoot);
-  const htmlFiles = files.filter((file) => path.extname(file).toLowerCase() === '.html');
+  const htmlFiles = files
+    .filter((file) => path.extname(file).toLowerCase() === '.html')
+    .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
   const contractByPath = new Map();
   for (const file of htmlFiles) {
     contractByPath.set(file, parseHtmlContract(await fs.readFile(file, 'utf8')));
+  }
+  const responsiveHtmlFiles = htmlFiles.filter((file) => {
+    const ids = contractByPath.get(file).ids;
+    return REQUIRED_RESPONSIVE_IDS.every((id) => ids.has(id));
+  });
+  if (responsiveHtmlFiles.length === 0) {
+    throw new MdbookResponsiveError('Built mdBook does not contain a responsive content page.');
   }
 
   let localLinks = 0;
@@ -196,7 +207,7 @@ async function inspectBuiltLinks(buildRoot) {
       }
     }
   }
-  return { htmlFiles: htmlFiles.length, localLinks };
+  return { htmlFiles, responsiveHtmlFiles, localLinks };
 }
 
 function inspectProjectContract(bookToml, css, manifest) {
@@ -345,20 +356,62 @@ async function launchChrome(chrome, projectRoot) {
     const client = await CdpClient.connect(endpoint);
     return { child, client, profileDirectory };
   } catch (error) {
-    child.kill('SIGKILL');
-    await fs.remove(profileDirectory);
+    await stopChromeProcess(child);
+    await removeChromeProfile(profileDirectory);
     throw error;
+  }
+}
+
+function waitForChildClose(child, timeoutMs) {
+  if (child.exitCode !== null && child.stderr?.readableEnded) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let timer;
+    const onClose = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    timer = setTimeout(() => {
+      child.off('close', onClose);
+      resolve(false);
+    }, timeoutMs);
+    child.once('close', onClose);
+  });
+}
+
+async function stopChromeProcess(child) {
+  if (child.exitCode === null) child.kill('SIGTERM');
+  if (await waitForChildClose(child, 2000)) return;
+  if (child.exitCode === null) child.kill('SIGKILL');
+  if (!(await waitForChildClose(child, 2000))) {
+    throw new MdbookResponsiveError('Chrome did not close after SIGTERM and SIGKILL.');
+  }
+}
+
+const RETRYABLE_PROFILE_REMOVAL_ERRORS = new Set(['EBUSY', 'EMFILE', 'ENFILE', 'ENOTEMPTY', 'EPERM']);
+
+export async function removeChromeProfile(profileDirectory, options = {}) {
+  const remove = options.remove || ((candidate) => fs.remove(candidate));
+  const wait = options.wait || delay;
+  const maxAttempts = options.maxAttempts || 8;
+  const retryDelayMs = options.retryDelayMs || 100;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await remove(profileDirectory);
+      return;
+    } catch (error) {
+      if (!RETRYABLE_PROFILE_REMOVAL_ERRORS.has(error.code) || attempt === maxAttempts) {
+        throw error;
+      }
+      await wait(retryDelayMs * attempt);
+    }
   }
 }
 
 async function closeChrome(browser) {
   browser.client.close();
-  if (browser.child.exitCode === null) browser.child.kill('SIGTERM');
-  for (let attempt = 0; attempt < 20 && browser.child.exitCode === null; attempt += 1) {
-    await delay(50);
-  }
-  if (browser.child.exitCode === null) browser.child.kill('SIGKILL');
-  await fs.remove(browser.profileDirectory);
+  await stopChromeProcess(browser.child);
+  await removeChromeProfile(browser.profileDirectory);
 }
 
 function probeExpression(state) {
@@ -392,7 +445,12 @@ function probeExpression(state) {
       sidebar: { left: sidebarRect.left, right: sidebarRect.right, width: sidebarRect.width },
       sidebarDisplay: sidebarStyle.display,
       sidebarCssWidth: sidebarStyle.width,
+      sidebarPosition: sidebarStyle.position,
+      sidebarTransform: sidebarStyle.transform,
       sidebarClass: sidebar.className,
+      toggleChecked: toggle.checked,
+      htmlClass: document.documentElement.className,
+      styleSheets: Array.from(document.styleSheets, (sheet) => sheet.href || 'inline'),
       printMedia: matchMedia('print').matches,
       sidebarVariable: getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'),
       wrapper: { left: wrapperRect.left, right: wrapperRect.right, width: wrapperRect.width },
@@ -404,21 +462,21 @@ function probeExpression(state) {
   })()`;
 }
 
-function validateProbe(probe, viewport, state) {
+function validateProbe(probe, viewport, state, page) {
   if (probe.viewportWidth !== viewport.width || probe.viewportHeight !== viewport.height) {
     throw new MdbookResponsiveError(
-      `Chrome viewport mismatch: requested ${viewport.width}x${viewport.height}, ` +
+      `Chrome viewport mismatch in ${page}: requested ${viewport.width}x${viewport.height}, ` +
         `observed ${probe.viewportWidth}x${probe.viewportHeight}`
     );
   }
   if (probe.content.width <= 0 || probe.wrapper.width <= 0) {
     throw new MdbookResponsiveError(
-      `Content has no usable width at ${viewport.width}x${viewport.height}/${state}`
+      `Content has no usable width in ${page} at ${viewport.width}x${viewport.height}/${state}`
     );
   }
   if (state === 'open' && !probe.sidebarVisible) {
     throw new MdbookResponsiveError(
-      `Sidebar did not become visible at ${viewport.width}x${viewport.height} ` +
+      `Sidebar did not become visible in ${page} at ${viewport.width}x${viewport.height} ` +
         `(left=${probe.sidebar.left}, right=${probe.sidebar.right}, width=${probe.sidebar.width}, ` +
         `display=${probe.sidebarDisplay}, css-width=${probe.sidebarCssWidth}, ` +
         `class=${probe.sidebarClass}, print=${probe.printMedia}, ` +
@@ -427,19 +485,125 @@ function validateProbe(probe, viewport, state) {
   }
   if (probe.overlap) {
     throw new MdbookResponsiveError(
-      `Sidebar overlaps content at ${viewport.width}x${viewport.height}/${state}`
+      `Sidebar overlaps content in ${page} at ${viewport.width}x${viewport.height}/${state} ` +
+        `(sidebar=${probe.sidebar.left}..${probe.sidebar.right}, ` +
+        `content=${probe.content.left}..${probe.content.right}, display=${probe.sidebarDisplay}, ` +
+        `width=${probe.sidebarCssWidth}, position=${probe.sidebarPosition}, ` +
+        `transform=${probe.sidebarTransform}, ` +
+        `toggle=${probe.toggleChecked}, stylesheets=${probe.styleSheets.length})`
     );
   }
   if (state === 'closed' && probe.bodyOverflow) {
     throw new MdbookResponsiveError(
-      `Closed layout overflows the viewport at ${viewport.width}x${viewport.height}`
+      `Closed layout overflows the viewport in ${page} at ${viewport.width}x${viewport.height}`
     );
   }
 }
 
-async function runBrowserProbes(chrome, projectRoot, indexPath) {
-  const browser = await launchChrome(chrome, projectRoot);
+async function waitForPageReady(client, sessionId, pageUrl) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const response = await client.send('Runtime.evaluate', {
+      expression: '({ readyState: document.readyState, href: window.location.href })',
+      returnByValue: true
+    }, sessionId);
+    const page = response.result?.value;
+    if (page?.readyState === 'complete' && page.href === pageUrl) return;
+    if (attempt === 99) {
+      throw new MdbookResponsiveError(`Built mdBook page did not finish loading: ${pageUrl}`);
+    }
+    await delay(100);
+  }
+}
+
+const STATIC_CONTENT_TYPES = Object.freeze({
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2'
+});
+
+async function startStaticServer(buildRoot) {
+  const server = createServer((request, response) => {
+    void (async () => {
+      if (!['GET', 'HEAD'].includes(request.method)) {
+        response.writeHead(405, { Allow: 'GET, HEAD' });
+        response.end();
+        return;
+      }
+      let pathname;
+      try {
+        pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
+      } catch {
+        response.writeHead(400);
+        response.end();
+        return;
+      }
+      const relativeRequest = pathname.replace(/^\/+/, '') || 'index.html';
+      let candidate = path.resolve(buildRoot, relativeRequest);
+      const relative = path.relative(buildRoot, candidate);
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+      let stat;
+      try {
+        stat = await fs.lstat(candidate);
+        if (stat.isDirectory()) {
+          candidate = path.join(candidate, 'index.html');
+          stat = await fs.lstat(candidate);
+        }
+      } catch {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+      const contentType = STATIC_CONTENT_TYPES[path.extname(candidate).toLowerCase()] ||
+        'application/octet-stream';
+      response.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
+      if (request.method === 'HEAD') {
+        response.end();
+      } else {
+        response.end(await fs.readFile(candidate));
+      }
+    })().catch(() => {
+      if (!response.headersSent) response.writeHead(500);
+      response.end();
+    });
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    })
+  };
+}
+
+function pageUrl(origin, buildRoot, htmlFile) {
+  const relative = path.relative(buildRoot, htmlFile);
+  const encoded = relative.split(path.sep).map(encodeURIComponent).join('/');
+  return `${origin}/${encoded}`;
+}
+
+async function runBrowserProbes(chrome, projectRoot, buildRoot, htmlFiles) {
+  const staticServer = await startStaticServer(buildRoot);
+  let browser;
   try {
+    browser = await launchChrome(chrome, projectRoot);
     const { targetId } = await browser.client.send('Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await browser.client.send('Target.attachToTarget', {
       targetId,
@@ -448,45 +612,45 @@ async function runBrowserProbes(chrome, projectRoot, indexPath) {
     await browser.client.send('Page.enable', {}, sessionId);
     await browser.client.send('Runtime.enable', {}, sessionId);
     await browser.client.send('Emulation.setEmulatedMedia', { media: 'screen' }, sessionId);
-    await browser.client.send('Page.navigate', { url: pathToFileURL(indexPath).href }, sessionId);
-
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      const response = await browser.client.send('Runtime.evaluate', {
-        expression: 'document.readyState',
-        returnByValue: true
-      }, sessionId);
-      if (response.result?.value === 'complete') break;
-      if (attempt === 99) throw new MdbookResponsiveError('Built mdBook page did not finish loading.');
-      await delay(100);
-    }
 
     const probes = [];
-    for (const viewport of MDBOOK_VIEWPORTS) {
-      await browser.client.send('Emulation.setDeviceMetricsOverride', {
-        width: viewport.width,
-        height: viewport.height,
-        deviceScaleFactor: 1,
-        mobile: false
-      }, sessionId);
-      for (const state of ['closed', 'open']) {
-        const response = await browser.client.send('Runtime.evaluate', {
-          expression: probeExpression(state),
-          awaitPromise: true,
-          returnByValue: true
+    for (const htmlFile of htmlFiles) {
+      const url = pageUrl(staticServer.origin, buildRoot, htmlFile);
+      const page = path.relative(projectRoot, htmlFile);
+      await browser.client.send('Page.navigate', { url }, sessionId);
+      await waitForPageReady(browser.client, sessionId, url);
+
+      for (const viewport of MDBOOK_VIEWPORTS) {
+        await browser.client.send('Emulation.setDeviceMetricsOverride', {
+          width: viewport.width,
+          height: viewport.height,
+          deviceScaleFactor: 1,
+          mobile: false
         }, sessionId);
-        if (response.exceptionDetails || !response.result?.value) {
-          throw new MdbookResponsiveError(
-            `Chrome evaluation failed at ${viewport.width}x${viewport.height}/${state}`
-          );
+        for (const state of ['closed', 'open']) {
+          const response = await browser.client.send('Runtime.evaluate', {
+            expression: probeExpression(state),
+            awaitPromise: true,
+            returnByValue: true
+          }, sessionId);
+          if (response.exceptionDetails || !response.result?.value) {
+            throw new MdbookResponsiveError(
+              `Chrome evaluation failed in ${page} at ${viewport.width}x${viewport.height}/${state}`
+            );
+          }
+          validateProbe(response.result.value, viewport, state, page);
+          probes.push({ page, ...response.result.value });
         }
-        validateProbe(response.result.value, viewport, state);
-        probes.push(response.result.value);
       }
     }
     await browser.client.send('Target.closeTarget', { targetId });
     return probes;
   } finally {
-    await closeChrome(browser);
+    try {
+      if (browser) await closeChrome(browser);
+    } finally {
+      await staticServer.close();
+    }
   }
 }
 
@@ -520,7 +684,9 @@ export async function checkMdbookResponsive(projectDirectory, options = {}) {
   }
   inspectProjectContract(bookToml, css, manifest);
   inspectBuiltHtml(html);
-  const builtLinks = await inspectBuiltLinks(path.join(projectRoot, 'book'));
+  const buildRoot = path.join(projectRoot, 'book');
+  const builtLinks = await inspectBuiltLinks(buildRoot);
+  const expectedBrowserProbes = builtLinks.responsiveHtmlFiles.length * MDBOOK_VIEWPORTS.length * 2;
 
   const probes = [];
   if (!options.staticOnly) {
@@ -530,15 +696,28 @@ export async function checkMdbookResponsive(projectDirectory, options = {}) {
         'Chrome is required for viewport geometry checks; set CHROME_BIN or use --static-only explicitly.'
       );
     }
-    probes.push(...await runBrowserProbes(chrome, projectRoot, files['book/index.html']));
+    const browserProbeRunner = options.browserProbeRunner || runBrowserProbes;
+    probes.push(...await browserProbeRunner(
+      chrome,
+      projectRoot,
+      buildRoot,
+      builtLinks.responsiveHtmlFiles
+    ));
+    if (probes.length !== expectedBrowserProbes) {
+      throw new MdbookResponsiveError(
+        `Browser probe coverage mismatch: expected ${expectedBrowserProbes}, observed ${probes.length}`
+      );
+    }
   }
 
   return {
     project: projectRoot,
     static: true,
     viewports: MDBOOK_VIEWPORTS.length,
-    htmlFiles: builtLinks.htmlFiles,
+    htmlFiles: builtLinks.htmlFiles.length,
+    responsivePages: builtLinks.responsiveHtmlFiles.length,
     localLinks: builtLinks.localLinks,
+    expectedBrowserProbes,
     browserProbes: probes.length,
     probes
   };
