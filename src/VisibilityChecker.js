@@ -385,6 +385,12 @@ function stripHtmlCodeElementContents(
   const ranges = stripNonRendered && !xmlMode ? collectHtmlNonRenderedRanges(source) : [];
 
   for (let index = 0; index < source.length; index += 1) {
+    if (xmlMode && source.startsWith('<![CDATA[', index)) {
+      const cdataEnd = source.indexOf(']]>', index + 9);
+      if (cdataEnd === -1) break;
+      index = cdataEnd + 2;
+      continue;
+    }
     if (source[index] !== '<' || !/[A-Za-z!/]/u.test(source[index + 1] || '')) continue;
 
     if (source.startsWith('<!--', index)) {
@@ -420,7 +426,7 @@ function stripHtmlCodeElementContents(
       if (
         stripNonRendered &&
         xmlMode &&
-        ['script', 'style', 'template'].includes(rawTextTag[1].toLowerCase())
+        ['script', 'style', 'template', 'title'].includes(rawTextTag[1].toLowerCase())
       ) {
         ranges.push([index, closingEnd]);
       }

@@ -699,6 +699,31 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const xhtmlTitleInterruptionLeak = await createArtifact(
+      '<p>Premium<title>noise</title> only details</p>\n',
+      'title-interruption.xhtml'
+    );
+    const xhtmlTitleInterruptionReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: xhtmlTitleInterruptionLeak }
+    );
+    assert.strictEqual(xhtmlTitleInterruptionReport.summary.safe, false);
+
+    const xhtmlCdataMarkerLeak = await createArtifact(
+      '<![CDATA[x > <code>\n:::paid\n</code>]]>\n',
+      'cdata-marker.xhtml'
+    );
+    const xhtmlCdataMarkerReport = await checkBookVisibility(SAMPLE_BOOK, 'free', {
+      artifactPath: xhtmlCdataMarkerLeak
+    });
+    assert.strictEqual(xhtmlCdataMarkerReport.summary.safe, false);
+    assert.ok(
+      xhtmlCdataMarkerReport.findings.some(
+        (finding) => finding.code === 'raw_protected_marker_in_artifact'
+      )
+    );
+
     const inertTemplateInterruptionLeak = await createArtifact(
       '<p>Premium<template>noise</template> only details</p>\n',
       'inert-template-interruption.html'
