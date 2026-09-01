@@ -461,6 +461,7 @@ describe('WebMdbookAdapter', () => {
   test('filesystem identityでbind aliasの出力内包とsource配下を拒否する', async () => {
     const directoryEntry = { isDirectory: () => true, isSymbolicLink: () => false };
     const fileEntry = { isDirectory: () => false, isSymbolicLink: () => false };
+    const symlinkEntry = { isDirectory: () => false, isSymbolicLink: () => true };
     const entryFor = (candidate, identities, files = new Set()) => {
       if (!identities.has(candidate)) return null;
       return files.has(candidate) ? fileEntry : directoryEntry;
@@ -498,6 +499,57 @@ describe('WebMdbookAdapter', () => {
           },
           realpath: async (candidate) => candidate,
           stat: async (candidate) => bindOutputIdentities.get(candidate)
+        }
+      ),
+      /Output directory must not overlap the canonical book or declared sources/
+    );
+
+    const swappedSourceRootIdentities = new Map([
+      ...baseIdentities,
+      ['/alias/source-view', { dev: 7, ino: 21 }]
+    ]);
+    await assert.rejects(
+      assertOutputDoesNotOverlapBookSources(
+        '/canonical/book',
+        ['/canonical/book/manuscript', '/canonical/book/assets'],
+        '/alias/source-view/new/output',
+        {
+          lstat: async (candidate) => candidate === '/canonical/book/manuscript'
+            ? symlinkEntry
+            : entryFor(
+              candidate,
+              swappedSourceRootIdentities,
+              new Set(['/canonical/book/book.yaml'])
+            ),
+          readdir: async () => [],
+          realpath: async (candidate) => candidate,
+          stat: async (candidate) => swappedSourceRootIdentities.get(candidate)
+        }
+      ),
+      /Output directory must not overlap the canonical book or declared sources/
+    );
+
+    const missingOutputBelowSourceDescendantAlias = new Map([
+      ...baseIdentities,
+      ['/alias/nested-view', { dev: 7, ino: 23 }]
+    ]);
+    await assert.rejects(
+      assertOutputDoesNotOverlapBookSources(
+        '/canonical/book',
+        ['/canonical/book/manuscript', '/canonical/book/assets'],
+        '/alias/nested-view/new/output',
+        {
+          lstat: async (candidate) => entryFor(
+            candidate,
+            missingOutputBelowSourceDescendantAlias,
+            new Set(['/canonical/book/book.yaml'])
+          ),
+          readdir: async (candidate) => {
+            if (candidate === '/canonical/book/manuscript') return ['nested'];
+            return [];
+          },
+          realpath: async (candidate) => candidate,
+          stat: async (candidate) => missingOutputBelowSourceDescendantAlias.get(candidate)
         }
       ),
       /Output directory must not overlap the canonical book or declared sources/

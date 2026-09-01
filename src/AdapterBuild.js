@@ -157,8 +157,11 @@ export async function assertOutputDoesNotOverlapBookSources(
     const currentEntry = await lstat(current);
     if (currentEntry) {
       const currentIdentity = await stat(current);
-      if (protectedRootIdentities.slice(1).some((identity) =>
-        sameFileSystemIdentity(currentIdentity, identity))) {
+      if (
+        protectedRootIdentities.slice(1).some((identity) =>
+          sameFileSystemIdentity(currentIdentity, identity)) ||
+        protectedIdentityKeys.has(fileSystemIdentityKey(currentIdentity))
+      ) {
         throw outputOverlapError(outputDirectory);
       }
     }
