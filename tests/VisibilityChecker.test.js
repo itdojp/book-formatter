@@ -571,6 +571,22 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const inertTemplateInterruptionLeak = await createArtifact(
+      '<p>Premium<template>noise</template> only details</p>\n',
+      'inert-template-interruption.html'
+    );
+    const inertTemplateInterruptionReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: inertTemplateInterruptionLeak }
+    );
+    assert.strictEqual(inertTemplateInterruptionReport.summary.safe, false);
+    assert.ok(
+      inertTemplateInterruptionReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
     const blockBoundaryBook = await copySampleBook();
     await fs.writeFile(
       path.join(blockBoundaryBook, 'manuscript/01-introduction.md'),

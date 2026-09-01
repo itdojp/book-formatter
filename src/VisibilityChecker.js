@@ -229,7 +229,9 @@ function stripHtmlCodeElementContents(
     }
 
     const tag = source.slice(index, endIndex + 1);
-    const rawTextTag = tag.match(/^<\s*(script|style|textarea|title)(?=[\s/>])/iu);
+    const rawTextTag = tag.match(
+      /^<\s*(script|style|template|textarea|title)(?=[\s/>])/iu
+    );
     if (rawTextTag && !/\/\s*>$/u.test(tag)) {
       const closingPattern = new RegExp(`<\\/\\s*${rawTextTag[1]}\\s*>`, 'igu');
       closingPattern.lastIndex = endIndex + 1;
@@ -237,7 +239,7 @@ function stripHtmlCodeElementContents(
       if (!closingTag) break;
       if (
         stripNonRendered &&
-        ['script', 'style'].includes(rawTextTag[1].toLowerCase())
+        ['script', 'style', 'template'].includes(rawTextTag[1].toLowerCase())
       ) {
         ranges.push([index, closingPattern.lastIndex]);
       }
