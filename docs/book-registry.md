@@ -119,7 +119,7 @@ credential、非公開原稿のpathはregistryへ記録しない。
 
 editionは「どのchannelへ出力する単位か」を記録する。version 1のregistryは、
 edition内の章選択、`paid` / `internal` marker、公開漏えい防止を定義しない。
-これらはIssue #93のvisibility modelが所有する。
+これらは書籍内の[visibility model](paid-editions.md)が所有する。
 
 editionの `channels` は、同じbook recordの `channels` で宣言済みのkeyだけを
 参照できる。validatorは未宣言channelへの参照を拒否する。

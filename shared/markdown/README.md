@@ -53,10 +53,10 @@ Blank lines around a callout are recommended for source readability but are not 
 | `note` | Supplemental facts or assumptions | Render as a neutral note |
 | `tip` | Recommended practice | Render as guidance, not a mandatory requirement |
 | `warning` | Risk, constraint, or stop condition | Preserve prominence and accessible text |
-| `paid` | Candidate paid-edition region | Apply #93 visibility decisions before output |
-| `internal` | Candidate internal-only region | Exclude from public output under #93 |
+| `paid` | Candidate paid-edition region | Apply the version 1 visibility decision before output |
+| `internal` | Candidate internal-only region | Exclude from public output under the version 1 visibility decision |
 
-`paid` and `internal` are markers, not access controls. A consumer must not claim that free-output separation is safe until the visibility model from Issue #93 validates the complete document and generated artifact.
+`paid` and `internal` are markers, not access controls. `check-visibility` classifies the complete canonical document set and can scan bounded generated text artifacts. A consumer must not claim that free-output separation is safe until its adapter applies the manifest and validates its target artifact.
 
 ## Parser boundary
 
@@ -71,14 +71,14 @@ The checker currently rejects:
 - a closing delimiter without an open callout;
 - an open callout without a close delimiter.
 
-AST-sensitive placement, titles/options in a future grammar, visibility extraction, and output conversion require separate versioned contracts. They must not be added as implicit regex behavior.
+AST-sensitive placement, titles/options in a future grammar, and output conversion require separate versioned contracts. Visibility extraction is defined in [`docs/paid-editions.md`](../../docs/paid-editions.md) and reuses this finite delimiter/fence parser. New behavior must not be added as implicit regex handling.
 
 ## Adapter boundary
 
 Adapters consume canonical Markdown and may translate the finite callout types to target-specific components. An adapter must:
 
 1. parse and validate canonical input before conversion;
-2. apply edition/visibility decisions before generating public output;
+2. apply the version 1 edition/visibility decisions before generating public output;
 3. map callouts without changing their semantic type;
 4. reject unsupported conversion rather than silently exposing or dropping content;
 5. validate generated output under the target contract.

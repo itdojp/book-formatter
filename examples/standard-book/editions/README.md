@@ -1,5 +1,5 @@
 # Editions
 
-edition固有の補助定義を置く予約ディレクトリです。editionの識別子と状態は`book.yaml`で管理します。
+edition固有の補助定義を置く予約ディレクトリです。editionの識別子、状態、visibility、対象document IDは`book.yaml`で管理します。
 
-無料・サンプル・有償・内部向けの可視性契約はIssue #93で追加します。この最小例では、可視性や販売条件を定義しません。
+このsampleは`free`、`sample`、`paid`、`internal`の4 editionを定義します。販売価格や出力先固有設定はここでは扱いません。検査契約は[`docs/paid-editions.md`](../../../docs/paid-editions.md)を参照してください。

@@ -1,0 +1,497 @@
+import crypto from 'node:crypto';
+import path from 'node:path';
+
+import fs from 'fs-extra';
+
+import {
+  detectStandardFenceOpen,
+  isStandardFenceClose,
+  parseStandardCalloutDelimiter,
+  STANDARD_CALLOUT_TYPES
+} from './StandardCalloutParser.js';
+import { validateStandardBook } from './StandardBookValidator.js';
+
+export const VISIBILITY_CONTRACT_VERSION = 1;
+export const VISIBILITY_VALUES = Object.freeze(['free', 'sample', 'paid', 'internal']);
+
+const VISIBILITY_RANK = new Map(VISIBILITY_VALUES.map((value, index) => [value, index]));
+const ARTIFACT_TEXT_EXTENSIONS = new Set([
+  '.css',
+  '.csv',
+  '.html',
+  '.htm',
+  '.ini',
+  '.js',
+  '.json',
+  '.mjs',
+  '.md',
+  '.svg',
+  '.toml',
+  '.ts',
+  '.txt',
+  '.xhtml',
+  '.xml',
+  '.yaml',
+  '.yml'
+]);
+
+export class VisibilityValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'VisibilityValidationError';
+  }
+}
+
+function digest(value) {
+  return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+function compareCodeUnits(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function normalizeComparableText(value) {
+  return String(value || '')
+    .normalize('NFC')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function createProtectedFragments(value, source, visibility) {
+  const normalizedValue = String(value || '').replace(/\r\n?/g, '\n');
+  const fragments = new Map();
+  const wholeDocument = normalizeComparableText(normalizedValue);
+
+  if (wholeDocument) {
+    const wholeDigest = digest(wholeDocument);
+    fragments.set(wholeDigest, {
+      source,
+      visibility,
+      digest: wholeDigest,
+      comparableText: wholeDocument
+    });
+  }
+
+  for (const candidate of normalizedValue.split(/\n\s*\n/u)) {
+    const comparableText = normalizeComparableText(candidate);
+    if (!comparableText || /^:::(?:paid|internal)?$/u.test(comparableText)) continue;
+    const fragmentDigest = digest(comparableText);
+    fragments.set(fragmentDigest, {
+      source,
+      visibility,
+      digest: fragmentDigest,
+      comparableText
+    });
+  }
+
+  return [...fragments.values()];
+}
+
+function parseVisibilityRegions(content, sourcePath) {
+  const normalizedContent = String(content || '').replace(/\r\n?/g, '\n');
+  const lines = normalizedContent.split('\n');
+  const findings = [];
+  const regions = [];
+  let fence = null;
+  let callout = null;
+
+  const addFinding = (code, line, message) => {
+    findings.push({ code, severity: 'error', file: sourcePath, line, message });
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const lineNumber = index + 1;
+
+    if (fence) {
+      if (isStandardFenceClose(line, fence)) fence = null;
+      continue;
+    }
+
+    const fenceOpen = detectStandardFenceOpen(line);
+    if (fenceOpen) {
+      if (fenceOpen.invalidInfoString) {
+        addFinding(
+          'invalid_code_fence',
+          lineNumber,
+          'Backtick code fence info strings cannot contain a backtick.'
+        );
+      } else {
+        fence = { ...fenceOpen, line: lineNumber };
+      }
+      continue;
+    }
+
+    const delimiter = parseStandardCalloutDelimiter(line);
+    if (!delimiter) continue;
+
+    if (delimiter.indented) {
+      addFinding(
+        'invalid_callout_delimiter',
+        lineNumber,
+        'Standard callout delimiters must start at the beginning of the line.'
+      );
+      continue;
+    }
+
+    if (delimiter.kind === 'invalid') {
+      addFinding(
+        'invalid_callout_delimiter',
+        lineNumber,
+        'Standard callout delimiter is malformed.'
+      );
+      continue;
+    }
+
+    if (delimiter.kind === 'open') {
+      if (!STANDARD_CALLOUT_TYPES.has(delimiter.type)) {
+        addFinding(
+          'unknown_callout_type',
+          lineNumber,
+          `Unknown standard callout type: ${delimiter.type}.`
+        );
+        continue;
+      }
+      if (callout) {
+        addFinding(
+          'nested_callout',
+          lineNumber,
+          `Standard callouts cannot be nested (inside ${callout.type} from line ${callout.line}).`
+        );
+        continue;
+      }
+      callout = { type: delimiter.type, line: lineNumber, bodyStartIndex: index + 1 };
+      continue;
+    }
+
+    if (!callout) {
+      addFinding(
+        'orphan_callout_close',
+        lineNumber,
+        'Callout closing delimiter has no matching opening delimiter.'
+      );
+      continue;
+    }
+
+    if (callout.type === 'paid' || callout.type === 'internal') {
+      const body = lines.slice(callout.bodyStartIndex, index).join('\n');
+      const comparableText = normalizeComparableText(body);
+      regions.push({
+        visibility: callout.type,
+        startLine: callout.line,
+        endLine: lineNumber,
+        digest: digest(comparableText),
+        comparableText
+      });
+    }
+    callout = null;
+  }
+
+  if (fence) {
+    addFinding(
+      'unclosed_code_fence',
+      fence.line,
+      'Code fence is not closed; visibility boundaries cannot be determined.'
+    );
+  }
+  if (callout) {
+    addFinding(
+      'unclosed_callout',
+      callout.line,
+      `Standard callout ${callout.type} is not closed.`
+    );
+  }
+
+  return { findings, regions, comparableText: normalizeComparableText(normalizedContent) };
+}
+
+function flattenStructure(metadata) {
+  return [
+    ...metadata.structure.frontmatter.map((entry) => ({ ...entry, section: 'frontmatter' })),
+    ...metadata.structure.chapters.map((entry) => ({ ...entry, section: 'chapters' })),
+    ...metadata.structure.backmatter.map((entry) => ({ ...entry, section: 'backmatter' }))
+  ];
+}
+
+function visibilityAllowed(contentVisibility, editionVisibility) {
+  const contentRank = VISIBILITY_RANK.get(contentVisibility);
+  const editionRank = VISIBILITY_RANK.get(editionVisibility);
+  return contentRank !== undefined && editionRank !== undefined && contentRank <= editionRank;
+}
+
+async function inspectArtifactPath(artifactPath) {
+  const requestedPath = path.resolve(artifactPath);
+  let rootStat;
+  try {
+    rootStat = await fs.lstat(requestedPath);
+  } catch {
+    throw new VisibilityValidationError(`Artifact path does not exist: ${requestedPath}`);
+  }
+  if (rootStat.isSymbolicLink()) {
+    throw new VisibilityValidationError(`Artifact path must not be a symbolic link: ${requestedPath}`);
+  }
+  if ((await fs.realpath(requestedPath)) !== requestedPath) {
+    throw new VisibilityValidationError(
+      `Artifact path must not traverse a symbolic link: ${requestedPath}`
+    );
+  }
+
+  if (rootStat.isFile()) {
+    return [{ absolutePath: requestedPath, reportPath: path.basename(requestedPath) }];
+  }
+  if (!rootStat.isDirectory()) {
+    throw new VisibilityValidationError(`Artifact path must be a file or directory: ${requestedPath}`);
+  }
+
+  const files = [];
+  async function visit(directory) {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) => compareCodeUnits(left.name, right.name));
+
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+      const stat = await fs.lstat(entryPath);
+      if (stat.isSymbolicLink()) {
+        throw new VisibilityValidationError(
+          `Artifact tree must not contain symbolic links: ${path.relative(requestedPath, entryPath)}`
+        );
+      }
+      if (stat.isDirectory()) {
+        await visit(entryPath);
+      } else if (stat.isFile() && ARTIFACT_TEXT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+        files.push({
+          absolutePath: entryPath,
+          reportPath: path.relative(requestedPath, entryPath).replace(/\\/g, '/')
+        });
+      }
+    }
+  }
+
+  await visit(requestedPath);
+  return files;
+}
+
+function findRawProtectedDelimiter(content) {
+  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
+  let fence = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (fence) {
+      if (isStandardFenceClose(line, fence)) fence = null;
+      continue;
+    }
+    const open = detectStandardFenceOpen(line);
+    if (open && !open.invalidInfoString) {
+      fence = open;
+      continue;
+    }
+    if (/^:::(paid|internal)\s*$/.test(line)) return index + 1;
+  }
+  return null;
+}
+
+async function scanArtifact(artifactPath, protectedFragments) {
+  const files = await inspectArtifactPath(artifactPath);
+  const findings = [];
+
+  for (const file of files) {
+    const content = await fs.readFile(file.absolutePath, 'utf8');
+    const comparableArtifact = normalizeComparableText(content);
+    const delimiterLine = findRawProtectedDelimiter(content);
+    if (delimiterLine !== null) {
+      findings.push({
+        code: 'raw_protected_marker_in_artifact',
+        severity: 'error',
+        file: file.reportPath,
+        line: delimiterLine,
+        message: 'Generated artifact contains a raw paid/internal callout marker.'
+      });
+    }
+
+    for (const fragment of protectedFragments) {
+      if (!fragment.comparableText || !comparableArtifact.includes(fragment.comparableText)) continue;
+      findings.push({
+        code: 'protected_content_in_artifact',
+        severity: 'error',
+        file: file.reportPath,
+        line: 1,
+        source: fragment.source,
+        visibility: fragment.visibility,
+        digest: fragment.digest,
+        message: 'Generated artifact contains a protected source region.'
+      });
+    }
+  }
+
+  return { files: files.map((file) => file.reportPath), findings };
+}
+
+function sortFindings(findings) {
+  return findings.sort((left, right) =>
+    compareCodeUnits(String(left.file || ''), String(right.file || '')) ||
+    Number(left.line || 0) - Number(right.line || 0) ||
+    compareCodeUnits(String(left.code || ''), String(right.code || ''))
+  );
+}
+
+export async function checkBookVisibility(bookDirectory, editionId, options = {}) {
+  if (!editionId) throw new VisibilityValidationError('Edition ID is required.');
+
+  const standardBook = await validateStandardBook(bookDirectory);
+  const { bookRoot, metadata } = standardBook;
+  const edition = metadata.editions.find((candidate) => candidate.id === editionId);
+  if (!edition) throw new VisibilityValidationError(`Unknown edition: ${editionId}`);
+  if (!edition.visibility || !edition.documents) {
+    throw new VisibilityValidationError(
+      `Edition ${editionId} must declare visibility and documents for visibility checking.`
+    );
+  }
+  if (VISIBILITY_RANK.has(edition.id) && edition.id !== edition.visibility) {
+    throw new VisibilityValidationError(
+      `Reserved edition ID ${edition.id} must use matching visibility ${edition.id}.`
+    );
+  }
+
+  const entries = flattenStructure(metadata);
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+  const includedIds = new Set(edition.documents);
+  const findings = [];
+  const documents = [];
+  const protectedFragments = [];
+  let regionCount = 0;
+  let protectedRegionCount = 0;
+
+  for (const entry of entries) {
+    if (!entry.visibility) {
+      findings.push({
+        code: 'missing_document_visibility',
+        severity: 'error',
+        file: entry.path,
+        line: 1,
+        message: `Structure entry ${entry.id} must declare visibility.`
+      });
+    }
+  }
+
+  for (const documentId of edition.documents) {
+    const entry = entryById.get(documentId);
+    if (!entry) {
+      findings.push({
+        code: 'unknown_edition_document',
+        severity: 'error',
+        file: 'book.yaml',
+        line: 1,
+        message: `Edition ${edition.id} references unknown structure ID: ${documentId}`
+      });
+    } else if (entry.visibility && !visibilityAllowed(entry.visibility, edition.visibility)) {
+      findings.push({
+        code: 'incompatible_document_visibility',
+        severity: 'error',
+        file: entry.path,
+        line: 1,
+        visibility: entry.visibility,
+        message: `Edition ${edition.id} (${edition.visibility}) cannot include ${entry.id} (${entry.visibility}).`
+      });
+    }
+  }
+
+  for (const entry of entries) {
+    const absolutePath = path.join(bookRoot, entry.path);
+    const content = await fs.readFile(absolutePath, 'utf8');
+    const parsed = parseVisibilityRegions(content, entry.path);
+    findings.push(...parsed.findings);
+    regionCount += parsed.regions.length;
+
+    const included = includedIds.has(entry.id);
+    const protectedRegions = [];
+
+    if (!included) {
+      const documentVisibility = entry.visibility || 'unknown';
+      const documentDigest = digest(parsed.comparableText);
+      protectedFragments.push(
+        ...createProtectedFragments(content, entry.path, documentVisibility)
+      );
+      protectedRegions.push({
+        visibility: documentVisibility,
+        startLine: 1,
+        endLine: content.replace(/\r\n?/g, '\n').split('\n').length,
+        digest: documentDigest,
+        decision: 'exclude-document'
+      });
+    }
+
+    for (const region of parsed.regions) {
+      const allowed = included && visibilityAllowed(region.visibility, edition.visibility);
+      if (!allowed) {
+        protectedRegionCount += 1;
+        protectedFragments.push({
+          source: entry.path,
+          visibility: region.visibility,
+          digest: region.digest,
+          comparableText: region.comparableText
+        });
+      }
+      protectedRegions.push({
+        visibility: region.visibility,
+        startLine: region.startLine,
+        endLine: region.endLine,
+        digest: region.digest,
+        decision: allowed ? 'include' : 'exclude-block'
+      });
+    }
+
+    documents.push({
+      id: entry.id,
+      section: entry.section,
+      path: entry.path,
+      visibility: entry.visibility || 'unknown',
+      decision: included ? 'include' : 'exclude-document',
+      protectedRegions
+    });
+  }
+
+  let artifact = null;
+  if (options.artifactPath) {
+    const uniqueFragments = [
+      ...new Map(
+        protectedFragments.map((fragment) => [
+          `${fragment.source}\u0000${fragment.visibility}\u0000${fragment.digest}`,
+          fragment
+        ])
+      ).values()
+    ];
+    artifact = await scanArtifact(options.artifactPath, uniqueFragments);
+    findings.push(...artifact.findings);
+  }
+
+  sortFindings(findings);
+  const includedDocumentCount = documents.filter((document) => document.decision === 'include').length;
+
+  return {
+    schema_version: 1,
+    visibility_contract_version: VISIBILITY_CONTRACT_VERSION,
+    book: metadata.id,
+    edition: {
+      id: edition.id,
+      visibility: edition.visibility,
+      status: edition.status
+    },
+    summary: {
+      safe: findings.length === 0,
+      documents: documents.length,
+      includedDocuments: includedDocumentCount,
+      excludedDocuments: documents.length - includedDocumentCount,
+      visibilityRegions: regionCount,
+      protectedRegions: documents.length - includedDocumentCount + protectedRegionCount,
+      artifactFiles: artifact ? artifact.files.length : 0,
+      findings: findings.length
+    },
+    documents,
+    artifact: artifact ? { files: artifact.files } : null,
+    findings
+  };
+}

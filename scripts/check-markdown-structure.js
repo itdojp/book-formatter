@@ -7,6 +7,12 @@ import { glob } from 'glob';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import YAML from 'yaml';
+import {
+  detectStandardFenceOpen,
+  isStandardFenceClose,
+  parseStandardCalloutDelimiter,
+  STANDARD_CALLOUT_TYPES
+} from '../src/StandardCalloutParser.js';
 
 function normalizeFailOn(value) {
   const v = String(value || '').trim().toLowerCase();
@@ -57,59 +63,10 @@ function findFrontMatter(lines) {
   };
 }
 
-function detectFenceOpen(line) {
-  const m = String(line || '').match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-  if (!m) return null;
-
-  const infoString = String(m[2] || '').trim();
-  const language = infoString.split(/\s+/).filter(Boolean)[0] || '';
-  const markerChar = m[1][0];
-
-  return {
-    markerChar,
-    markerLen: m[1].length,
-    infoString,
-    language: language.toLowerCase(),
-    invalidInfoString: markerChar === '`' && infoString.includes('`')
-  };
-}
-
-function isFenceClose(line, fence) {
-  if (!fence) return false;
-  const m = String(line || '').match(/^\s{0,3}(`{3,}|~{3,})\s*$/);
-  if (!m) return false;
-  if (m[1][0] !== fence.markerChar) return false;
-  return m[1].length >= fence.markerLen;
-}
-
 function parseHeading(line) {
   const m = String(line || '').match(/^\s{0,3}(#{1,6})\s+(.+)$/);
   if (!m) return null;
   return { level: m[1].length, text: m[2].trim() };
-}
-
-const STANDARD_CALLOUT_TYPES = new Set(['note', 'tip', 'warning', 'paid', 'internal']);
-
-function parseCalloutDelimiter(line) {
-  const source = String(line || '');
-  const candidate = source.trimStart();
-  if (!candidate.startsWith(':::')) return null;
-
-  const indented = candidate !== source;
-  if (/^:::\s*$/.test(candidate)) {
-    return { kind: 'close', indented };
-  }
-
-  const opening = candidate.match(/^:::([a-z]+)\s*$/);
-  if (opening) {
-    return {
-      kind: 'open',
-      type: opening[1],
-      indented
-    };
-  }
-
-  return { kind: 'invalid', indented };
 }
 
 class MarkdownStructureRunner {
@@ -235,12 +192,12 @@ class MarkdownStructureRunner {
       const lineNumber = i + 1;
 
       if (!inFence) {
-        if (invalidFence && isFenceClose(lineText, invalidFence)) {
+        if (invalidFence && isStandardFenceClose(lineText, invalidFence)) {
           invalidFence = null;
           continue;
         }
 
-        const open = detectFenceOpen(lineText);
+        const open = detectStandardFenceOpen(lineText);
         if (open) {
           if (open.invalidInfoString) {
             this.addIssue({
@@ -272,7 +229,9 @@ class MarkdownStructureRunner {
           continue;
         }
 
-        const calloutDelimiter = this.standardCallouts ? parseCalloutDelimiter(lineText) : null;
+        const calloutDelimiter = this.standardCallouts
+          ? parseStandardCalloutDelimiter(lineText)
+          : null;
         if (calloutDelimiter) {
           if (calloutDelimiter.indented) {
             this.addIssue({
@@ -365,7 +324,7 @@ class MarkdownStructureRunner {
         continue;
       }
 
-      if (isFenceClose(lineText, fence)) {
+      if (isStandardFenceClose(lineText, fence)) {
         inFence = false;
         fence = null;
         fenceStartLine = null;

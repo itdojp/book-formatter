@@ -115,8 +115,8 @@ GFM互換のpipe tableを使用し、headerを必須とします。セル内改�
 | `note` | 補足、前提、参照情報 | 通常の公開本文 |
 | `tip` | 推奨手順、効率化の助言 | 通常の公開本文 |
 | `warning` | 危険、制約、停止条件 | 通常の公開本文 |
-| `paid` | 有償edition候補の範囲 | #93のvisibility検査が必要 |
-| `internal` | 編集・運用上の内部範囲 | #93のvisibility検査が必要 |
+| `paid` | 有償edition候補の範囲 | visibility contract version 1で包含判断 |
+| `internal` | 編集・運用上の内部範囲 | visibility contract version 1で公開物から除外 |
 
 構文は開始delimiter、本文、終了delimiterです。delimiterは行頭に置き、typeは小文字で指定します。
 
@@ -126,7 +126,7 @@ GFM互換のpipe tableを使用し、headerを必須とします。セル内改�
 :::
 ```
 
-calloutを入れ子にしません。開始行へtitleやoptionを追加しません。delimiterの前後には空行を置くことを推奨します。`paid`と`internal`は見た目の装飾ではなく、後続のvisibility modelが検証する構造マーカーです。#93が完了するまでは、これらを含む正本から無料公開物を安全に生成できるとはみなしません。
+calloutを入れ子にしません。開始行へtitleやoptionを追加しません。delimiterの前後には空行を置くことを推奨します。`paid`と`internal`は見た目の装飾ではなく、[visibility model](paid-editions.md)が検証する構造マーカーです。markerはaccess controlではなく、adapterが包含判断を適用し生成artifactを再検査する必要があります。
 
 有限構文と検査契約の詳細は[`shared/markdown/README.md`](../shared/markdown/README.md)を参照してください。
 
@@ -176,7 +176,7 @@ raw HTMLは公開先間で意味が変わるため、原則禁止します。表
 | リンク | base path/拡張子を解決 | `relative_url`相当を生成 | chapter/assets pathへ変換 | 公開URLへ変換 | 内部参照・外部URLを分離 |
 | `paid`/`internal` | edition出力前に除外・検査 | 同左 | 同左 | 有料line/除外manifestへ変換 | edition別に包含・除外 |
 
-変換後の構文と可視性はadapterが検証します。特に`paid`/`internal`の混入防止は#93、共通adapter CLIは#94、個別出力は#95から#101で実装します。
+変換後の構文と可視性はadapterが検証します。`paid`/`internal`のsource-level包含判断はvisibility contract version 1を使い、共通adapter CLIは#94、個別出力は#95から#101で実装します。
 
 ## 5. 検査方針
 
@@ -198,7 +198,7 @@ raw HTMLは公開先間で意味が変わるため、原則禁止します。表
 | 検査 | 所有Issue / 実装段階 | このIssueで実装しない理由 |
 | --- | --- | --- |
 | h1欠落、anchor重複、画像alt、table/footnote/math整合 | #103または検査強化Issue | ASTまたはrendererの意味論が必要 |
-| `paid`/`internal`のedition別包含と漏えい防止 | #93 | Markdown構文だけでは可視性を保証できない |
+| target変換後の`paid`/`internal`再検査 | #94–#101 | 共通visibility検査だけではtarget固有変換を保証できない |
 | 出力先固有記法への変換と変換後validation | #94–#101 | adapter責務 |
 | 内部リンク、asset、公開base pathの解決 | 個別adapter | 出力先のpath contractが必要 |
 | raw HTMLの安全性と実行可能属性 | #103またはsecurity検査Issue | parserを伴う共通方針が必要 |
@@ -220,7 +220,7 @@ raw HTMLは公開先間で意味が変わるため、原則禁止します。表
 | 数式delimiter、変数説明、macro制限 | review | Web/PDF adapter |
 | 相対内部link、外部HTTPS、危険scheme・短縮URL禁止 | link検査の一部とreview | #103、個別adapter |
 | raw HTML、HTML comment、公開先固有構文の禁止 | review | #103、security検査 |
-| `paid`/`internal`の包含・除外と漏えい防止 | 未実装であることを明示 | #93 |
+| `paid`/`internal`の包含・除外とbounded artifact scan | `check-visibility` | #94–#101のtarget固有検査 |
 | 出力先別の構文・path・asset変換 | 未実装であることを明示 | #94–#101 |
 
 ## 6. 移行と互換性
