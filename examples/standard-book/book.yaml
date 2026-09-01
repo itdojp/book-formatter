@@ -1,0 +1,42 @@
+schema_version: 1
+id: standard-book-example
+title: 標準書籍フォーマット最小例
+language: ja
+authors:
+  - name: ITDO
+    url: https://github.com/itdojp
+publisher:
+  name: ITDO
+  url: https://itdo.jp
+repository:
+  url: https://github.com/itdojp/book-formatter
+  default_branch: main
+source:
+  manuscript: manuscript
+  assets: assets
+  frontmatter: frontmatter
+  backmatter: backmatter
+  editions: editions
+structure:
+  frontmatter:
+    - id: preface
+      title: はじめに
+      path: frontmatter/preface.md
+  chapters:
+    - id: introduction
+      title: 標準書籍フォーマットとは
+      path: manuscript/01-introduction.md
+    - id: workflow
+      title: 正本から出力する流れ
+      path: manuscript/02-workflow.md
+  backmatter:
+    - id: afterword
+      title: おわりに
+      path: backmatter/afterword.md
+editions:
+  - id: standard
+    title: 標準版
+    status: draft
+    description: adapterへ渡す正本の最小edition
+license: CC-BY-NC-SA-4.0
+version: 0.1.0
