@@ -359,24 +359,32 @@ describe('WebMdbookAdapter', () => {
   });
 
   test('GitHub clone URLをWeb URLへ正規化して有効な編集linkを生成する', async () => {
-    const bookDirectory = await copySampleBook();
-    const outputRoot = await temporaryDirectory('tmp-web-mdbook-repository-normalize-');
-    const metadataPath = path.join(bookDirectory, 'book.yaml');
-    const metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'));
-    metadata.repository.url = 'https://github.com/itdojp/standard-book-example.git';
-    await fs.writeFile(metadataPath, YAML.stringify(metadata));
+    const repositoryUrls = [
+      'https://github.com/itdojp/standard-book-example.git',
+      'https://GITHUB.COM/itdojp/standard-book-example.git/',
+      'https://github.com:443/itdojp/standard-book-example'
+    ];
 
-    const result = await build(bookDirectory, outputRoot);
-    const bookToml = await fs.readFile(path.join(result.outputDirectory, 'book.toml'), 'utf8');
-    assert.match(
-      bookToml,
-      /git-repository-url = "https:\/\/github\.com\/itdojp\/standard-book-example"/
-    );
-    assert.match(
-      bookToml,
-      /edit-url-template = "https:\/\/github\.com\/itdojp\/standard-book-example\/edit\/main\/\{path\}"/
-    );
-    assert.ok(!bookToml.includes('standard-book-example.git/edit/'));
+    for (const [index, repositoryUrl] of repositoryUrls.entries()) {
+      const bookDirectory = await copySampleBook();
+      const outputRoot = await temporaryDirectory(`tmp-web-mdbook-repository-normalize-${index}-`);
+      const metadataPath = path.join(bookDirectory, 'book.yaml');
+      const metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'));
+      metadata.repository.url = repositoryUrl;
+      await fs.writeFile(metadataPath, YAML.stringify(metadata));
+
+      const result = await build(bookDirectory, outputRoot);
+      const bookToml = await fs.readFile(path.join(result.outputDirectory, 'book.toml'), 'utf8');
+      assert.match(
+        bookToml,
+        /git-repository-url = "https:\/\/github\.com\/itdojp\/standard-book-example"/
+      );
+      assert.match(
+        bookToml,
+        /edit-url-template = "https:\/\/github\.com\/itdojp\/standard-book-example\/edit\/main\/\{path\}"/
+      );
+      assert.ok(!bookToml.includes('standard-book-example.git/edit/'));
+    }
   });
 
   test('GitHub以外またはrepository root以外のURLを編集linkとして拒否する', async () => {
@@ -385,6 +393,15 @@ describe('WebMdbookAdapter', () => {
       'https://github.com/itdojp/standard-book-example/tree/main',
       'https://github.com/itdojp/standard-book-example?tab=readme',
       'https://github.com/itdojp/standard-book-example#readme',
+      'https://github.com/itdojp/standard-book-example?',
+      'https://github.com/itdojp/standard-book-example#',
+      'https://github.com/itdojp/extra/../standard-book-example',
+      'https://github.com/itdojp/%2e/standard-book-example',
+      'https://github.com/itdojp/standard-book-example/.',
+      'https://github.com/itdojp/standard-book-example%2Fextra',
+      'https://github.com/_/standard-book-example',
+      'https://github.com/owner-/standard-book-example',
+      'https://github.com/owner--name/standard-book-example',
       'https://github.com:8443/itdojp/standard-book-example'
     ];
 
@@ -396,12 +413,21 @@ describe('WebMdbookAdapter', () => {
       metadata.repository.url = repositoryUrl;
       await fs.writeFile(metadataPath, YAML.stringify(metadata));
 
+      const isUnsupportedRepositoryError = (error) =>
+        error instanceof AdapterBuildError &&
+        /web-mdbook repository\.url must/.test(error.message);
       await assert.rejects(
-        build(bookDirectory, outputRoot),
-        (error) =>
-          error instanceof AdapterBuildError &&
-          /web-mdbook repository\.url must/.test(error.message)
+        buildStandardBookAdapter({
+          bookDirectory,
+          target: 'web-mdbook',
+          editionId: 'free',
+          outputRoot,
+          dryRun: true
+        }),
+        isUnsupportedRepositoryError
       );
+      assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'web-mdbook')), false);
+      await assert.rejects(build(bookDirectory, outputRoot), isUnsupportedRepositoryError);
     }
   });
 });

@@ -119,33 +119,12 @@ function tomlString(value) {
 }
 
 function normalizeGitHubRepositoryUrl(value) {
-  let repositoryUrl;
-  try {
-    repositoryUrl = new URL(value);
-  } catch {
-    throw new WebMdbookAdapterError(
-      'web-mdbook repository.url must be a supported GitHub HTTPS repository URL.'
-    );
-  }
-
-  if (
-    repositoryUrl.protocol !== 'https:' ||
-    repositoryUrl.hostname.toLowerCase() !== 'github.com' ||
-    repositoryUrl.port ||
-    repositoryUrl.username ||
-    repositoryUrl.password ||
-    repositoryUrl.search ||
-    repositoryUrl.hash
-  ) {
-    throw new WebMdbookAdapterError(
-      'web-mdbook repository.url must be a supported GitHub HTTPS repository URL.'
-    );
-  }
-
-  const match = repositoryUrl.pathname.match(/^\/([^/]+)\/([^/]+?)\/?$/u);
+  const match = String(value).match(
+    /^https:\/\/github\.com(?::443)?\/([^/?#]+)\/([^/?#]+?)\/?$/iu
+  );
   if (!match) {
     throw new WebMdbookAdapterError(
-      'web-mdbook repository.url must identify one GitHub owner/repository pair.'
+      'web-mdbook repository.url must be a supported GitHub HTTPS repository root URL.'
     );
   }
 
@@ -160,12 +139,11 @@ function normalizeGitHubRepositoryUrl(value) {
     );
   }
 
-  const githubPathComponent = /^[A-Za-z0-9_.-]+$/u;
+  const githubOwner = /^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/u;
+  const githubRepository = /^(?=.{1,100}$)[A-Za-z0-9_.-]+$/u;
   if (
-    !githubPathComponent.test(owner) ||
-    !githubPathComponent.test(repository) ||
-    owner === '.' ||
-    owner === '..' ||
+    !githubOwner.test(owner) ||
+    !githubRepository.test(repository) ||
     repository === '.' ||
     repository === '..'
   ) {
@@ -679,6 +657,7 @@ export async function writeWebMdbookProject({
   }
   const summary = createSummary(includedEntries);
   rejectMdbookFileDirectives(summary, 'generated SUMMARY.md');
+  const bookToml = createBookToml(standardBook.metadata);
 
   const sharedCssStat = await fs.lstat(sharedCssPath);
   if (sharedCssStat.isSymbolicLink() || !sharedCssStat.isFile()) {
@@ -712,7 +691,7 @@ export async function writeWebMdbookProject({
 
     await fs.writeFile(
       path.join(stagingDirectory, 'book.toml'),
-      createBookToml(standardBook.metadata),
+      bookToml,
       'utf8'
     );
     await fs.writeFile(
