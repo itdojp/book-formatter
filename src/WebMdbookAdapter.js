@@ -466,9 +466,9 @@ export async function writeWebMdbookProject({
     throw new WebMdbookAdapterError(`Shared mdBook CSS must be a regular file: ${sharedCssPath}`);
   }
 
+  await assertOwnedExistingOutput(outputDirectory);
   if (validateOnly) return;
 
-  await assertOwnedExistingOutput(outputDirectory);
   const parent = path.dirname(outputDirectory);
   await fs.ensureDir(parent);
   const stagingDirectory = path.join(

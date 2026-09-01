@@ -208,6 +208,16 @@ describe('WebMdbookAdapter', () => {
     await fs.writeFile(path.join(target, 'owner.txt'), 'foreign\n');
 
     await assert.rejects(
+      buildStandardBookAdapter({
+        bookDirectory,
+        target: 'web-mdbook',
+        editionId: 'free',
+        outputRoot,
+        dryRun: true
+      }),
+      /Refusing to replace output without a valid adapter manifest/
+    );
+    await assert.rejects(
       build(bookDirectory, outputRoot),
       /Refusing to replace output without a valid adapter manifest/
     );
