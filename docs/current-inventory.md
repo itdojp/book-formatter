@@ -106,12 +106,12 @@
 
 - `shared/version.json` は `shared/templates/*.template` 2件を列挙するが、該当ファイル・directoryは存在しない。
 - `shared/version.json` のmanaged assetsは6件だが、`shared/assets/js/` には `code-copy.js`、`main.js`、`mobile-navigation.js`、`safe-main.js`、`sidebar.js` も存在する。
-- `shared/README.md` は存在しない `shared/templates/` を掲載し、例示versionは `1.0.0` だが実versionは `3.2.3`。
+- `shared/README.md` 自体は存在するが、そのtree例には実体のない `shared/templates/` が含まれ、例示versionも `1.0.0` のまま実version `3.2.3` と一致しない。
 - `shared/includes/page-navigation.html` とstarter copyは同一。一方 `docs/_includes/page-navigation.html` と `docs/includes/page-navigation.html` は双方とも異なる。
 - `shared/includes/sidebar-nav.html` とstarter copyは同一。一方 `docs/_includes/sidebar-nav.html` は異なる。
 - `docs/assets/js/safe-main.js` とstarter copyは同一だが、`shared/assets/js/safe-main.js` は異なる。
 
-このため、`docs/` 配下のHTML/JSを正本とは断定しない。現時点では `unknown` copyとして保持し、#96でJekyll adapterの正本を固定してから#102で移動する。
+`docs/includes/page-navigation.html` は `docs/README-unified-setup.md` が手動copy元として明示するためactiveである。ただしshared/starterとの内容差があり、正本とは断定しない。他の `docs/_includes/` と `docs/assets/js/safe-main.js` は現時点で `unknown` copyとして保持する。いずれも#96でJekyll adapterの正本と移行経路を固定してから移動を判断する。
 
 ## `tests/` と品質gate
 
@@ -149,7 +149,8 @@ Node.js `v22.22.2` / npm `10.9.7` で4ファイルをまとめて3回実行し�
 | `examples/redirect-from-sample.md` | legacy | Jekyll redirectの例。#96へ移管候補 |
 | `README-unified-setup.md`, `TROUBLESHOOTING.md`, `book-creation-guide.md`, `book-format-unification-guide.md`, `guides/mobile-responsive.md`, `prev-next-navigation-guide.md` | legacy | Jekyll v3 / GitHub Pages / rolloutの利用手順。現行consumerには意味があるが、マルチチャネル標準の正本ではない |
 | `JS-ERROR-HANDLING.md`, `PERFORMANCE_GUIDE.md` | legacy | Jekyll shared JS/layoutの運用説明。#96配下でコードとの同期が必要 |
-| `_includes/`, `includes/`, `assets/js/safe-main.js` | unknown | shared/starterと重複・差分があり、現在のcopy元を確定できない。移動禁止 |
+| `includes/page-navigation.html` | active | `README-unified-setup.md` が新規書籍への手動copy元として明示。内容はshared/starterと異なるため#96で移行先と正本を固定するまで保持 |
+| `_includes/`, `assets/js/safe-main.js` | unknown | shared/starterと重複・差分があり、現行consumerまたは正本を確定できない。移動禁止 |
 | `IMPROVEMENT_PROPOSALS.md` | archive候補 | 2025年時点の提案と実装例を混在し、現在の実装済み機能・正本を示さない |
 | `mobile-responsive-implementation-guide.md` | archive候補 | CSS-only checkbox方式を前提とし、現行shared実装および#115/#116の改善対象と一致しない |
 
