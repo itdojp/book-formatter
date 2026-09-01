@@ -685,6 +685,20 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const titleInterruptionLeak = await createArtifact(
+      '<p>Premium<title>noise</title> only details</p>\n',
+      'title-interruption.html'
+    );
+    const titleInterruptionReport = await checkBookVisibility(renderedMarkdownBook, 'free', {
+      artifactPath: titleInterruptionLeak
+    });
+    assert.strictEqual(titleInterruptionReport.summary.safe, false);
+    assert.ok(
+      titleInterruptionReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
     const inertTemplateInterruptionLeak = await createArtifact(
       '<p>Premium<template>noise</template> only details</p>\n',
       'inert-template-interruption.html'
