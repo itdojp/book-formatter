@@ -24,8 +24,11 @@ export const DEFAULT_WEB_MDBOOK_CSS = path.resolve(
 const MARKDOWN = new MarkdownIt({
   html: true,
   linkify: false,
-  typographer: false
+  typographer: false,
+  maxNesting: 1024
 }).use(markdownItFootnote);
+const MAX_MARKDOWN_AUDIT_DEPTH = 128;
+const HTML_ENTITY = /&(?:#[xX][0-9A-Fa-f]+|#\d+|[A-Za-z][A-Za-z0-9]+);?/gu;
 
 const PUBLIC_CALLOUT_LABELS = Object.freeze({
   note: 'Note',
@@ -314,9 +317,94 @@ function collectTokens(tokens) {
   return collected;
 }
 
+function maskSingleLineCodeSpans(line) {
+  const characters = [...line];
+  const escapedAt = (index) => {
+    let backslashes = 0;
+    for (let cursor = index - 1; cursor >= 0 && characters[cursor] === '\\'; cursor -= 1) {
+      backslashes += 1;
+    }
+    return backslashes % 2 === 1;
+  };
+
+  for (let index = 0; index < characters.length; index += 1) {
+    if (characters[index] !== '`' || escapedAt(index)) continue;
+    let runLength = 1;
+    while (characters[index + runLength] === '`') runLength += 1;
+    let close = index + runLength;
+    while (close < characters.length) {
+      if (characters[close] !== '`') {
+        close += 1;
+        continue;
+      }
+      let closeLength = 1;
+      while (characters[close + closeLength] === '`') closeLength += 1;
+      if (closeLength === runLength) break;
+      close += closeLength;
+    }
+    if (close >= characters.length) {
+      index += runLength - 1;
+      continue;
+    }
+    const end = close + runLength;
+    characters.fill(' ', index, end);
+    index = end - 1;
+  }
+  return characters.join('');
+}
+
+function decodeHtmlEntities(source) {
+  return source.replace(HTML_ENTITY, (entity) => {
+    const fragment = parseFragment(entity);
+    const text = fragment.childNodes?.find((node) => node.nodeName === '#text')?.value;
+    return text || entity;
+  });
+}
+
+function destinationScheme(source) {
+  const normalized = decodeHtmlEntities(source)
+    .replaceAll('\t', '')
+    .replaceAll('\n', '')
+    .replaceAll('\r', '');
+  return normalized.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1] || null;
+}
+
+function assertMarkdownAuditDepth(source, sourcePath) {
+  let bracketDepth = 0;
+  let maximumBracketDepth = 0;
+  for (const character of source) {
+    if (character === '[') {
+      bracketDepth += 1;
+      maximumBracketDepth = Math.max(maximumBracketDepth, bracketDepth);
+    } else if (character === ']') {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+    }
+  }
+  const maximumContainerDepth = Math.max(0, ...source.split('\n').map((line) => {
+    const indentation = line.match(/^[ \t]*/u)?.[0] || '';
+    let columns = 0;
+    for (const character of indentation) {
+      columns = character === '\t' ? columns + 4 - (columns % 4) : columns + 1;
+    }
+    const quoteMarkers = (line.slice(indentation.length).match(/^(?:>[ \t]?)+/u)?.[0]
+      .match(/>/gu) || []).length;
+    return Math.floor(columns / 2) + quoteMarkers;
+  }));
+  if (
+    maximumBracketDepth > MAX_MARKDOWN_AUDIT_DEPTH ||
+    maximumContainerDepth > MAX_MARKDOWN_AUDIT_DEPTH
+  ) {
+    throw new WebMdbookAdapterError(
+      `Markdown link audit depth exceeds ${MAX_MARKDOWN_AUDIT_DEPTH} in ${sourcePath}`
+    );
+  }
+}
+
 function rejectUnsupportedSourceDestinations(source, sourcePath) {
+  const normalized = String(source).replace(/\r\n?/g, '\n');
+  const auditedLines = [];
   let fence = null;
-  for (const line of String(source).replace(/\r\n?/g, '\n').split('\n')) {
+  for (const line of normalized.split('\n')) {
     if (fence) {
       if (isStandardFenceClose(line, fence)) fence = null;
       continue;
@@ -327,13 +415,20 @@ function rejectUnsupportedSourceDestinations(source, sourcePath) {
       continue;
     }
 
+    const visibleSource = maskSingleLineCodeSpans(line);
+    auditedLines.push(visibleSource);
     const patterns = [
-      { pattern: /(!?)\[[^\]]*\]\(\s*<?([A-Za-z][A-Za-z0-9+.-]*):/gu, scheme: 2, image: 1 },
-      { pattern: /^\s{0,3}\[[^\]]+\]:\s*<?([A-Za-z][A-Za-z0-9+.-]*):/gu, scheme: 1, image: null }
+      { pattern: /(!?)\[[^\]]*\]\(\s*<?([^)>\s]+)/gu, destination: 2, image: 1 },
+      {
+        pattern: /^\s{0,3}\[(?:\\.|[^\x5b\x5c\x5d])+\]:\s*<?([^>\s]+)/gu,
+        destination: 1,
+        image: null
+      }
     ];
     for (const entry of patterns) {
-      for (const match of line.matchAll(entry.pattern)) {
-        const scheme = match[entry.scheme];
+      for (const match of visibleSource.matchAll(entry.pattern)) {
+        const scheme = destinationScheme(match[entry.destination]);
+        if (!scheme) continue;
         if (scheme.toLowerCase() !== 'https') {
           const kind = entry.image && match[entry.image] === '!' ? 'image' : 'link';
           throw new WebMdbookAdapterError(
@@ -343,6 +438,7 @@ function rejectUnsupportedSourceDestinations(source, sourcePath) {
       }
     }
   }
+  assertMarkdownAuditDepth(auditedLines.join('\n'), sourcePath);
 }
 
 function rejectMdbookFileDirectives(source, sourcePath) {
@@ -364,7 +460,6 @@ function inspectMarkdown(source, sourcePath) {
       `Reader-visible raw HTML is not supported by web-mdbook: ${sourcePath}`
     );
   }
-
   const destinations = [];
   for (const token of tokens) {
     if (token.type === 'link_open') {

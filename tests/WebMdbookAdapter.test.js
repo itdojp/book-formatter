@@ -249,6 +249,33 @@ describe('WebMdbookAdapter', () => {
     const cases = [
       ['![hotlink](https://assets.example/image.png)', /Unsupported external image/],
       ['[danger](javascript:alert(1))', /Unsupported external link/],
+      ['[**danger**](javascript:alert(1))', /Unsupported external link/],
+      ['[danger `code`](javascript:alert(1))', /Unsupported external link/],
+      [
+        '`[documented](javascript:example)` and [danger](javascript:alert(1))',
+        /Unsupported external link/
+      ],
+      [
+        '[use][I]\n\n[ı]: https://example.invalid\n[I]: java&#x09;script:alert(2)',
+        /Unsupported external link/
+      ],
+      ['[danger](java&NewLine;script:alert(3))', /Unsupported external link/],
+      ['[danger](java&#13;script:alert(4))', /Unsupported external link/],
+      [`${'> '.repeat(129)}[too-deep](https://example.invalid)`, /link audit depth exceeds 128/],
+      [
+        `${Array.from({ length: 130 }, (_value, depth) =>
+          `${'  '.repeat(depth)}- ${depth === 129 ? '[deep](https://example.invalid)' : 'item'}`
+        ).join('\n')}`,
+        /link audit depth exceeds 128/
+      ],
+      [
+        `${'['.repeat(101)}root${']'.repeat(101)}(/private/path)`,
+        /Root\/protocol-relative link is not allowed/
+      ],
+      [
+        `!${'['.repeat(101)}hot${']'.repeat(101)}(https://assets.example/image.png)`,
+        /Unsupported external image/
+      ],
       ['[excluded](../backmatter/afterword.md)', /must be an included Markdown document/],
       ['[outside](../../README.md)', /resolves outside the book root/],
       ['[root](/private/path)', /Root\/protocol-relative link is not allowed/],
@@ -258,8 +285,29 @@ describe('WebMdbookAdapter', () => {
       const unsafeBook = await copySampleBook();
       const unsafeOutput = await temporaryDirectory(`tmp-web-mdbook-link-${index}-`);
       await appendWorkflow(unsafeBook, `\n${markdown}\n`);
-      await assert.rejects(build(unsafeBook, unsafeOutput), expected);
+      await assert.rejects(build(unsafeBook, unsafeOutput), expected, `link boundary case ${index}`);
     }
+
+    const inlineCodeBook = await copySampleBook();
+    const inlineCodeOutput = await temporaryDirectory('tmp-web-mdbook-inline-code-link-');
+    await appendWorkflow(
+      inlineCodeBook,
+      '\nMarkdown構文の例: `[open](javascript:example)` と `![image](data:image/png;base64,AAAA)`\n' +
+        'Backslashを含む例: `[open](javascript:example)\\`\n' +
+        'URL scheme名 javascript: / data: はlink destinationではない。\n' +
+        '&lbrack;example]: javascript:example はreference definitionではない。\n' +
+        `深いinline code例: \`${'['.repeat(129)}\`\n` +
+        `\n\`\`\`text\n${'['.repeat(129)}\n\`\`\`\n`
+    );
+    const inlineCodeResult = await build(inlineCodeBook, inlineCodeOutput);
+    const inlineCodeChapter = await fs.readFile(
+      path.join(inlineCodeResult.outputDirectory, 'src/manuscript/02-workflow.md'),
+      'utf8'
+    );
+    assert.ok(inlineCodeChapter.includes('`[open](javascript:example)`'));
+    assert.ok(inlineCodeChapter.includes('`![image](data:image/png;base64,AAAA)`'));
+    assert.ok(inlineCodeChapter.includes('URL scheme名 javascript: / data:'));
+    assert.ok(inlineCodeChapter.includes('&lbrack;example]: javascript:example'));
 
     const unsafeSvgCases = [
       ['<svg><script>blocked</script></svg>', /active element <script>/],
