@@ -168,6 +168,57 @@ describe('WebMdbookAdapter', () => {
     );
   });
 
+  test('mdBook file directiveをfenced literalを含めfail closedで拒否する', async () => {
+    const directives = [
+      '{{#include ../assets/fixture.txt}}',
+      '{{#rustdoc_include ../assets/fixture.rs:fixture}}',
+      '{{#playground ../assets/fixture.rs}}',
+      '```text\n{{#include ../assets/fixture.txt}}\n```'
+    ];
+
+    for (const [index, directive] of directives.entries()) {
+      const bookDirectory = await copySampleBook();
+      const outputRoot = await temporaryDirectory(`tmp-web-mdbook-directive-${index}-`);
+      await appendWorkflow(bookDirectory, `\n${directive}\n`);
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        (error) =>
+          error instanceof AdapterBuildError &&
+          /mdBook file directive is not allowed/.test(error.message)
+      );
+      assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'web-mdbook')), false);
+    }
+
+    const excludedBook = await copySampleBook();
+    const excludedOutput = await temporaryDirectory('tmp-web-mdbook-excluded-directive-');
+    await appendWorkflow(
+      excludedBook,
+      '\n:::paid\n{{#include ../assets/paid-fixture.txt}}\n:::\n'
+    );
+    const result = await build(excludedBook, excludedOutput);
+    assert.doesNotMatch(
+      await fs.readFile(path.join(result.outputDirectory, 'src/manuscript/02-workflow.md'), 'utf8'),
+      /#include/u
+    );
+
+    const summaryBook = await copySampleBook();
+    const summaryOutput = await temporaryDirectory('tmp-web-mdbook-summary-directive-');
+    const metadataPath = path.join(summaryBook, 'book.yaml');
+    const metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'));
+    metadata.structure.chapters[0].title = '{{#include ../assets/title.txt}}';
+    await fs.writeFile(metadataPath, YAML.stringify(metadata));
+    await assert.rejects(
+      buildStandardBookAdapter({
+        bookDirectory: summaryBook,
+        target: 'web-mdbook',
+        editionId: 'free',
+        outputRoot: summaryOutput,
+        dryRun: true
+      }),
+      /mdBook file directive is not allowed in generated SUMMARY\.md/
+    );
+  });
+
   test('参照assetだけを複製しlink境界をfail closedにする', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-web-mdbook-assets-output-');

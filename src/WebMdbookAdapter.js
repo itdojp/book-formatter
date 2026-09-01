@@ -32,6 +32,8 @@ const PUBLIC_CALLOUT_LABELS = Object.freeze({
   warning: 'Warning'
 });
 
+const MDBOOK_FILE_DIRECTIVE = /\{\{\s*#\s*(include|rustdoc_include|playground)(?=\s|\}\})/giu;
+
 export class WebMdbookAdapterError extends Error {
   constructor(message) {
     super(message);
@@ -255,7 +257,17 @@ function rejectUnsupportedSourceDestinations(source, sourcePath) {
   }
 }
 
+function rejectMdbookFileDirectives(source, sourcePath) {
+  for (const match of String(source).matchAll(MDBOOK_FILE_DIRECTIVE)) {
+    const line = String(source).slice(0, match.index).split('\n').length;
+    throw new WebMdbookAdapterError(
+      `mdBook file directive is not allowed in ${sourcePath}:${line}: ${match[1].toLowerCase()}`
+    );
+  }
+}
+
 function inspectMarkdown(source, sourcePath) {
+  rejectMdbookFileDirectives(source, sourcePath);
   rejectUnsupportedSourceDestinations(source, sourcePath);
   const tokens = collectTokens(MARKDOWN.parse(source, {}));
   const html = tokens.find((token) => token.type === 'html_block' || token.type === 'html_inline');
@@ -460,6 +472,8 @@ export async function writeWebMdbookProject({
     convertedDocuments.push({ entry, converted });
     for (const asset of assets) copiedAssets.set(asset.destination, asset);
   }
+  const summary = createSummary(includedEntries);
+  rejectMdbookFileDirectives(summary, 'generated SUMMARY.md');
 
   const sharedCssStat = await fs.lstat(sharedCssPath);
   if (sharedCssStat.isSymbolicLink() || !sharedCssStat.isFile()) {
@@ -498,7 +512,7 @@ export async function writeWebMdbookProject({
     );
     await fs.writeFile(
       path.join(stagingDirectory, 'src/SUMMARY.md'),
-      createSummary(includedEntries),
+      summary,
       'utf8'
     );
     await fs.writeFile(

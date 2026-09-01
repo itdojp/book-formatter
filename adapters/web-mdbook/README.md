@@ -33,6 +33,8 @@ Web正本のreader-visible raw HTMLはfail closedで禁止します。fenced cod
 
 相対linkは、同じeditionに含まれるMarkdown、生成した`book.yaml`、または宣言済み`assets/`内の実fileだけを許可します。assetは参照されたfileだけを複製します。外部linkは資格情報を含まないHTTPSだけを許可し、外部画像hotlinkと危険schemeを拒否します。
 
+mdBookの`{{#include ...}}`、`{{#rustdoc_include ...}}`、file-backed `{{#playground ...}}`は、fenced code内でもpreprocessorがlocal fileを読み得るため使用禁止です。editionで選択済みの文書と宣言済みassetだけを生成物へ入れる境界を迂回させません。構文を説明する場合もdirective文字列をそのまま正本へ置かず、通常の文章へ書き換えます。
+
 ## Buildとレスポンシブ検証
 
 mdBook `0.5.4`を使用します。CIは公式releaseのLinux x86_64 archiveをSHA-256 `3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7`で検証してから実行します。
@@ -46,7 +48,7 @@ npm run check-visibility -- \
   --artifact dist/web-mdbook/book
 ```
 
-responsive checkerは生成project/HTML/CSS契約に加え、利用可能なChromeで次のviewportのsidebar/content非重複とhidden状態のbody overflowを検証します。
+responsive checkerは生成project/HTML/CSS契約に加え、利用可能なChromeで全generated content pageに対し、次のviewportのsidebar/content非重複とhidden状態のbody overflowを検証します。mdBook 0.5.4のsidebar support pageであるroot `toc.html`だけを有限に除外し、他のHTMLでresponsive DOM IDが欠けた場合はfail closedです。
 
 - 390x844
 - 480x900
