@@ -208,10 +208,11 @@ describe('VisibilityChecker', () => {
       ['free', 'この文書はdocument-level `paid` visibilityの例です。有償editionの構成と検査方法を説明しますが、実際の販売情報は含みません。'],
       ['free', ':::paid\nremoved too late\n:::\n'],
       ['free', '  :::internal\nindented marker remained\n  :::\n'],
-      ['free', '<p>:::paid</p>\n']
+      ['free', '<p>:::paid</p>\n'],
+      ['free', `---\n${PAID_BLOCK_TEXT}\n---\n`, 'front-matter-like.txt']
     ];
-    for (const [editionId, content] of cases) {
-      const artifactPath = await createArtifact(content);
+    for (const [editionId, content, filename] of cases) {
+      const artifactPath = await createArtifact(content, filename || 'edition.md');
       const report = await checkBookVisibility(SAMPLE_BOOK, editionId, { artifactPath });
       assert.strictEqual(report.summary.safe, false, editionId);
       assert.ok(!JSON.stringify(report).includes(PAID_BLOCK_TEXT));
@@ -390,6 +391,25 @@ describe('VisibilityChecker', () => {
     assert.strictEqual(adjacentInlineReport.summary.safe, false);
     assert.ok(
       adjacentInlineReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
+    const footnoteBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(footnoteBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\nProtected claim[^paid].\n\n[^paid]: FOOTNOTE_PAID_DETAIL\n:::\n'
+    );
+    const footnoteLeak = await createArtifact(
+      '<p>Protected claim<sup>1</sup>.</p><ol><li>FOOTNOTE_PAID_DETAIL</li></ol>\n',
+      'footnote.html'
+    );
+    const footnoteReport = await checkBookVisibility(footnoteBook, 'free', {
+      artifactPath: footnoteLeak
+    });
+    assert.strictEqual(footnoteReport.summary.safe, false);
+    assert.ok(
+      footnoteReport.findings.some(
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );

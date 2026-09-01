@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import fs from 'fs-extra';
 import MarkdownIt from 'markdown-it';
+import markdownItFootnote from 'markdown-it-footnote';
 
 import {
   detectStandardFenceOpen,
@@ -20,7 +21,7 @@ const MARKDOWN_TEXT_EXTRACTOR = new MarkdownIt({
   html: false,
   linkify: false,
   typographer: false
-});
+}).use(markdownItFootnote);
 const ARTIFACT_TEXT_EXTENSIONS = new Set([
   '.css',
   '.csv',
@@ -85,6 +86,13 @@ function stripValidFrontMatter(value) {
     : normalizedValue;
 }
 
+function normalizeArtifactBody(value, allowFrontMatter) {
+  const normalizedValue = String(value || '')
+    .replace(/^\uFEFF/u, '')
+    .replace(/\r\n?/g, '\n');
+  return allowFrontMatter ? stripValidFrontMatter(normalizedValue) : normalizedValue;
+}
+
 function stripHtmlTags(value, separator = '') {
   const source = String(value || '');
   let result = '';
@@ -118,8 +126,8 @@ function stripHtmlTags(value, separator = '') {
   return result;
 }
 
-function createArtifactComparables(value) {
-  const readerBody = stripValidFrontMatter(value);
+function createArtifactComparables(value, allowFrontMatter) {
+  const readerBody = normalizeArtifactBody(value, allowFrontMatter);
   const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(readerBody);
   return [
     readerBody,
@@ -143,6 +151,13 @@ function collectMarkdownTextFragments(value) {
       })
       .join('');
     if (normalizeComparableText(projectedText)) fragments.push(projectedText);
+    if (token.children.some((child) => child.type === 'footnote_ref')) {
+      for (const child of token.children) {
+        if (child.type === 'text' && normalizeComparableText(child.content)) {
+          fragments.push(child.content);
+        }
+      }
+    }
   }
   return fragments;
 }
@@ -411,13 +426,12 @@ async function inspectArtifactPath(artifactPath) {
   return files;
 }
 
-function findRawProtectedDelimiter(content) {
-  const lines = String(content || '')
-    .replace(/^\uFEFF/u, '')
-    .replace(/\r\n?/g, '\n')
-    .split('\n');
+function findRawProtectedDelimiter(content, allowFrontMatter) {
+  const lines = normalizeArtifactBody(content, false).split('\n');
   let fence = null;
-  const frontMatterClosingIndex = findFrontMatterClosingIndex(lines);
+  const frontMatterClosingIndex = allowFrontMatter
+    ? findFrontMatterClosingIndex(lines)
+    : null;
   const contentStartIndex =
     frontMatterClosingIndex !== null && frontMatterClosingIndex >= 0
       ? frontMatterClosingIndex + 1
@@ -451,12 +465,16 @@ async function scanArtifact(artifactPath, protectedFragments) {
 
   for (const file of files) {
     const content = await fs.readFile(file.absolutePath, 'utf8');
-    const artifactComparables = createArtifactComparables(content);
+    const allowFrontMatter = path.extname(file.reportPath).toLowerCase() === '.md';
+    const artifactComparables = createArtifactComparables(content, allowFrontMatter);
     const readerVisibleContent = stripHtmlTags(
-      MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(stripValidFrontMatter(content))
+      MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
+        normalizeArtifactBody(content, allowFrontMatter)
+      )
     );
     const delimiterLine =
-      findRawProtectedDelimiter(content) || findRawProtectedDelimiter(readerVisibleContent);
+      findRawProtectedDelimiter(content, allowFrontMatter) ||
+      findRawProtectedDelimiter(readerVisibleContent, false);
     if (delimiterLine !== null) {
       findings.push({
         code: 'raw_protected_marker_in_artifact',
