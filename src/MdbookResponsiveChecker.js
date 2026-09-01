@@ -489,7 +489,7 @@ function probeExpression(state) {
   })()`;
 }
 
-function validateProbe(probe, viewport, state, page) {
+export function validateResponsiveProbe(probe, viewport, state, page) {
   if (probe.viewportWidth !== viewport.width || probe.viewportHeight !== viewport.height) {
     throw new MdbookResponsiveError(
       `Chrome viewport mismatch in ${page}: requested ${viewport.width}x${viewport.height}, ` +
@@ -508,6 +508,14 @@ function validateProbe(probe, viewport, state, page) {
         `display=${probe.sidebarDisplay}, css-width=${probe.sidebarCssWidth}, ` +
         `class=${probe.sidebarClass}, print=${probe.printMedia}, ` +
         `--sidebar-width=${probe.sidebarVariable})`
+    );
+  }
+  if (state === 'closed' && probe.sidebarVisible) {
+    throw new MdbookResponsiveError(
+      `Sidebar remained visible in ${page} at ${viewport.width}x${viewport.height} ` +
+        `(left=${probe.sidebar.left}, right=${probe.sidebar.right}, width=${probe.sidebar.width}, ` +
+        `display=${probe.sidebarDisplay}, css-width=${probe.sidebarCssWidth}, ` +
+        `class=${probe.sidebarClass}, toggle=${probe.toggleChecked})`
     );
   }
   if (probe.overlap) {
@@ -665,7 +673,7 @@ async function runBrowserProbes(chrome, projectRoot, buildRoot, htmlFiles) {
               `Chrome evaluation failed in ${page} at ${viewport.width}x${viewport.height}/${state}`
             );
           }
-          validateProbe(response.result.value, viewport, state, page);
+          validateResponsiveProbe(response.result.value, viewport, state, page);
           probes.push({ page, ...response.result.value });
         }
       }

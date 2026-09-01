@@ -8,7 +8,8 @@ import {
   checkMdbookResponsive,
   MDBOOK_VIEWPORTS,
   MdbookResponsiveError,
-  removeChromeProfile
+  removeChromeProfile,
+  validateResponsiveProbe
 } from '../src/MdbookResponsiveChecker.js';
 
 const ROOT = process.cwd();
@@ -118,6 +119,43 @@ describe('MdbookResponsiveChecker', () => {
         browserProbeRunner: async () => Array.from({ length: 12 }, () => ({}))
       }),
       /Browser probe coverage mismatch: expected 24, observed 12/
+    );
+  });
+
+  test('closed probeでsidebarがviewport内に残る回帰を拒否する', () => {
+    const viewport = { width: 390, height: 844 };
+    const probe = {
+      viewportWidth: 390,
+      viewportHeight: 844,
+      sidebar: { left: 0, right: 300, width: 300 },
+      sidebarDisplay: 'block',
+      sidebarCssWidth: '300px',
+      sidebarClass: 'sidebar-visible',
+      sidebarVisible: true,
+      toggleChecked: false,
+      wrapper: { left: 300, right: 390, width: 90 },
+      content: { left: 300, right: 390, width: 90 },
+      overlap: false,
+      bodyOverflow: false
+    };
+
+    assert.throws(
+      () => validateResponsiveProbe(probe, viewport, 'closed', 'book/index.html'),
+      /Sidebar remained visible in book\/index\.html at 390x844/
+    );
+    assert.doesNotThrow(() =>
+      validateResponsiveProbe(
+        {
+          ...probe,
+          sidebar: { left: -300, right: 0, width: 300 },
+          sidebarVisible: false,
+          wrapper: { left: 0, right: 390, width: 390 },
+          content: { left: 0, right: 390, width: 390 }
+        },
+        viewport,
+        'closed',
+        'book/index.html'
+      )
     );
   });
 
