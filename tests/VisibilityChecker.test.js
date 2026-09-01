@@ -148,6 +148,19 @@ describe('VisibilityChecker', () => {
     assert.strictEqual(fencedReport.summary.safe, true);
     assert.strictEqual(fencedReport.summary.visibilityRegions, 2);
 
+    const frontMatterBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(frontMatterBook, 'manuscript/01-introduction.md'),
+      '---\ntitle: 公開章\nmarker_example: |\n  :::paid\n---\n\n# 公開章\n\n公開本文です。\n'
+    );
+    const frontMatterReport = await checkBookVisibility(frontMatterBook, 'free');
+    assert.strictEqual(frontMatterReport.summary.safe, true);
+    assert.ok(
+      !frontMatterReport.findings.some(
+        (finding) => finding.code === 'invalid_callout_delimiter'
+      )
+    );
+
     const mutations = [
       ['  :::paid\nsecret\n:::\n', 'invalid_callout_delimiter'],
       [':::future\nsecret\n:::\n', 'unknown_callout_type'],
@@ -286,6 +299,25 @@ describe('VisibilityChecker', () => {
         fencedCase.filename
       );
     }
+
+    const listBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(listBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\n- PAID_ITEM_ONE\n- PAID_ITEM_TWO\n:::\n'
+    );
+    const listLeak = await createArtifact(
+      '<ul><li>PAID_ITEM_ONE</li><li>PAID_ITEM_TWO</li></ul>\n',
+      'list.html'
+    );
+    const listReport = await checkBookVisibility(listBook, 'free', {
+      artifactPath: listLeak
+    });
+    assert.strictEqual(listReport.summary.safe, false);
+    assert.ok(
+      listReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
   });
 
   test('paidはpaid本文を許可してinternal本文を拒否し、internalは両方を許可する', async () => {

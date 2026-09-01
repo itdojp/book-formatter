@@ -81,6 +81,13 @@ function createProtectedFragments(value, source, visibility) {
     addFragment(candidate);
   }
 
+  for (const line of normalizedValue.split('\n')) {
+    const listItem = line.match(
+      /^\s*(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?(.+)$/u
+    );
+    if (listItem) addFragment(listItem[1]);
+  }
+
   const lines = normalizedValue.split('\n');
   let fence = null;
   for (let index = 0; index < lines.length; index += 1) {
@@ -112,12 +119,31 @@ function parseVisibilityRegions(content, sourcePath) {
   const calloutBodies = [];
   let fence = null;
   let callout = null;
+  let contentStartIndex = 0;
+
+  if (/^---[\t ]*$/u.test(lines[0] || '')) {
+    const closingIndex = lines.findIndex(
+      (line, index) => index > 0 && /^---[\t ]*$/u.test(line)
+    );
+    if (closingIndex === -1) {
+      findings.push({
+        code: 'unclosed_front_matter',
+        severity: 'error',
+        file: sourcePath,
+        line: 1,
+        message: 'YAML front matter is not closed; visibility boundaries cannot be determined.'
+      });
+      contentStartIndex = lines.length;
+    } else {
+      contentStartIndex = closingIndex + 1;
+    }
+  }
 
   const addFinding = (code, line, message) => {
     findings.push({ code, severity: 'error', file: sourcePath, line, message });
   };
 
-  for (let index = 0; index < lines.length; index += 1) {
+  for (let index = contentStartIndex; index < lines.length; index += 1) {
     const line = lines[index];
     const lineNumber = index + 1;
 
