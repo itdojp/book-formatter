@@ -114,6 +114,10 @@ describe('StandardBookValidator', () => {
     }, /structure path must be unique/);
 
     await expectMetadataRejected((metadata) => {
+      metadata.structure.chapters[1].path = 'manuscript/./01-introduction.md';
+    }, /structure path must be unique/);
+
+    await expectMetadataRejected((metadata) => {
       metadata.editions.push({ ...metadata.editions[0] });
     }, /edition ids must be unique/);
   });
@@ -235,7 +239,7 @@ describe('StandardBookValidator', () => {
   });
 
   test('Git branchとして不正なdefault_branchを拒否する', async () => {
-    for (const branch of ['../outside', '-option', 'feature//double', 'release.lock']) {
+    for (const branch of ['HEAD', '../outside', '-option', 'feature//double', 'release.lock']) {
       await expectMetadataRejected((metadata) => {
         metadata.repository.default_branch = branch;
       }, /must match pattern|valid Git branch name/);

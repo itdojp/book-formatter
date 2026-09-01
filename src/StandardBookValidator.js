@@ -89,7 +89,7 @@ async function requireSourceFile(bookRoot, sourceRoot, entry, label) {
     throw new StandardBookValidationError(`${label} must be below its declared source directory: ${entry.path}`);
   }
 
-  await inspectDeclaredPath(bookRoot, entry.path, label, 'file');
+  return inspectDeclaredPath(bookRoot, entry.path, label, 'file');
 }
 
 function requireHttpsUrl(value, label) {
@@ -113,6 +113,7 @@ function isValidGitBranch(branch) {
 
   if (
     branch === '@' ||
+    branch === 'HEAD' ||
     branch.startsWith('-') ||
     branch.startsWith('/') ||
     branch.endsWith('/') ||
@@ -209,13 +210,19 @@ export async function validateStandardBook(bookDirectory, options = {}) {
       if (seenIds.has(entry.id)) {
         throw new StandardBookValidationError(`structure id must be unique: ${entry.id}`);
       }
-      if (seenPaths.has(entry.path)) {
+
+      const canonicalPath = await requireSourceFile(
+        bookRoot,
+        sourceDirectories.get(sourceKey),
+        entry,
+        `structure.${sourceKey}`
+      );
+      if (seenPaths.has(canonicalPath)) {
         throw new StandardBookValidationError(`structure path must be unique: ${entry.path}`);
       }
 
       seenIds.add(entry.id);
-      seenPaths.add(entry.path);
-      await requireSourceFile(bookRoot, sourceDirectories.get(sourceKey), entry, `structure.${sourceKey}`);
+      seenPaths.add(canonicalPath);
       documentCount += 1;
     }
   }

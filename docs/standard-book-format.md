@@ -47,7 +47,7 @@ standard-book/
 | `language` | BCP 47形式を基準にした主言語tag |
 | `authors` | 1名以上の著者名と任意のHTTPS URL |
 | `publisher` | 発行者名と任意のHTTPS URL |
-| `repository` | 管理repositoryのHTTPS URLとdefault branch |
+| `repository` | 管理repositoryのHTTPS URLと、symbolic `HEAD`ではないdefault branch |
 | `source` | 5つの正本directoryの相対path |
 | `structure` | frontmatter、chapter、backmatterの順序と原稿path |
 | `editions` | edition ID、表示名、有限の状態 |
