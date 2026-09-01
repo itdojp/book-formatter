@@ -297,6 +297,7 @@ describe('WebMdbookAdapter', () => {
     const result = await build(bookDirectory, outputRoot);
     const summary = await fs.readFile(path.join(result.outputDirectory, 'src/SUMMARY.md'), 'utf8');
     assert.ok(summary.includes('&lt;script&gt;unsafe&lt;/script&gt; &amp; \\[表示\\]'));
-    assert.doesNotMatch(summary, /<script>|<\/script>/u);
+    assert.ok(!summary.includes('<script>'));
+    assert.ok(!summary.includes('</script>'));
   });
 });
