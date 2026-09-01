@@ -200,6 +200,38 @@ describe('VisibilityChecker', () => {
     });
     assert.strictEqual(frontMatterArtifactReport.summary.safe, true);
 
+    const renderedFenceArtifact = await createArtifact(
+      '<pre class="highlight"><code>:::paid\nliteral example\n:::</code></pre>\n',
+      'rendered-fence.html'
+    );
+    const renderedFenceReport = await checkBookVisibility(SAMPLE_BOOK, 'free', {
+      artifactPath: renderedFenceArtifact
+    });
+    assert.strictEqual(renderedFenceReport.summary.safe, true);
+
+    const encodedCodeLiteral = await createArtifact(
+      '&lt;code&gt;:::paid&lt;/code&gt;\n',
+      'encoded-code-literal.html'
+    );
+    const encodedCodeLiteralReport = await checkBookVisibility(SAMPLE_BOOK, 'free', {
+      artifactPath: encodedCodeLiteral
+    });
+    assert.strictEqual(encodedCodeLiteralReport.summary.safe, false);
+
+    const markerAfterRenderedFence = await createArtifact(
+      '<pre><code>:::paid\nliteral example\n:::</code></pre>\n<p>:::internal</p>\n',
+      'marker-after-rendered-fence.html'
+    );
+    const markerAfterRenderedFenceReport = await checkBookVisibility(SAMPLE_BOOK, 'free', {
+      artifactPath: markerAfterRenderedFence
+    });
+    assert.strictEqual(markerAfterRenderedFenceReport.summary.safe, false);
+    assert.ok(
+      markerAfterRenderedFenceReport.findings.some(
+        (finding) => finding.code === 'raw_protected_marker_in_artifact'
+      )
+    );
+
     const cases = [
       ['free', `# leak\n\n${PAID_BLOCK_TEXT}\n`],
       ['sample', `# leak\n\n${PAID_BLOCK_TEXT}\n`],

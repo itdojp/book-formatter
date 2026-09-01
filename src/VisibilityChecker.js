@@ -126,6 +126,76 @@ function stripHtmlTags(value, separator = '') {
   return result;
 }
 
+function stripHtmlCodeElementContents(value) {
+  const source = String(value || '');
+  const stack = [];
+  const ranges = [];
+
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] !== '<' || !/[A-Za-z!/]/u.test(source[index + 1] || '')) continue;
+
+    if (source.startsWith('<!--', index)) {
+      const commentEnd = source.indexOf('-->', index + 4);
+      if (commentEnd === -1) break;
+      index = commentEnd + 2;
+      continue;
+    }
+
+    let quote = null;
+    let endIndex = index + 1;
+    for (; endIndex < source.length; endIndex += 1) {
+      const character = source[endIndex];
+      if (quote) {
+        if (character === quote) quote = null;
+      } else if (character === '"' || character === '\'') {
+        quote = character;
+      } else if (character === '>') {
+        break;
+      }
+    }
+
+    if (endIndex >= source.length) {
+      break;
+    }
+
+    const tag = source.slice(index, endIndex + 1);
+    const rawTextTag = tag.match(/^<\s*(script|style)(?=[\s/>])/iu);
+    if (rawTextTag && !/\/\s*>$/u.test(tag)) {
+      const closingPattern = new RegExp(`<\\/\\s*${rawTextTag[1]}\\s*>`, 'igu');
+      closingPattern.lastIndex = endIndex + 1;
+      const closingTag = closingPattern.exec(source);
+      if (!closingTag) break;
+      index = closingPattern.lastIndex - 1;
+      continue;
+    }
+
+    const codeTag = tag.match(/^<\s*(\/?)\s*(pre|code)(?=[\s/>])/iu);
+    if (codeTag) {
+      if (codeTag[1]) {
+        const current = stack.at(-1);
+        if (!current || current.name !== codeTag[2].toLowerCase()) {
+          stack.length = 0;
+        } else {
+          stack.pop();
+          if (stack.length === 0) ranges.push([current.start, endIndex + 1]);
+        }
+      } else if (!/\/\s*>$/u.test(tag)) {
+        stack.push({ name: codeTag[2].toLowerCase(), start: index });
+      }
+    }
+    index = endIndex;
+  }
+
+  let result = '';
+  let cursor = 0;
+  for (const [start, end] of ranges) {
+    result += `${source.slice(cursor, start)} `;
+    cursor = end;
+  }
+  result += source.slice(cursor);
+  return result;
+}
+
 function createArtifactComparables(value, allowFrontMatter) {
   const readerBody = normalizeArtifactBody(value, allowFrontMatter);
   const decodedBody = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(readerBody);
@@ -469,7 +539,7 @@ async function scanArtifact(artifactPath, protectedFragments) {
     const artifactComparables = createArtifactComparables(content, allowFrontMatter);
     const readerVisibleContent = stripHtmlTags(
       MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
-        normalizeArtifactBody(content, allowFrontMatter)
+        stripHtmlCodeElementContents(normalizeArtifactBody(content, allowFrontMatter))
       )
     );
     const delimiterLine =
