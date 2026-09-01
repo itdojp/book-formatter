@@ -121,6 +121,7 @@ artifact checkは次を拒否する。
 - editionで除外したsource regionと、Unicode NFC・改行・空白正規化後も同一なtext fragment
 - standard callout、fenced code、list、inline Markdown、HTML tag/entity、標準math delimiterの有限wrapperを除いたreader-visible text fragment
 - HTML imageのreader-visibleな`alt` text fragment
+- declarative Shadow DOM（`template shadowrootmode="open|closed"`）。composed treeとhost適格性はtarget-specific checkerで検査する
 - 指定artifact path自体、その親path component、artifact tree内のsymbolic link
 
 directory指定時は既知のUTF-8 text artifact extensionだけを検査し、検査対象が0件なら失敗する。

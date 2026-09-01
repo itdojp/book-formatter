@@ -376,14 +376,9 @@ function collectHtmlNonRenderedRanges(source) {
     const tagName = String(node.tagName || '').toLowerCase();
     const hasAttribute = (name) =>
       node.attrs?.some((attribute) => attribute.name.toLowerCase() === name);
-    const shadowRootMode = node.attrs
-      ?.find((attribute) => attribute.name.toLowerCase() === 'shadowrootmode')
-      ?.value.toLowerCase();
-    const isDeclarativeShadowRootTemplate =
-      tagName === 'template' && ['open', 'closed'].includes(shadowRootMode);
     const isNonRendered =
-      (!isDeclarativeShadowRootTemplate &&
-        (HTML_NON_RENDERED_ELEMENTS.has(tagName) || hasAttribute('hidden'))) ||
+      HTML_NON_RENDERED_ELEMENTS.has(tagName) ||
+      hasAttribute('hidden') ||
       (tagName === 'dialog' && !hasAttribute('open'));
     const location = node.sourceCodeLocation;
     if (
@@ -399,6 +394,30 @@ function collectHtmlNonRenderedRanges(source) {
   };
   visit(document);
   return ranges;
+}
+
+function findDeclarativeShadowRootTemplateLine(source) {
+  let line = null;
+  const document = parseHtml(String(source || ''), { sourceCodeLocationInfo: true });
+  const visit = (node) => {
+    if (line !== null) return;
+    const tagName = String(node.tagName || '').toLowerCase();
+    const shadowRootMode = node.attrs
+      ?.find((attribute) => attribute.name.toLowerCase() === 'shadowrootmode')
+      ?.value.toLowerCase();
+    if (
+      tagName === 'template' &&
+      ['open', 'closed'].includes(shadowRootMode) &&
+      Number.isInteger(node.sourceCodeLocation?.startLine)
+    ) {
+      line = node.sourceCodeLocation.startLine;
+      return;
+    }
+    for (const child of node.childNodes || []) visit(child);
+    if (node.content) visit(node.content);
+  };
+  visit(document);
+  return line;
 }
 
 function stripHtmlCodeElementContents(
@@ -1220,6 +1239,19 @@ async function scanArtifact(artifactPath, protectedFragments) {
     const markdownRenderedBody = allowMarkdownFences
       ? MARKDOWN_ARTIFACT_RENDERER.render(normalizedArtifactBody)
       : null;
+    const declarativeShadowRootLine = HTML_MARKUP_EXTENSIONS.has(fileExtension)
+      ? findDeclarativeShadowRootTemplateLine(markdownRenderedBody ?? content)
+      : null;
+    if (declarativeShadowRootLine !== null) {
+      findings.push({
+        code: 'unsupported_declarative_shadow_dom',
+        severity: 'error',
+        file: file.reportPath,
+        line: declarativeShadowRootLine,
+        message:
+          'Generated artifact uses declarative Shadow DOM, which requires target-specific composed-tree validation.'
+      });
+    }
     const rawMarkerContent = allowMarkdownFences
       ? ''
       : HTML_MARKUP_EXTENSIONS.has(fileExtension)

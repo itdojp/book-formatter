@@ -795,11 +795,43 @@ describe('VisibilityChecker', () => {
       );
       assert.ok(
         declarativeShadowRootReport.findings.some(
-          (finding) => finding.code === 'protected_content_in_artifact'
+          (finding) => finding.code === 'unsupported_declarative_shadow_dom'
         ),
         shadowRootMode
       );
     }
+
+    const slottedShadowRootArtifact = await createArtifact(
+      '<div><template shadowrootmode="open"><slot></slot> only details</template>Premium</div>\n',
+      'slotted-shadow-root.html'
+    );
+    const slottedShadowRootReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: slottedShadowRootArtifact }
+    );
+    assert.strictEqual(slottedShadowRootReport.summary.safe, false);
+    assert.ok(
+      slottedShadowRootReport.findings.some(
+        (finding) => finding.code === 'unsupported_declarative_shadow_dom'
+      )
+    );
+
+    const ineligibleShadowHostArtifact = await createArtifact(
+      '<a><template shadowrootmode="open">Premium <strong>only</strong> details</template></a>\n',
+      'ineligible-shadow-host.html'
+    );
+    const ineligibleShadowHostReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: ineligibleShadowHostArtifact }
+    );
+    assert.strictEqual(ineligibleShadowHostReport.summary.safe, false);
+    assert.ok(
+      ineligibleShadowHostReport.findings.some(
+        (finding) => finding.code === 'unsupported_declarative_shadow_dom'
+      )
+    );
 
     const invalidShadowRootModeArtifact = await createArtifact(
       '<p>Premium<template shadowrootmode="invalid"> only</template> details</p>\n',
@@ -811,6 +843,17 @@ describe('VisibilityChecker', () => {
       { artifactPath: invalidShadowRootModeArtifact }
     );
     assert.strictEqual(invalidShadowRootModeReport.summary.safe, true);
+
+    const fencedShadowRootLiteral = await createArtifact(
+      '```html\n<template shadowrootmode="open">literal example</template>\n```\n',
+      'fenced-shadow-root-literal.md'
+    );
+    const fencedShadowRootLiteralReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: fencedShadowRootLiteral }
+    );
+    assert.strictEqual(fencedShadowRootLiteralReport.summary.safe, true);
 
     const hiddenInterruptionLeak = await createArtifact(
       '<p>Premium<span hidden>noise</span> only details</p>\n',
