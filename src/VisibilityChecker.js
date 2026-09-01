@@ -98,6 +98,7 @@ function parseVisibilityRegions(content, sourcePath) {
   const lines = normalizedContent.split('\n');
   const findings = [];
   const regions = [];
+  const calloutBodies = [];
   let fence = null;
   let callout = null;
 
@@ -179,8 +180,9 @@ function parseVisibilityRegions(content, sourcePath) {
       continue;
     }
 
+    const body = lines.slice(callout.bodyStartIndex, index).join('\n');
+    calloutBodies.push(body);
     if (callout.type === 'paid' || callout.type === 'internal') {
-      const body = lines.slice(callout.bodyStartIndex, index).join('\n');
       const comparableText = normalizeComparableText(body);
       regions.push({
         visibility: callout.type,
@@ -209,7 +211,12 @@ function parseVisibilityRegions(content, sourcePath) {
     );
   }
 
-  return { findings, regions, comparableText: normalizeComparableText(normalizedContent) };
+  return {
+    findings,
+    regions,
+    calloutBodies,
+    comparableText: normalizeComparableText(normalizedContent)
+  };
 }
 
 function flattenStructure(metadata) {
@@ -428,6 +435,11 @@ export async function checkBookVisibility(bookDirectory, editionId, options = {}
       protectedFragments.push(
         ...createProtectedFragments(content, entry.path, documentVisibility)
       );
+      for (const body of parsed.calloutBodies) {
+        protectedFragments.push(
+          ...createProtectedFragments(body, entry.path, documentVisibility)
+        );
+      }
       protectedRegions.push({
         visibility: documentVisibility,
         startLine: 1,

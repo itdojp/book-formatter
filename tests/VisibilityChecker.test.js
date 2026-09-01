@@ -223,6 +223,26 @@ describe('VisibilityChecker', () => {
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );
+
+    const excludedCalloutBook = await copySampleBook();
+    const excludedCalloutBody = '除外文書内の標準note本文です。';
+    await fs.writeFile(
+      path.join(excludedCalloutBook, 'backmatter/afterword.md'),
+      `# 有償版\n\n:::note\n${excludedCalloutBody}\n:::\n`
+    );
+    const excludedCalloutLeak = await createArtifact(
+      `<aside>${excludedCalloutBody}</aside>\n`,
+      'excluded-callout.html'
+    );
+    const excludedCalloutReport = await checkBookVisibility(excludedCalloutBook, 'free', {
+      artifactPath: excludedCalloutLeak
+    });
+    assert.strictEqual(excludedCalloutReport.summary.safe, false);
+    assert.ok(
+      excludedCalloutReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
   });
 
   test('paidはpaid本文を許可してinternal本文を拒否し、internalは両方を許可する', async () => {
