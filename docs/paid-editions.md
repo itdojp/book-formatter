@@ -119,7 +119,8 @@ artifact checkは次を拒否する。
 
 - fenced code block外に残ったraw `:::paid` / `:::internal` marker
 - editionで除外したsource regionと、Unicode NFC・改行・空白正規化後も同一なtext fragment
-- standard callout、fenced code、list、inline Markdown、HTML tag/entityの有限wrapperを除いたreader-visible text fragment
+- standard callout、fenced code、list、inline Markdown、HTML tag/entity、標準math delimiterの有限wrapperを除いたreader-visible text fragment
+- HTML imageのreader-visibleな`alt` text fragment
 - 指定artifact path自体、その親path component、artifact tree内のsymbolic link
 
 directory指定時は既知のtext artifact extensionだけを検査する。PDF、EPUB、
@@ -166,6 +167,7 @@ version 1は完全な情報漏えい対策ではない。
 
 - markerのない本文が意味的に有償・内部情報かは判定しない
 - paraphrase、翻訳、HTML構造化など大きく変換された本文の同一性は判定しない
+- 空白を除いて8 code point未満のstandalone math本文は、通常語中の1変数まで拾う誤検知を避けるため独立substringとして照合しない。周辺本文を含むmath投影と、adapterのvisibility plan/target固有検査で補完する
 - binary artifact内部は共通checkerで判定しない
 - DRM、repository access、販売platform accessを設定しない
 - `structure`にないfileをadapterが独自に取り込む動作を許可しないが、adapter実装前には検証できない

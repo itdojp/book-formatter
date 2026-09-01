@@ -42,6 +42,7 @@ const ARTIFACT_TEXT_EXTENSIONS = new Set([
   '.yml'
 ]);
 const HTML_MARKUP_EXTENSIONS = new Set(['.html', '.htm', '.md', '.xhtml']);
+const MIN_STANDALONE_MATH_FRAGMENT_CODE_POINTS = 8;
 const HTML_BLOCK_ELEMENTS = new Set([
   'address',
   'article',
@@ -146,6 +147,17 @@ function stripHtmlTags(value, separator = '') {
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];
     if (!inTag) {
+      if (source.startsWith('<!--', index)) {
+        const commentEnd = source.indexOf('-->', index + 4);
+        if (commentEnd === -1) {
+          result += source.slice(index);
+          break;
+        }
+        const comment = source.slice(index, commentEnd + 3);
+        result += typeof separator === 'function' ? separator(comment) : separator;
+        index = commentEnd + 2;
+        continue;
+      }
       if (character === '<' && /[A-Za-z!/?]/u.test(source[index + 1] || '')) {
         inTag = true;
         tagStart = index;
@@ -379,6 +391,11 @@ function projectInlineChildrenWithCanonicalMath(children) {
   return { projected, fragments };
 }
 
+function hasSufficientStandaloneMathContext(value) {
+  return [...normalizeComparableText(value).replace(/\s/gu, '')].length >=
+    MIN_STANDALONE_MATH_FRAGMENT_CODE_POINTS;
+}
+
 function collectMarkdownTextFragments(value) {
   const fragments = [];
   for (const token of MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {})) {
@@ -392,7 +409,14 @@ function collectMarkdownTextFragments(value) {
       .join('');
     if (normalizeComparableText(projectedText)) fragments.push(projectedText);
     const mathProjection = projectInlineChildrenWithCanonicalMath(token.children);
-    if (normalizeComparableText(mathProjection.projected)) {
+    const projectedMathText = normalizeComparableText(mathProjection.projected);
+    const standaloneMath = mathProjection.fragments.some(
+      (fragment) => normalizeComparableText(fragment) === projectedMathText
+    );
+    if (
+      projectedMathText &&
+      (!standaloneMath || hasSufficientStandaloneMathContext(projectedMathText))
+    ) {
       fragments.push(mathProjection.projected);
     }
     for (const child of token.children) {
@@ -415,7 +439,11 @@ function collectCanonicalMathFragments(value) {
   const fragments = [];
   for (const token of MARKDOWN_TEXT_EXTRACTOR.parse(String(value || ''), {})) {
     if (token.type === 'inline' && token.children) {
-      fragments.push(...projectInlineChildrenWithCanonicalMath(token.children).fragments);
+      fragments.push(
+        ...projectInlineChildrenWithCanonicalMath(token.children).fragments.filter(
+          hasSufficientStandaloneMathContext
+        )
+      );
     }
   }
 

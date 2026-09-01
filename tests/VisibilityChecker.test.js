@@ -424,6 +424,20 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const commentedInlineLeak = await createArtifact(
+      '<p>Premium <!-- x > y --><strong>only</strong> &amp; details</p>\n',
+      'commented-inline.html'
+    );
+    const commentedInlineReport = await checkBookVisibility(renderedInlineBook, 'free', {
+      artifactPath: commentedInlineLeak
+    });
+    assert.strictEqual(commentedInlineReport.summary.safe, false);
+    assert.ok(
+      commentedInlineReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
+
     const mathBook = await copySampleBook();
     await fs.writeFile(
       path.join(mathBook, 'manuscript/01-introduction.md'),
@@ -498,6 +512,20 @@ describe('VisibilityChecker', () => {
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );
+
+    const shortMathBook = await copySampleBook();
+    await fs.writeFile(
+      path.join(shortMathBook, 'manuscript/01-introduction.md'),
+      '# 公開版\n\n:::paid\n$n$\n:::\n'
+    );
+    const unrelatedShortMathArtifact = await createArtifact(
+      '<script>function publicExample() { return true; }</script>\n',
+      'unrelated-short-math.html'
+    );
+    const unrelatedShortMathReport = await checkBookVisibility(shortMathBook, 'free', {
+      artifactPath: unrelatedShortMathArtifact
+    });
+    assert.strictEqual(unrelatedShortMathReport.summary.safe, true);
 
     const adjacentInlineBook = await copySampleBook();
     await fs.writeFile(
