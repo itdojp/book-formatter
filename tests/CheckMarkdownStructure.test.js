@@ -90,6 +90,31 @@ test('check-markdown-structure: front matter delimiters should allow trailing sp
   });
 });
 
+test('check-markdown-structure: BOM-prefixed front matter should retain validation', async () => {
+  await withTempDir(async (tmpRoot) => {
+    const files = {
+      'invalid-bom-front-matter.md': ['\uFEFF---', 'title: "broken', '---', '# Heading', ''].join(
+        '\n'
+      ),
+      'unclosed-bom-front-matter.md': ['\uFEFF---', 'title: "Unclosed"', '# Heading', ''].join(
+        '\n'
+      )
+    };
+    await Promise.all(
+      Object.entries(files).map(([name, content]) => fs.writeFile(path.join(tmpRoot, name), content, 'utf8'))
+    );
+
+    const { result, report } = runCheckMarkdownStructure(tmpRoot, { failOn: 'error' });
+
+    assert.equal(result.status, 1, `expected exit code 1, got ${result.status}\n${result.stderr}`);
+    assert.ok(report, 'report should be generated');
+    assert.deepEqual(
+      report.issues.map((issue) => issue.kind).sort(),
+      ['invalid_front_matter', 'unclosed_front_matter']
+    );
+  });
+});
+
 test('check-markdown-structure: heading level skip should be warning and fail on warn', async () => {
   await withTempDir(async (tmpRoot) => {
     const md = [

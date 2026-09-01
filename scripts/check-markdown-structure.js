@@ -30,7 +30,7 @@ function findFrontMatter(lines) {
     return { hasFrontMatter: false, bodyStartLine: 1 };
   }
 
-  if (!/^---[ \t]*$/.test(String(lines[0]))) {
+  if (!/^\uFEFF?---[ \t]*$/.test(String(lines[0]))) {
     return { hasFrontMatter: false, bodyStartLine: 1 };
   }
 
