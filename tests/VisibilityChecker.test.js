@@ -255,6 +255,7 @@ describe('VisibilityChecker', () => {
       ['free', ':::paid\nremoved too late\n:::\n'],
       ['free', '  :::internal\nindented marker remained\n  :::\n'],
       ['free', '<p>:::paid</p>\n'],
+      ['free', '<div>:::paid</div><div>public text</div>\n'],
       ['free', `---\n${PAID_BLOCK_TEXT}\n---\n`, 'front-matter-like.txt']
     ];
     for (const [editionId, content, filename] of cases) {

@@ -543,14 +543,20 @@ async function scanArtifact(artifactPath, protectedFragments) {
     const content = await fs.readFile(file.absolutePath, 'utf8');
     const allowFrontMatter = path.extname(file.reportPath).toLowerCase() === '.md';
     const artifactComparables = createArtifactComparables(content, allowFrontMatter);
-    const readerVisibleContent = stripHtmlTags(
-      MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
-        stripHtmlCodeElementContents(normalizeArtifactBody(content, allowFrontMatter))
-      )
+    const readerVisibleBase = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
+      stripHtmlCodeElementContents(normalizeArtifactBody(content, allowFrontMatter))
     );
+    const readerVisibleCandidates = [
+      stripHtmlTags(readerVisibleBase),
+      stripHtmlTags(readerVisibleBase, '\n')
+    ];
+    const renderedDelimiterLine =
+      readerVisibleCandidates
+        .map((candidate) => findRawProtectedDelimiter(candidate, false))
+        .find((line) => line !== null) ?? null;
     const delimiterLine =
       findRawProtectedDelimiter(content, allowFrontMatter) ||
-      findRawProtectedDelimiter(readerVisibleContent, false);
+      renderedDelimiterLine;
     if (delimiterLine !== null) {
       findings.push({
         code: 'raw_protected_marker_in_artifact',
