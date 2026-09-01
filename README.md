@@ -191,7 +191,12 @@ npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-
 ```
 
 補足:
+
 - `--apply-ux-profile` は `--registry` が必須です
+- このcommandの `book-registry.json` は `profile` / `modules` を持つ
+  legacy UX registryです。portfolio-level registry version 1との関係は
+  [docs/book-registry.md](docs/book-registry.md) を参照してください。
+
 ## 品質チェック（ローカル）
 
 ```bash
@@ -206,6 +211,9 @@ npm run check-layout-risk -- <book-dir> --output layout-risk-report.json
 
 # Markdown構造（Front Matter/見出しレベル/コードフェンス言語）を検証
 npm run check-markdown-structure -- <book-dir> --output markdown-structure-report.json
+
+# portfolio-level book registryのschemaと参照整合性を検証
+npm run validate:book-registry
 
 # 文章校正（textlint + PRH辞書）
 npm run check-textlint -- <book-dir> --output textlint-report.json

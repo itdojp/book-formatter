@@ -1,0 +1,41 @@
+schema_version: 1
+checked_at: 2026-09-01
+books:
+  it-engineer-knowledge-architecture:
+    title: IT Engineer Knowledge Architecture / ITエンジニア知識アーキテクチャ
+    status: active
+    repository:
+      url: https://github.com/itdojp/it-engineer-knowledge-architecture
+      branch: main
+      path: .
+    engine: jekyll
+    channels:
+      github_pages:
+        status: active
+        url: https://itdojp.github.io/it-engineer-knowledge-architecture/
+        notes: GitHub ActionsでJekyll 4.4.1を実行するPages workflow
+      cloudflare_pages:
+        status: unknown
+      web:
+        status: unknown
+      zenn:
+        status: unknown
+      note:
+        status: unknown
+      kindle:
+        status: unknown
+      booth:
+        status: unknown
+      pdf:
+        status: unknown
+    editions:
+      catalog-web:
+        title: 公開カタログWeb版
+        status: active
+        channels:
+          - github_pages
+    migration:
+      status: planned
+      target_engine: standard
+      notes: Epic #88のpilot。実移行は後続Issueで扱う
+    notes: このentryはregistry契約のpilot例であり、全書籍棚卸しではない
