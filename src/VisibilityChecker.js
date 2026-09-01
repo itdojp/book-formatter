@@ -376,9 +376,14 @@ function collectHtmlNonRenderedRanges(source) {
     const tagName = String(node.tagName || '').toLowerCase();
     const hasAttribute = (name) =>
       node.attrs?.some((attribute) => attribute.name.toLowerCase() === name);
+    const shadowRootMode = node.attrs
+      ?.find((attribute) => attribute.name.toLowerCase() === 'shadowrootmode')
+      ?.value.toLowerCase();
+    const isDeclarativeShadowRootTemplate =
+      tagName === 'template' && ['open', 'closed'].includes(shadowRootMode);
     const isNonRendered =
-      HTML_NON_RENDERED_ELEMENTS.has(tagName) ||
-      hasAttribute('hidden') ||
+      (!isDeclarativeShadowRootTemplate &&
+        (HTML_NON_RENDERED_ELEMENTS.has(tagName) || hasAttribute('hidden'))) ||
       (tagName === 'dialog' && !hasAttribute('open'));
     const location = node.sourceCodeLocation;
     if (

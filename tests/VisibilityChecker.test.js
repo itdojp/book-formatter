@@ -778,6 +778,40 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    for (const shadowRootMode of ['open', 'closed']) {
+      const declarativeShadowRootLeak = await createArtifact(
+        `<div><template shadowrootmode="${shadowRootMode}">Premium <strong>only</strong> details</template></div>\n`,
+        `declarative-shadow-root-${shadowRootMode}.html`
+      );
+      const declarativeShadowRootReport = await checkBookVisibility(
+        renderedMarkdownBook,
+        'free',
+        { artifactPath: declarativeShadowRootLeak }
+      );
+      assert.strictEqual(
+        declarativeShadowRootReport.summary.safe,
+        false,
+        shadowRootMode
+      );
+      assert.ok(
+        declarativeShadowRootReport.findings.some(
+          (finding) => finding.code === 'protected_content_in_artifact'
+        ),
+        shadowRootMode
+      );
+    }
+
+    const invalidShadowRootModeArtifact = await createArtifact(
+      '<p>Premium<template shadowrootmode="invalid"> only</template> details</p>\n',
+      'invalid-shadow-root-mode.html'
+    );
+    const invalidShadowRootModeReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: invalidShadowRootModeArtifact }
+    );
+    assert.strictEqual(invalidShadowRootModeReport.summary.safe, true);
+
     const hiddenInterruptionLeak = await createArtifact(
       '<p>Premium<span hidden>noise</span> only details</p>\n',
       'hidden-interruption.html'
