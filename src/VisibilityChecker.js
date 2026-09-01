@@ -368,7 +368,7 @@ function collectHtmlNonRenderedRanges(source) {
     const hasAttribute = (name) =>
       node.attrs?.some((attribute) => attribute.name.toLowerCase() === name);
     const isNonRendered =
-      ['script', 'style', 'template', 'title'].includes(tagName) ||
+      ['noscript', 'script', 'style', 'template', 'title'].includes(tagName) ||
       hasAttribute('hidden') ||
       (tagName === 'dialog' && !hasAttribute('open'));
     const location = node.sourceCodeLocation;

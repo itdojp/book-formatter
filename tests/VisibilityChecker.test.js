@@ -701,6 +701,17 @@ describe('VisibilityChecker', () => {
       )
     );
 
+    const noscriptInterruptionLeak = await createArtifact(
+      '<p>Premium<noscript>noise</noscript> only details</p>\n',
+      'noscript-interruption.html'
+    );
+    const noscriptInterruptionReport = await checkBookVisibility(
+      renderedMarkdownBook,
+      'free',
+      { artifactPath: noscriptInterruptionLeak }
+    );
+    assert.strictEqual(noscriptInterruptionReport.summary.safe, false);
+
     const titleInterruptionLeak = await createArtifact(
       '<p>Premium<title>noise</title> only details</p>\n',
       'title-interruption.html'
