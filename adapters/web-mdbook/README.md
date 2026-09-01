@@ -31,7 +31,7 @@ document/blockのvisibilityを生成前に適用します。`note`、`tip`、`wa
 
 Web正本のreader-visible raw HTMLはfail closedで禁止します。fenced code内の説明例はreader-visible markupとして解釈しません。この有限契約により、declarative Shadow DOM、`slot`、`iframe[srcdoc]`、HTML data URLなどのcomposed/nested documentをadapterが生成することを禁止し、共通checkerでbrowser DOMを再実装しません。
 
-相対linkは、同じeditionに含まれるMarkdown、生成した`book.yaml`、または宣言済み`assets/`内の実fileだけを許可します。assetは参照されたfileだけを複製します。外部linkは資格情報を含まないHTTPSだけを許可し、外部画像hotlinkと危険schemeを拒否します。structure titleは`SUMMARY.md`へdisplay textとして出力し、HTMLの`&`、`<`、`>`とMarkdown labelのbackslash/bracketをescapeします。
+相対linkは、同じeditionに含まれるMarkdown、生成した`book.yaml`、または宣言済み`assets/`内の実fileだけを許可します。assetは参照されたfileだけを複製します。SVGはcopy前に有限なactive-content検査を行い、script、event handler、foreign content、animation、style、外部参照を拒否します。外部linkは資格情報を含まないHTTPSだけを許可し、外部画像hotlinkと危険schemeを拒否します。structure titleは`SUMMARY.md`へdisplay textとして出力し、HTMLの`&`、`<`、`>`とMarkdown labelのbackslash/bracketをescapeします。
 
 mdBookの`{{#include ...}}`、`{{#rustdoc_include ...}}`、file-backed `{{#playground ...}}`は、fenced code内でもpreprocessorがlocal fileを読み得るため使用禁止です。editionで選択済みの文書と宣言済みassetだけを生成物へ入れる境界を迂回させません。構文を説明する場合もdirective文字列をそのまま正本へ置かず、通常の文章へ書き換えます。
 

@@ -222,13 +222,18 @@ describe('WebMdbookAdapter', () => {
   test('参照assetだけを複製しlink境界をfail closedにする', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-web-mdbook-assets-output-');
-    await fs.writeFile(path.join(bookDirectory, 'assets/diagram.svg'), '<svg></svg>\n');
+    await fs.writeFile(
+      path.join(bookDirectory, 'assets/diagram.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="paint" /></defs>' +
+        '<rect fill="url(#paint)" /></svg>\n'
+    );
     await fs.writeFile(path.join(bookDirectory, 'assets/unreferenced.txt'), 'do not copy\n');
     await appendWorkflow(bookDirectory, '\n![変換図](../assets/diagram.svg)\n');
     const result = await build(bookDirectory, outputRoot);
     assert.strictEqual(
       await fs.readFile(path.join(result.outputDirectory, 'src/assets/diagram.svg'), 'utf8'),
-      '<svg></svg>\n'
+      '<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="paint" /></defs>' +
+        '<rect fill="url(#paint)" /></svg>\n'
     );
     assert.strictEqual(
       await fs.pathExists(path.join(result.outputDirectory, 'src/assets/unreferenced.txt')),
@@ -247,6 +252,30 @@ describe('WebMdbookAdapter', () => {
       const unsafeBook = await copySampleBook();
       const unsafeOutput = await temporaryDirectory(`tmp-web-mdbook-link-${index}-`);
       await appendWorkflow(unsafeBook, `\n${markdown}\n`);
+      await assert.rejects(build(unsafeBook, unsafeOutput), expected);
+    }
+
+    const unsafeSvgCases = [
+      ['<svg><script>blocked</script></svg>', /active element <script>/],
+      ['<svg onload="blocked"></svg>', /event-handler attribute onload/],
+      [
+        '<svg><image href="https://assets.example/pixel.png" /></svg>',
+        /non-local href reference/
+      ],
+      ['<svg><style>rect { fill: red; }</style></svg>', /active element <style>/],
+      ['<svg><foreignObject>blocked</foreignObject></svg>', /active element <foreignObject>/],
+      ['<svg><animate attributeName="x" /></svg>', /active element <animate>/],
+      [
+        '<svg xml:base="https://assets.example/"><use href="#shape" /></svg>',
+        /alternate base URL/
+      ],
+      ['<svg><rect fill="u\\72l(https://assets.example/pixel)" /></svg>', /ambiguous escaped/]
+    ];
+    for (const [index, [svg, expected]] of unsafeSvgCases.entries()) {
+      const unsafeBook = await copySampleBook();
+      const unsafeOutput = await temporaryDirectory(`tmp-web-mdbook-svg-${index}-`);
+      await fs.writeFile(path.join(unsafeBook, 'assets/payload.svg'), svg);
+      await appendWorkflow(unsafeBook, '\n[open](../assets/payload.svg)\n');
       await assert.rejects(build(unsafeBook, unsafeOutput), expected);
     }
   });

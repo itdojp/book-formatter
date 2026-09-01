@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'fs-extra';
 import MarkdownIt from 'markdown-it';
 import markdownItFootnote from 'markdown-it-footnote';
+import { parseFragment } from 'parse5';
 import YAML from 'yaml';
 
 import {
@@ -33,6 +34,24 @@ const PUBLIC_CALLOUT_LABELS = Object.freeze({
 });
 
 const MDBOOK_FILE_DIRECTIVE = /\{\{\s*#\s*(include|rustdoc_include|playground)(?=\s|\}\})/giu;
+const ACTIVE_SVG_ELEMENTS = new Set([
+  'animate',
+  'animatemotion',
+  'animatetransform',
+  'audio',
+  'discard',
+  'embed',
+  'foreignobject',
+  'handler',
+  'iframe',
+  'object',
+  'script',
+  'set',
+  'style',
+  'video'
+]);
+const SAFE_SVG_FRAGMENT_REFERENCE = /^#[A-Za-z_][A-Za-z0-9_.:-]*$/u;
+const SAFE_SVG_URL_FUNCTION = /^url\(\s*#[A-Za-z_][A-Za-z0-9_.:-]*\s*\)$/iu;
 
 export class WebMdbookAdapterError extends Error {
   constructor(message) {
@@ -335,6 +354,87 @@ async function requireRegularPathBelow(bookRoot, relativePath, label) {
   return { resolved, relative };
 }
 
+function inspectSvgNode(node, assetPath) {
+  if (node.tagName) {
+    const tagName = node.tagName.toLowerCase();
+    if (ACTIVE_SVG_ELEMENTS.has(tagName)) {
+      throw new WebMdbookAdapterError(
+        `SVG asset contains active element <${node.tagName}>: ${assetPath}`
+      );
+    }
+
+    for (const attribute of node.attrs || []) {
+      const attributeName = attribute.name.toLowerCase();
+      const qualifiedName = attribute.prefix
+        ? `${attribute.prefix.toLowerCase()}:${attributeName}`
+        : attributeName;
+      const value = attribute.value.trim();
+      if (attributeName.startsWith('on')) {
+        throw new WebMdbookAdapterError(
+          `SVG asset contains event-handler attribute ${qualifiedName}: ${assetPath}`
+        );
+      }
+      if (attributeName === 'style') {
+        throw new WebMdbookAdapterError(
+          `SVG asset contains inline style capable of external references: ${assetPath}`
+        );
+      }
+      if (qualifiedName === 'xml:base') {
+        throw new WebMdbookAdapterError(
+          `SVG asset contains an alternate base URL: ${assetPath}`
+        );
+      }
+      if (value.includes('\\')) {
+        throw new WebMdbookAdapterError(
+          `SVG asset contains an ambiguous escaped attribute value: ${assetPath}`
+        );
+      }
+      if (attributeName === 'href' || attributeName === 'src') {
+        if (value && !SAFE_SVG_FRAGMENT_REFERENCE.test(value)) {
+          throw new WebMdbookAdapterError(
+            `SVG asset contains non-local ${qualifiedName} reference: ${assetPath}`
+          );
+        }
+      }
+      if (/url\s*\(/iu.test(value) && !SAFE_SVG_URL_FUNCTION.test(value)) {
+        throw new WebMdbookAdapterError(
+          `SVG asset contains non-local or ambiguous CSS URL reference: ${assetPath}`
+        );
+      }
+    }
+  }
+
+  for (const child of node.childNodes || []) inspectSvgNode(child, assetPath);
+}
+
+async function assertSafeSvgAsset(assetPath, relativePath) {
+  const bytes = await fs.readFile(assetPath);
+  let source;
+  try {
+    source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw new WebMdbookAdapterError(`SVG asset must be valid UTF-8: ${relativePath}`);
+  }
+  if (/<!\s*(doctype|entity)\b|<\?xml-stylesheet\b/iu.test(source)) {
+    throw new WebMdbookAdapterError(
+      `SVG asset contains an external-declaration surface: ${relativePath}`
+    );
+  }
+
+  const document = parseFragment(source);
+  const roots = document.childNodes.filter(
+    (node) => node.tagName || (node.nodeName === '#text' && node.value.trim())
+  );
+  if (
+    roots.length !== 1 ||
+    roots[0].tagName?.toLowerCase() !== 'svg' ||
+    roots[0].namespaceURI !== 'http://www.w3.org/2000/svg'
+  ) {
+    throw new WebMdbookAdapterError(`SVG asset must contain exactly one SVG root: ${relativePath}`);
+  }
+  inspectSvgNode(roots[0], relativePath);
+}
+
 async function resolveDocumentAssets({
   bookRoot,
   metadata,
@@ -384,6 +484,9 @@ async function resolveDocumentAssets({
       throw new WebMdbookAdapterError(
         `${kind} target must be an included Markdown document, generated book.yaml, or declared asset: ${destination}`
       );
+    }
+    if (path.extname(verifiedRelative).toLowerCase() === '.svg') {
+      await assertSafeSvgAsset(resolved, verifiedRelative);
     }
     assets.push({ source: resolved, destination: verifiedRelative });
   }
