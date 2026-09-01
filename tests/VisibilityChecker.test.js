@@ -192,6 +192,36 @@ describe('VisibilityChecker', () => {
         (finding) => finding.code === 'protected_content_in_artifact'
       )
     );
+
+    const bomBook = await copySampleBook();
+    const bomPaidText = 'BOM付き有償範囲です。';
+    await fs.writeFile(
+      path.join(bomBook, 'manuscript/01-introduction.md'),
+      `\uFEFF:::paid\n${bomPaidText}\n:::\n`
+    );
+    const bomLeak = await createArtifact(`<p>${bomPaidText}</p>\n`, 'bom.html');
+    const bomLeakReport = await checkBookVisibility(bomBook, 'free', {
+      artifactPath: bomLeak
+    });
+    assert.strictEqual(bomLeakReport.summary.visibilityRegions, 3);
+    assert.strictEqual(bomLeakReport.summary.safe, false);
+
+    const multiParagraphBook = await copySampleBook();
+    const firstPaidParagraph = '有償範囲の第一段落だけが誤って出力されました。';
+    await fs.appendFile(
+      path.join(multiParagraphBook, 'manuscript/01-introduction.md'),
+      `\n:::paid\n${firstPaidParagraph}\n\n有償範囲の第二段落です。\n:::\n`
+    );
+    const partialLeak = await createArtifact(`<p>${firstPaidParagraph}</p>\n`, 'partial.html');
+    const partialLeakReport = await checkBookVisibility(multiParagraphBook, 'free', {
+      artifactPath: partialLeak
+    });
+    assert.strictEqual(partialLeakReport.summary.safe, false);
+    assert.ok(
+      partialLeakReport.findings.some(
+        (finding) => finding.code === 'protected_content_in_artifact'
+      )
+    );
   });
 
   test('paidはpaid本文を許可してinternal本文を拒否し、internalは両方を許可する', async () => {

@@ -54,6 +54,7 @@ function compareCodeUnits(left, right) {
 
 function normalizeComparableText(value) {
   return String(value || '')
+    .replace(/^\uFEFF/u, '')
     .normalize('NFC')
     .replace(/\r\n?/g, '\n')
     .replace(/\s+/gu, ' ')
@@ -91,7 +92,9 @@ function createProtectedFragments(value, source, visibility) {
 }
 
 function parseVisibilityRegions(content, sourcePath) {
-  const normalizedContent = String(content || '').replace(/\r\n?/g, '\n');
+  const normalizedContent = String(content || '')
+    .replace(/^\uFEFF/u, '')
+    .replace(/\r\n?/g, '\n');
   const lines = normalizedContent.split('\n');
   const findings = [];
   const regions = [];
@@ -184,7 +187,8 @@ function parseVisibilityRegions(content, sourcePath) {
         startLine: callout.line,
         endLine: lineNumber,
         digest: digest(comparableText),
-        comparableText
+        comparableText,
+        protectedFragments: createProtectedFragments(body, sourcePath, callout.type)
       });
     }
     callout = null;
@@ -428,12 +432,7 @@ export async function checkBookVisibility(bookDirectory, editionId, options = {}
       const allowed = included && visibilityAllowed(region.visibility, edition.visibility);
       if (!allowed) {
         protectedRegionCount += 1;
-        protectedFragments.push({
-          source: entry.path,
-          visibility: region.visibility,
-          digest: region.digest,
-          comparableText: region.comparableText
-        });
+        protectedFragments.push(...region.protectedFragments);
       }
       protectedRegions.push({
         visibility: region.visibility,
