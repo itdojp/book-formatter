@@ -120,7 +120,14 @@ function createManifest(metadata, target, edition, visibilityReport) {
       section: document.section,
       path: document.path,
       visibility: document.visibility,
-      decision: 'include'
+      decision: 'include',
+      visibility_regions: document.protectedRegions.map((region) => ({
+        visibility: region.visibility,
+        start_line: region.startLine,
+        end_line: region.endLine,
+        digest: region.digest,
+        decision: region.decision
+      }))
     }));
 
   return {

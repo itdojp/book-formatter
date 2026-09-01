@@ -84,6 +84,12 @@ describe('AdapterBuild', () => {
       editionId: 'free',
       dryRun: true
     });
+    const paid = await buildStandardBookAdapter({
+      bookDirectory,
+      target: 'web-mdbook',
+      editionId: 'paid',
+      dryRun: true
+    });
 
     assert.deepStrictEqual(second.manifest, first.manifest);
     assert.strictEqual(first.written, false);
@@ -95,7 +101,42 @@ describe('AdapterBuild', () => {
       first.manifest.documents.map((document) => document.id),
       ['introduction', 'workflow']
     );
+    assert.deepStrictEqual(first.manifest.documents[0].visibility_regions, []);
+    assert.deepStrictEqual(
+      first.manifest.documents[1].visibility_regions.map((region) => ({
+        visibility: region.visibility,
+        start_line: region.start_line,
+        end_line: region.end_line,
+        decision: region.decision
+      })),
+      [
+        {
+          visibility: 'paid',
+          start_line: 43,
+          end_line: 45,
+          decision: 'exclude-block'
+        },
+        {
+          visibility: 'internal',
+          start_line: 47,
+          end_line: 49,
+          decision: 'exclude-block'
+        }
+      ]
+    );
+    assert.ok(
+      first.manifest.documents[1].visibility_regions.every((region) =>
+        /^[a-f0-9]{64}$/.test(region.digest)
+      )
+    );
     assert.ok(!JSON.stringify(first.manifest).includes('内部確認メモ'));
+    assert.ok(!JSON.stringify(first.manifest).includes('有償edition候補'));
+    assert.deepStrictEqual(
+      paid.manifest.documents
+        .find((document) => document.id === 'workflow')
+        .visibility_regions.map((region) => region.decision),
+      ['include', 'exclude-block']
+    );
     assert.strictEqual(await fs.pathExists(first.manifestPath), false);
   });
 

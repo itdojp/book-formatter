@@ -71,5 +71,6 @@ Version 1は次を記録します。
 - edition ID、title、status、visibility
 - visibility contract versionとredacted summary
 - editionへ含める文書のID、section、相対path、visibility、decision
+- 文書内visibility blockの開始・終了行、visibility、SHA-256 digest、include/exclude decision（本文は含めない）
 
 破壊的なfield変更は `manifest_version` を上げます。追加fieldもconsumer互換性を確認し、fixtureとREADMEを同じPRで更新してください。
