@@ -41,6 +41,7 @@ const ARTIFACT_TEXT_EXTENSIONS = new Set([
   '.yaml',
   '.yml'
 ]);
+const HTML_MARKUP_EXTENSIONS = new Set(['.html', '.htm', '.md', '.xhtml']);
 const HTML_BLOCK_ELEMENTS = new Set([
   'address',
   'article',
@@ -594,7 +595,11 @@ async function scanArtifact(artifactPath, protectedFragments) {
 
   for (const file of files) {
     const content = await fs.readFile(file.absolutePath, 'utf8');
-    const allowFrontMatter = path.extname(file.reportPath).toLowerCase() === '.md';
+    const fileExtension = path.extname(file.reportPath).toLowerCase();
+    const allowFrontMatter = fileExtension === '.md';
+    const rawMarkerContent = HTML_MARKUP_EXTENSIONS.has(fileExtension)
+      ? stripHtmlCodeElementContents(content)
+      : content;
     const artifactComparables = createArtifactComparables(content, allowFrontMatter);
     const readerVisibleBase = MARKDOWN_TEXT_EXTRACTOR.utils.unescapeAll(
       stripHtmlCodeElementContents(normalizeArtifactBody(content, allowFrontMatter))
@@ -609,7 +614,7 @@ async function scanArtifact(artifactPath, protectedFragments) {
         .map((candidate) => findRawProtectedDelimiter(candidate, false))
         .find((line) => line !== null) ?? null;
     const delimiterLine =
-      findRawProtectedDelimiter(content, allowFrontMatter) ||
+      findRawProtectedDelimiter(rawMarkerContent, allowFrontMatter) ||
       renderedDelimiterLine;
     if (delimiterLine !== null) {
       findings.push({

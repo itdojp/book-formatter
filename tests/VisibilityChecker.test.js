@@ -215,7 +215,7 @@ describe('VisibilityChecker', () => {
     );
 
     const renderedFenceArtifact = await createArtifact(
-      '<pre class="highlight"><code>:::paid\nliteral example\n:::</code></pre>\n',
+      '<pre class="highlight"><code>\n:::paid\nliteral example\n:::\n</code></pre>\n',
       'rendered-fence.html'
     );
     const renderedFenceReport = await checkBookVisibility(SAMPLE_BOOK, 'free', {
