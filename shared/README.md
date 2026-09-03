@@ -44,6 +44,9 @@
 ```bash
 (
 set -euo pipefail
+: "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
+test "$(git rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
+test -z "$(git status --porcelain)"
 npm run sync-components -- \
   --book ../consumer-book \
   --components layouts includes assets \
@@ -56,7 +59,10 @@ npm run sync-components -- \
 ```bash
 (
 set -euo pipefail
+: "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
 : "${AUDITED_BASE_SHA:?set the audited 40-character consumer base SHA}"
+test "$(git rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
+test -z "$(git status --porcelain)"
 git -C ../consumer-book worktree add --detach \
   ../.worktrees/consumer-sync-pilot "$AUDITED_BASE_SHA"
 npm run sync-components -- \
