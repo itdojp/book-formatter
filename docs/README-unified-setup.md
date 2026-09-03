@@ -105,10 +105,26 @@ for INDEX in "${!SOURCE_RELS[@]}"; do
   fi
   DEST_PARENT=$CONSUMER_ROOT
   DEST_REMAINDER=$DEST_REL
+  DEST_ANCESTOR_REL=
   while [[ "$DEST_REMAINDER" == */* ]]; do
     DEST_COMPONENT=${DEST_REMAINDER%%/*}
     DEST_REMAINDER=${DEST_REMAINDER#*/}
     DEST_PARENT="$DEST_PARENT/$DEST_COMPONENT"
+    if [ -z "$DEST_ANCESTOR_REL" ]; then
+      DEST_ANCESTOR_REL=$DEST_COMPONENT
+    else
+      DEST_ANCESTOR_REL="$DEST_ANCESTOR_REL/$DEST_COMPONENT"
+    fi
+    INDEX_MODE=$(git -C "$CONSUMER_ROOT" ls-files --stage -- \
+      "$DEST_ANCESTOR_REL" | \
+      awk -v target="$DEST_ANCESTOR_REL" '$4 == target { print $1; exit }')
+    COMMIT_MODE=$(git -C "$CONSUMER_ROOT" ls-tree \
+      "$AUDITED_CONSUMER_SHA" -- "$DEST_ANCESTOR_REL" | \
+      awk 'NR == 1 { print $1 }')
+    if [ "$INDEX_MODE" = 160000 ] || [ "$COMMIT_MODE" = 160000 ]; then
+      echo "destination ancestor must not be a gitlink: $DEST_ANCESTOR_REL" >&2
+      exit 1
+    fi
     if [ -L "$DEST_PARENT" ]; then
       echo "destination ancestor must not be a symbolic link: $DEST_PARENT" >&2
       exit 1
@@ -132,7 +148,7 @@ git -C "$CONSUMER_ROOT" reset -- "${DEST_RELS[@]}"
 )
 ```
 
-`RESTORE_ITEMS`には上の有限集合から、同じ監査単位で復旧する項目を空白区切りで1件以上指定する（例: `RESTORE_ITEMS="config page-navigation navigation index"`）。全sourceをnon-symlinkのregular fileかつ監査済みformatter SHAのblob一致として照合し、全destination / symlink境界もcopy前に検査して、重複項目、既存file、consumer indexまたは監査済みconsumer commitに存在するpathを拒否する。これにより、clean statusに現れないsparse checkoutやskip-worktreeの欠損を「未作成」と誤認してconsumer固有のtracked fileを置換しない。変更が必要な既存fileは通常のconsumer task branchで別途差分を作成・レビューする。
+`RESTORE_ITEMS`には上の有限集合から、同じ監査単位で復旧する項目を空白区切りで1件以上指定する（例: `RESTORE_ITEMS="config page-navigation navigation index"`）。全sourceをnon-symlinkのregular fileかつ監査済みformatter SHAのblob一致として照合し、全destination / symlink / gitlink境界もcopy前に検査して、重複項目、既存file、consumer indexまたは監査済みconsumer commitに存在するpathを拒否する。これにより、clean statusに現れないsparse checkoutやskip-worktreeの欠損を「未作成」と誤認した上書きと、submodule内へ書いた差分がsuperprojectの監査差分から脱落する不完全な復旧を防ぐ。変更が必要な既存fileは通常のconsumer task branchで別途差分を作成・レビューする。
 
 `navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleを置換し、各pathをconsumerのcanonical route inventoryと照合して、不一致のpathを置換し、不要な行を削除する。`/introduction/`や`/chapters/chapter-01/`等はconsumerのcanonical routeと一致する場合があるため、それ自体をstarter markerとはみなさず、consumerのBook QA / local link checkで全destinationの存在を検証する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、概要・対象読者・到達目標・読書経路を含む全例示本文を書き換える。次の検査で既知のstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
 

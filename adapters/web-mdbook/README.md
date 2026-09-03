@@ -58,9 +58,34 @@ mdBook `0.5.4`を使用します。CIとLinux x86_64のローカル検証では�
 ```bash
 (
 set -euo pipefail
+: "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
 : "${BOOK_ROOT:?set the same book directory used by adapter build}"
 : "${BOOK_EDITION:?set the same edition ID used by adapter build}"
 : "${BOOK_OUTPUT_ROOT:?set the same output root used by adapter build}"
+[[ "$AUDITED_FORMATTER_SHA" =~ ^[0-9a-f]{40}$ ]]
+test "$(git rev-parse --show-toplevel)" = "$PWD"
+test "$(git rev-parse --verify "$AUDITED_FORMATTER_SHA^{commit}")" = \
+  "$AUDITED_FORMATTER_SHA"
+test "$(git rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
+test -z "$(git status --porcelain)"
+TRACKED_FORMATTER_FILES=0
+while IFS= read -r -d '' FORMATTER_REL; do
+  test -f "$FORMATTER_REL"
+  test ! -L "$FORMATTER_REL"
+  test "$(git hash-object -- "$FORMATTER_REL")" = \
+    "$(git rev-parse "$AUDITED_FORMATTER_SHA:$FORMATTER_REL")"
+  TRACKED_FORMATTER_FILES=$((TRACKED_FORMATTER_FILES + 1))
+done < <(git ls-files -z)
+test "$TRACKED_FORMATTER_FILES" -gt 0
+if [ -e ./node_modules ] || [ -L ./node_modules ]; then
+  test -d ./node_modules
+  test ! -L ./node_modules
+fi
+NESTED_NODE_MODULES=$(find . \
+  -path ./.git -prune -o -path ./node_modules -prune -o \
+  -name node_modules -print -quit)
+test -z "$NESTED_NODE_MODULES"
+npm ci --ignore-scripts
 MDBOOK_PROJECT_DIR="$BOOK_OUTPUT_ROOT/web-mdbook"
 MDBOOK_VERSION=0.5.4
 MDBOOK_TARGET=x86_64-unknown-linux-gnu
@@ -130,7 +155,7 @@ npm run check-visibility -- \
 )
 ```
 
-`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`はadapter project生成時に設定した同じ値を維持する。このself-contained blockは既存projectを信用せず同じ入力からadapter projectを再生成し、mdBook build後にはroot直下のbuild出力`book/`だけを一時退避する。別の一時出力へ決定的に再生成したproject/manifestとの全体比較では、source側の同名directoryを除外しない。その後、artifactを戻し、同じsource/editionからprotected fragmentを抽出して検査するため、別のsample書籍や生成後に変更されたsourceでvisibility検査を代用しない。URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理する。各buildはworkspace内の新しい一時directoryへarchiveを取得・検証・展開し、同じfail-fast block内でbuildと公開前検査まで完了してからdirectoryを削除する。展開済みbinaryや既存tool directoryを再利用せず、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。
+`AUDITED_FORMATTER_SHA`にはreview済みの40桁commit SHAを指定し、blockは最初のnpm commandより前にHEADと全tracked fileをそのcommitのblobへ照合する。root依存は照合済みlockfileから再構築し、root以外の`node_modules`は拒否する。`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`はadapter project生成時に設定した同じ値を維持する。このself-contained blockは既存projectを信用せず同じ入力からadapter projectを再生成し、mdBook build後にはroot直下のbuild出力`book/`だけを一時退避する。別の一時出力へ決定的に再生成したproject/manifestとの全体比較では、source側の同名directoryを除外しない。その後、artifactを戻し、同じsource/editionからprotected fragmentを抽出して検査するため、別のsample書籍や生成後に変更されたsourceでvisibility検査を代用しない。URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理する。各buildはworkspace内の新しい一時directoryへarchiveを取得・検証・展開し、同じfail-fast block内でbuildと公開前検査まで完了してからdirectoryを削除する。展開済みbinaryや既存tool directoryを再利用せず、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。
 
 responsive checkerは生成project/HTML/CSS契約に加え、利用可能なChromeで全generated content pageに対し、次のviewportのsidebar/content非重複とhidden状態のbody overflowを検証します。mdBook 0.5.4のsidebar support pageであるroot `toc.html`だけを有限に除外し、他のHTMLでresponsive DOM IDが欠けた場合はfail closedです。
 
