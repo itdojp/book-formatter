@@ -42,15 +42,20 @@
 最初にdry-runでversion差分と予定componentを粗く確認する。
 
 ```bash
+(
+set -euo pipefail
 npm run sync-components -- \
   --book ../consumer-book \
   --components layouts includes assets \
   --dry-run
+)
 ```
 
 現行dry-runはconsumerの`shared.version`が現行versionと一致するとmanaged fileのbyte差分を検査せず終了するため、差分0の証拠には使用しない。監査済みbase SHAから隔離した一時worktreeを作り、同じ有限componentを通常同期して実差分を確認する。
 
 ```bash
+(
+set -euo pipefail
 : "${AUDITED_BASE_SHA:?set the audited 40-character consumer base SHA}"
 git -C ../consumer-book worktree add --detach \
   ../.worktrees/consumer-sync-pilot "$AUDITED_BASE_SHA"
@@ -61,6 +66,7 @@ git -C ../.worktrees/consumer-sync-pilot status --short
 git -C ../.worktrees/consumer-sync-pilot add -N --all
 git -C ../.worktrees/consumer-sync-pilot diff --
 git -C ../.worktrees/consumer-sync-pilot reset --
+)
 ```
 
 `git add -N --all`は未追跡の新規managed fileを内容付きdiffへ含めるためだけに使い、監査後の`reset`でintent-to-addを解除する。同期結果を一時worktreeからcommitしない。consumerの`book-config.json`にあるopt-outはCLI指定で上書きしない。実fileまたはcomponent versionに差分がある場合だけ`shared.version`と同期時刻を更新する。確認済み差分だけをconsumerのtask branchへ再現し、Book QA前にallowlist外の変更がないことを確認する。

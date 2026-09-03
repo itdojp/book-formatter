@@ -55,10 +55,13 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 3. 対象を1冊に限定し、dry-runでversion差分と予定componentを粗く確認する。
 
    ```bash
+   (
+   set -euo pipefail
    npm run sync-components -- \
      --book ../consumer-book \
      --components layouts includes assets \
      --dry-run
+   )
    ```
 
    現行dry-runは`shared.version`が一致するとfile内容を比較せず終了するため、差分0の証拠には使用しない。
@@ -66,6 +69,8 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 4. consumerの監査済みbase SHAから隔離した一時worktreeを作り、そのcopyへ通常同期して`git diff`を確認する。
 
    ```bash
+   (
+   set -euo pipefail
    : "${AUDITED_BASE_SHA:?set the audited 40-character consumer base SHA}"
    git -C ../consumer-book worktree add --detach \
      ../.worktrees/consumer-sync-pilot "$AUDITED_BASE_SHA"
@@ -76,6 +81,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    git -C ../.worktrees/consumer-sync-pilot add -N --all
    git -C ../.worktrees/consumer-sync-pilot diff --
    git -C ../.worktrees/consumer-sync-pilot reset --
+   )
    ```
 
    `git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。同期結果をこの一時worktreeからcommitしない。

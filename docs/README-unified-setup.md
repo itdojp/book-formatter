@@ -37,6 +37,8 @@ redirect_from:
 既存legacy書籍を再構築する手動手順（例）:
 
 ```bash
+(
+set -euo pipefail
 # いずれも絶対pathを指定する
 : "${FORMATTER_ROOT:?set the absolute path to the clean formatter worktree}"
 : "${CONSUMER_ROOT:?set the absolute path to the isolated consumer worktree}"
@@ -53,6 +55,7 @@ install -D -m 0644 \
 git -C "$CONSUMER_ROOT" add -N -- docs/_data/navigation.yml
 git -C "$CONSUMER_ROOT" diff -- docs/_data/navigation.yml
 git -C "$CONSUMER_ROOT" reset -- docs/_data/navigation.yml
+)
 ```
 
 ## スキャフォールドスクリプトの利用

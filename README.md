@@ -10,7 +10,7 @@ Book Formatterは、標準`book.yaml`を起点とするマルチチャネルadap
 
 ## 特徴
 
-- ⚡ **高速生成**: 新しい書籍を5分以内で作成
+- ⚡ **高速生成**: 標準Web書籍の検証・出力と既存legacy書籍の保守を自動化
 - 🔧 **設定駆動**: JSON/YAML設定ファイルでカスタマイズ
 - 📝 **マルチチャネル基盤**: 標準Markdown / mdBookと既存Jekyll / GitHub Pages互換
 - 🛡️ **バリデーション**: 設定ファイルの自動検証
@@ -61,17 +61,17 @@ command blockは1つのsubshellとして実行し、いずれかのgateが失敗
 
 以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
 
-### 1. サンプル設定ファイルの作成
+### 1. 既存legacy書籍用サンプル設定ファイルの確認
 
 ```bash
-# サンプル設定ファイルを生成
+# 既存book-config.jsonの再構築に使うサンプル設定ファイルを生成
 npm start init
 
 # または特定のパスに生成
 npm start init --output ./my-book-config.json
 ```
 
-### 2. 設定ファイルの編集
+### 2. 既存legacy書籍用設定ファイルの編集
 
 生成されたサンプル設定ファイルを編集して、書籍の情報を設定します：
 
@@ -123,27 +123,27 @@ npm start validate-config --verbose
 npm start validate-config --config ./path/to/config.json
 ```
 
-### 4. 既存Jekyll形式の書籍生成（legacy）
+### 4. 既存Jekyll書籍の再構築・保守（legacy）
 
 この手順は既存Jekyll / GitHub Pages形式を生成・保守する場合のlegacy手順です。新規標準Web書籍の推奨経路ではありません。
 
 #### 🎯 7つのフェーズ概要
 
-1. **Phase 1: プロジェクト初期化** (30分)
-   - book-formatter を使用した初期化
-   - 書籍設定ファイルの作成
+1. **Phase 1: 既存consumerの状態確認** (30分)
+   - 現行構成とdefault branch SHAの監査
+   - 既存`book-config.json`の検証または再構築
 
-2. **Phase 2: GitHub リポジトリ設定** (30分)
-   - GitHub リポジトリの作成
-   - GitHub Pages 設定（Deploy from a branch）
+2. **Phase 2: 既存リポジトリ状態の確認** (30分)
+   - 監査済みbase SHAから隔離worktreeを作成
+   - 現在のGitHub Pages方式を読み取り専用で確認
 
-3. **Phase 3: Jekyll テンプレート設定** (60分)
-   - 必須ファイルの確認と設定
-   - ナビゲーションテンプレートの設定
+3. **Phase 3: Jekyll template差分の確認** (60分)
+   - 必須fileの有無とconsumer固有変更を確認
+   - navigation templateの差分を監査
 
-4. **Phase 4: 章ファイルの作成** (章数 × 15分)
-   - 各章ファイルの構造設定
-   - front matter の設定
+4. **Phase 4: 既存章ファイルの確認** (章数 × 15分)
+   - 既存章fileの構造を保持
+   - front matterの差分を監査
 
 5. **Phase 5: リンク設定の統一** (30分)
    - index.md のリンク形式統一
@@ -161,24 +161,11 @@ npm start validate-config --config ./path/to/config.json
 
 #### 📋 詳細な手順書
 
-**全手順の詳細は以下の新規書籍作成手順書を参照してください：**
+**既存Jekyll書籍の再構築・保守手順は次を参照してください：**
 
-📚 **[新規書籍作成手順書](./docs/book-creation-guide.md)**
+📚 **[Legacy Jekyll Setup Guide](./docs/README-unified-setup.md)**
 
-この手順書には、各フェーズの詳細なコマンド、設定例、よくある問題と解決策が含まれています。
-
-#### 🚀 クイックスタート
-
-```bash
-# 基本的な使用方法
-npm start create-book
-
-# オプションを指定
-npm start create-book --config ./book-config.json --output ./my-book
-
-# 既存ディレクトリを上書き
-npm start create-book --force
-```
+新規Web書籍ではこのlegacy手順や`create-book`を使用せず、前述の`book.yaml` + `web-mdbook`手順を使用します。
 
 ### 5. 既存書籍の更新
 
@@ -292,7 +279,7 @@ npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 | コマンド | 説明 | オプション |
 |---------|------|----------|
 | `init` | サンプル設定ファイルを作成 | `--output`, `--force` |
-| `create-book` | 新しい書籍を作成 | `--config`, `--output`, `--force` |
+| `create-book` | legacy `book-config.json`からJekyll構成を生成（既存書籍の再構築用途） | `--config`, `--output`, `--force` |
 | `update-book` | 既存の書籍を更新 | `--config`, `--book`, `--no-backup` |
 | `validate-config` | 設定ファイルをバリデーション | `--config`, `--verbose` |
 | `sync-all-books` | 複数の書籍を一括同期 | `--directory`, `--pattern`, `--dry-run` |
@@ -357,7 +344,9 @@ npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 
 Book Formatterの改善提案については[IMPROVEMENT_PROPOSALS.md](./docs/IMPROVEMENT_PROPOSALS.md)を参照してください。
 
-## 生成されるファイル構造
+## legacy commandで生成されるファイル構造
+
+次は`create-book` / `update-book`互換commandのJekyll構造であり、新規標準Web書籍の構造ではありません。
 
 ```
 my-book/
@@ -407,14 +396,14 @@ npm run lint
 # 開発モードで実行（ファイル監視）
 npm run dev
 
-# デバッグ情報を有効にして実行
+# legacy create-book互換commandのデバッグ情報を有効にして実行
 DEBUG=book-formatter:* npm start create-book
 ```
 
 ## 対応形式
 
-- **入力**: JSON、YAML設定ファイル
-- **出力**: Markdown、HTML（Jekyll）、GitHub Pages
+- **入力**: 標準`book.yaml`とlegacy JSON / YAML設定ファイル
+- **出力**: 標準Markdown / mdBook project、legacy Markdown / Jekyll HTML
 - **将来対応予定**: PDF、EPUB
 
 ## システム要件
@@ -447,7 +436,7 @@ DEBUG=book-formatter:* npm start create-book
 ### ログの確認
 
 ```bash
-# 詳細ログを有効にして実行
+# legacy create-book互換commandの詳細ログを有効にして実行
 DEBUG=* npm start create-book
 ```
 
@@ -480,7 +469,7 @@ GitHub: [@itdojp](https://github.com/itdojp)
 - **Book Publishing Template v3.0** - **使用禁止**
   - このシステムの基盤となった旧テンプレートシステム
   - 現在は廃止されており、使用は禁止されています
-  - 新規書籍作成時は必ずbook-formatterを使用してください
+  - 新規Web書籍は標準`book.yaml`と`web-mdbook`を使用してください
   - 旧テンプレートからの移行については[移行ガイド](./docs/migration-guide.md)を参照してください
 
 ---
