@@ -46,7 +46,7 @@ set -euo pipefail
 : "${CONSUMER_ROOT:?set the absolute path to the isolated consumer worktree}"
 : "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
 : "${AUDITED_CONSUMER_SHA:?set the audited 40-character consumer SHA}"
-: "${RESTORE_ITEM:?select config, page-navigation, sidebar-navigation, navigation, index, or safe-main}"
+: "${RESTORE_ITEMS:?select one or more space-separated items: config page-navigation sidebar-navigation navigation index safe-main}"
 test "${FORMATTER_ROOT#/}" != "$FORMATTER_ROOT"
 test "${CONSUMER_ROOT#/}" != "$CONSUMER_ROOT"
 test "$(git -C "$FORMATTER_ROOT" rev-parse --show-toplevel)" = "$FORMATTER_ROOT"
@@ -56,42 +56,67 @@ test "$(git -C "$CONSUMER_ROOT" rev-parse --show-toplevel)" = "$CONSUMER_ROOT"
 test "$(git -C "$CONSUMER_ROOT" rev-parse HEAD)" = "$AUDITED_CONSUMER_SHA"
 test -z "$(git -C "$CONSUMER_ROOT" status --porcelain)"
 
-case "$RESTORE_ITEM" in
-  config)             SOURCE_REL=templates/starter/docs/_config.yml; DEST_REL=docs/_config.yml ;;
-  page-navigation)    SOURCE_REL=shared/includes/page-navigation.html; DEST_REL=docs/_includes/page-navigation.html ;;
-  sidebar-navigation) SOURCE_REL=shared/includes/sidebar-nav.html; DEST_REL=docs/_includes/sidebar-nav.html ;;
-  navigation)         SOURCE_REL=templates/starter/docs/_data/navigation.yml; DEST_REL=docs/_data/navigation.yml ;;
-  index)              SOURCE_REL=templates/starter/docs/index.md; DEST_REL=docs/index.md ;;
-  safe-main)          SOURCE_REL=shared/assets/js/safe-main.js; DEST_REL=docs/assets/js/safe-main.js ;;
-  *) echo "unsupported RESTORE_ITEM: $RESTORE_ITEM" >&2; exit 1 ;;
-esac
+read -r -a RESTORE_ITEM_LIST <<< "$RESTORE_ITEMS"
+test "${#RESTORE_ITEM_LIST[@]}" -gt 0
+SOURCE_RELS=()
+DEST_RELS=()
 
-git -C "$FORMATTER_ROOT" ls-files --error-unmatch "$SOURCE_REL" >/dev/null
-test -f "$FORMATTER_ROOT/$SOURCE_REL"
-DEST_PARENT=$CONSUMER_ROOT
-DEST_REMAINDER=$DEST_REL
-while [[ "$DEST_REMAINDER" == */* ]]; do
-  DEST_COMPONENT=${DEST_REMAINDER%%/*}
-  DEST_REMAINDER=${DEST_REMAINDER#*/}
-  DEST_PARENT="$DEST_PARENT/$DEST_COMPONENT"
-  if [ -L "$DEST_PARENT" ]; then
-    echo "destination ancestor must not be a symbolic link: $DEST_PARENT" >&2
-    exit 1
-  fi
-  if [ -e "$DEST_PARENT" ]; then
-    test -d "$DEST_PARENT"
-  fi
+for RESTORE_ITEM in "${RESTORE_ITEM_LIST[@]}"; do
+  case "$RESTORE_ITEM" in
+    config)             SOURCE_REL=templates/starter/docs/_config.yml; DEST_REL=docs/_config.yml ;;
+    page-navigation)    SOURCE_REL=shared/includes/page-navigation.html; DEST_REL=docs/_includes/page-navigation.html ;;
+    sidebar-navigation) SOURCE_REL=shared/includes/sidebar-nav.html; DEST_REL=docs/_includes/sidebar-nav.html ;;
+    navigation)         SOURCE_REL=templates/starter/docs/_data/navigation.yml; DEST_REL=docs/_data/navigation.yml ;;
+    index)              SOURCE_REL=templates/starter/docs/index.md; DEST_REL=docs/index.md ;;
+    safe-main)          SOURCE_REL=shared/assets/js/safe-main.js; DEST_REL=docs/assets/js/safe-main.js ;;
+    *) echo "unsupported RESTORE_ITEM: $RESTORE_ITEM" >&2; exit 1 ;;
+  esac
+  for EXISTING_DEST in "${DEST_RELS[@]}"; do
+    if [ "$EXISTING_DEST" = "$DEST_REL" ]; then
+      echo "duplicate RESTORE_ITEM: $RESTORE_ITEM" >&2
+      exit 1
+    fi
+  done
+  SOURCE_RELS+=("$SOURCE_REL")
+  DEST_RELS+=("$DEST_REL")
 done
-test ! -e "$CONSUMER_ROOT/$DEST_REL"
-test ! -L "$CONSUMER_ROOT/$DEST_REL"
-install -D -m 0644 "$FORMATTER_ROOT/$SOURCE_REL" "$CONSUMER_ROOT/$DEST_REL"
-git -C "$CONSUMER_ROOT" add -N -- "$DEST_REL"
-git -C "$CONSUMER_ROOT" diff -- "$DEST_REL"
-git -C "$CONSUMER_ROOT" reset -- "$DEST_REL"
+
+# 全項目を先に検査し、後続項目の不備による部分復旧を避ける。
+for INDEX in "${!SOURCE_RELS[@]}"; do
+  SOURCE_REL=${SOURCE_RELS[$INDEX]}
+  DEST_REL=${DEST_RELS[$INDEX]}
+  git -C "$FORMATTER_ROOT" ls-files --error-unmatch "$SOURCE_REL" >/dev/null
+  test -f "$FORMATTER_ROOT/$SOURCE_REL"
+  DEST_PARENT=$CONSUMER_ROOT
+  DEST_REMAINDER=$DEST_REL
+  while [[ "$DEST_REMAINDER" == */* ]]; do
+    DEST_COMPONENT=${DEST_REMAINDER%%/*}
+    DEST_REMAINDER=${DEST_REMAINDER#*/}
+    DEST_PARENT="$DEST_PARENT/$DEST_COMPONENT"
+    if [ -L "$DEST_PARENT" ]; then
+      echo "destination ancestor must not be a symbolic link: $DEST_PARENT" >&2
+      exit 1
+    fi
+    if [ -e "$DEST_PARENT" ]; then
+      test -d "$DEST_PARENT"
+    fi
+  done
+  test ! -e "$CONSUMER_ROOT/$DEST_REL"
+  test ! -L "$CONSUMER_ROOT/$DEST_REL"
+done
+
+for INDEX in "${!SOURCE_RELS[@]}"; do
+  install -D -m 0644 \
+    "$FORMATTER_ROOT/${SOURCE_RELS[$INDEX]}" \
+    "$CONSUMER_ROOT/${DEST_RELS[$INDEX]}"
+done
+git -C "$CONSUMER_ROOT" add -N -- "${DEST_RELS[@]}"
+git -C "$CONSUMER_ROOT" diff -- "${DEST_RELS[@]}"
+git -C "$CONSUMER_ROOT" reset -- "${DEST_RELS[@]}"
 )
 ```
 
-`RESTORE_ITEM`は上の有限集合から1件ずつ選ぶ。既存fileは上書きせず、変更が必要な場合は通常のconsumer task branchで別途差分を作成・レビューする。
+`RESTORE_ITEMS`には上の有限集合から、同じ監査単位で復旧する項目を空白区切りで1件以上指定する（例: `RESTORE_ITEMS="config page-navigation navigation index"`）。全source / destination / symlink境界をcopy前に検査し、重複項目と既存fileを拒否する。変更が必要な既存fileは通常のconsumer task branchで別途差分を作成・レビューする。
 
 `navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleと`/introduction/`、`/chapters/chapter-01/`等のpathをconsumerのcanonical route inventoryへ置換し、不要な行を削除する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、概要・対象読者・到達目標・読書経路を含む全例示本文を書き換える。次の検査で既知のstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
 
