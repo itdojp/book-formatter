@@ -727,6 +727,51 @@ describe('ConsumerMutationBoundary transaction', () => {
     assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
   });
 
+  test('required smudge filterが失敗してもraw blobでrollbackする', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const consumer = consumerEntry({
+      ...fixture,
+      allowedPaths: ['index.md']
+    });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    const attributes = path.resolve(
+      fixture.worktree,
+      git(fixture.worktree, 'rev-parse', '--git-path', 'info/attributes')
+    );
+    const indexPath = path.join(fixture.worktree, 'index.md');
+    const original = await fs.readFile(indexPath);
+
+    await fs.ensureDir(path.dirname(attributes));
+    await fs.writeFile(attributes, '/index.md filter=required-smudge\n');
+    git(fixture.worktree, 'config', 'filter.required-smudge.clean', 'cat');
+    git(fixture.worktree, 'config', 'filter.required-smudge.smudge', 'false');
+    git(fixture.worktree, 'config', 'filter.required-smudge.required', 'true');
+    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
+
+    await assert.rejects(
+      createBoundary().run({
+        plan,
+        consumer,
+        managedPaths: ['index.md'],
+        dryRun: false,
+        mutate: async ({ consumerRoot }) => {
+          await fs.writeFile(path.join(consumerRoot, 'index.md'), '# Partial\n');
+          throw new Error('synthetic interruption before rollback');
+        }
+      }),
+      /Mutation failed and was rolled back/
+    );
+
+    assert.deepStrictEqual(await fs.readFile(indexPath), original);
+    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
+    assert.strictEqual(git(fixture.worktree, 'rev-parse', 'HEAD'), fixture.baseSha);
+  });
+
   test('operation failureとallowlist外差分をbase SHAへrollbackし、明示再開できる', async () => {
     const fixture = await createLinkedConsumer(tempDir);
     const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });

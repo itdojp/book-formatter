@@ -794,16 +794,22 @@ class ConsumerMutationBoundary {
   }
 
   rollback(consumerRoot, baseSha) {
-    gitOutput(consumerRoot, ['reset', '--hard', baseSha]);
+    // Do not use `reset --hard` or checkout here. A consumer may require a
+    // smudge filter that is unavailable during rollback, and either command
+    // can remove a tracked path before that filter fails. Reset HEAD and the
+    // index without materializing working-tree content, then restore audited
+    // raw blobs directly below.
+    gitOutput(consumerRoot, ['reset', '--soft', baseSha]);
+    gitOutput(consumerRoot, ['read-tree', '--reset', baseSha]);
     gitOutput(consumerRoot, ['clean', '-fdx', '--']);
     restoreRawTrackedFiles(
       consumerRoot,
       baseSha,
       rawTrackedDifferences(consumerRoot, baseSha)
     );
-    // Refresh index stat data through the configured clean filters. The
-    // subsequent status/base/raw checks reject any filter that would stage a
-    // value other than the audited tree.
+    // Refresh index stat data only after every differing tracked path has
+    // been restored from its audited blob. `git add` uses clean filters but
+    // never needs to materialize content through a smudge filter.
     gitOutput(consumerRoot, ['add', '-u', '--']);
     assertNoReplacementRefs(consumerRoot, 'Consumer rollback repository');
     assertNoIndexFlags(consumerRoot, 'Consumer rollback repository');
