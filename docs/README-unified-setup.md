@@ -124,9 +124,18 @@ git -C "$CONSUMER_ROOT" reset -- "${DEST_RELS[@]}"
 `navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleと`/introduction/`、`/chapters/chapter-01/`等のpathをconsumerのcanonical route inventoryへ置換し、不要な行を削除する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、概要・対象読者・到達目標・読書経路を含む全例示本文を書き換える。次の検査で既知のstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
 
 ```bash
+: "${CONSUMER_ROOT:?set the absolute path to the isolated consumer worktree}"
+: "${RESTORE_ITEMS:?select the same items used by the restoration step}"
 CHECKED_SKELETON_FILES=0
-for RESTORED_REL in docs/index.md docs/_data/navigation.yml; do
-  test -f "$CONSUMER_ROOT/$RESTORED_REL" || continue
+read -r -a RESTORE_ITEM_LIST <<< "$RESTORE_ITEMS"
+for RESTORE_ITEM in "${RESTORE_ITEM_LIST[@]}"; do
+  case "$RESTORE_ITEM" in
+    index)      RESTORED_REL=docs/index.md ;;
+    navigation) RESTORED_REL=docs/_data/navigation.yml ;;
+    config|page-navigation|sidebar-navigation|safe-main) continue ;;
+    *) echo "unsupported RESTORE_ITEM: $RESTORE_ITEM" >&2; exit 1 ;;
+  esac
+  test -f "$CONSUMER_ROOT/$RESTORED_REL"
   CHECKED_SKELETON_FILES=$((CHECKED_SKELETON_FILES + 1))
   if grep -nE '(<BOOK TITLE>|第[12]章 タイトル|付録[AB] タイトル|ここに概要や書誌情報|（例）|目次はサイドバー|章ページは /chapters/|付録は /appendices/)' \
     "$CONSUMER_ROOT/$RESTORED_REL"
@@ -135,7 +144,7 @@ for RESTORED_REL in docs/index.md docs/_data/navigation.yml; do
     exit 1
   fi
 done
-test "$CHECKED_SKELETON_FILES" -gt 0
+printf 'customized skeleton files checked: %s\n' "$CHECKED_SKELETON_FILES"
 # 続けてconsumer固有のBook QAとlocal link checkを実行する。
 ```
 
