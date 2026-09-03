@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages-${{ github.ref }}
+  group: pages
   cancel-in-progress: false
 
 env:
@@ -21,6 +21,7 @@ env:
 
 jobs:
   build:
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout consumer book
@@ -138,6 +139,7 @@ jobs:
 
   deploy:
     needs: build
+    if: ${{ success() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       pages: write

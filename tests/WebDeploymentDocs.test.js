@@ -21,12 +21,16 @@ test('GitHub Pages example keeps build output, permissions, and base path explic
   ]);
   assert.deepStrictEqual(workflow.on.push.branches, ['main']);
   assert.deepStrictEqual(workflow.permissions, { contents: 'read' });
-  assert.equal(workflow.concurrency['cancel-in-progress'], false);
+  assert.deepStrictEqual(workflow.concurrency, {
+    group: 'pages',
+    'cancel-in-progress': false
+  });
   assert.match(workflow.env.BOOK_FORMATTER_SHA, /^[0-9a-f]{40}$/u);
   assert.equal(workflow.env.BOOK_EDITION, 'free');
   assert.equal(workflow.env.MDBOOK_VERSION, '0.5.4');
 
   const buildSteps = workflow.jobs.build.steps;
+  assert.equal(workflow.jobs.build.if, '${{ github.ref == \'refs/heads/main\' }}');
   const actionUses = buildSteps
     .map((step) => step.uses)
     .filter(Boolean);
@@ -47,6 +51,10 @@ test('GitHub Pages example keeps build output, permissions, and base path explic
   });
   assert.equal(workflow.jobs.deploy.environment.name, 'github-pages');
   assert.equal(workflow.jobs.deploy.needs, 'build');
+  assert.equal(
+    workflow.jobs.deploy.if,
+    '${{ success() && github.ref == \'refs/heads/main\' }}'
+  );
   assert.deepStrictEqual(
     workflow.jobs.deploy.steps.map((step) => step.uses),
     ['actions/configure-pages@v6', 'actions/deploy-pages@v5']

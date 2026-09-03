@@ -138,7 +138,7 @@ provider固有機能を使わない場合も次を満たします。
 6. failure時は既知の前回deploymentへproviderの通常rollbackを使い、正本historyを書き換えない。
 7. rollback後も原因修正を別PRで行い、force pushや未レビューartifact再uploadをしない。
 
-## 一次資料（2026-09-04確認）
+## 一次資料（2026-09-04 JST確認）
 
 - [GitHub Pages: custom workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
 - [GitHub Pages: publishing source](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)
