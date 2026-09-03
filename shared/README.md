@@ -63,7 +63,7 @@
 `rollout-ux --apply-ux-core`は同じ`ComponentSync`を使う。#129完了までは次のdry-runだけを予定差分の粗い確認に使い、core writeは実行しない。`--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する別契約である。portfolio-level book registry version 1とは入力互換ではない。
 
 ```bash
-npm start rollout-ux \
+npm start rollout-ux -- \
   --registry ./legacy-ux-registry.json \
   --apply-ux-core \
   --apply-ux-profile \

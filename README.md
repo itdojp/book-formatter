@@ -185,11 +185,11 @@ npm start sync-all-books -- --directory ./books --dry-run
 
 ```bash
 # profile差分の予定だけを確認
-npm start rollout-ux --registry ./book-registry.json \
+npm start rollout-ux -- --registry ./book-registry.json \
   --apply-ux-profile --dry-run
 
 # 共通コアのみを適用（layouts/includes/assets）
-npm start rollout-ux --apply-ux-core --dry-run
+npm start rollout-ux -- --apply-ux-core --dry-run
 
 # 共通コアのwriteはdestination symlink検査をruntimeへ追加する#129完了まで停止
 # 必要な更新はweb-jekyll-legacy contractの隔離・preflight手順で監査
