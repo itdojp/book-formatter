@@ -133,26 +133,47 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    test -z "$(git -C "$CONSUMER_SYNC_WORKTREE" status --porcelain)"
 
    # 現行sync scriptは同期先のsymlink / gitlink境界を検査しない。通常同期の前に、
-   # 今回更新され得る有限のmanaged destinationと全ancestorをindex / lstatで検査する。
+   # consumer設定で実際に選択された有限のmanaged destinationと全ancestorを検査する。
    node --input-type=module - "$CONSUMER_SYNC_WORKTREE" <<'NODE'
    import { execFileSync, spawnSync } from 'node:child_process';
    import fs from 'node:fs';
    import path from 'node:path';
+   import { ComponentSync } from './scripts/sync-components.js';
 
    const root = path.resolve(process.argv[2]);
-   const managedDestinations = [
-     'book-config.json',
-     'docs/_layouts/book.html',
-     'docs/_layouts/default.html',
-     'docs/_includes/sidebar-nav.html',
-     'docs/_includes/page-navigation.html',
-     'docs/assets/css/main.css',
-     'docs/assets/css/mobile-responsive.css',
-     'docs/assets/css/syntax-highlighting.css',
-     'docs/assets/js/code-copy-lightweight.js',
-     'docs/assets/js/search.js',
-     'docs/assets/js/theme.js',
-   ];
+   const componentSync = new ComponentSync();
+   await componentSync.loadVersion();
+   const bookConfig = await componentSync.loadBookConfig(root);
+   if (!bookConfig) {
+     throw new Error(`consumer book-config.json is required: ${root}`);
+   }
+   const componentsToSync = componentSync.determineComponents(bookConfig, {
+     components: ['layouts', 'includes', 'assets'],
+   });
+   const managedDestinations = ['book-config.json'];
+   for (const [component, config] of Object.entries(componentsToSync)) {
+     const enabled = config === true || (
+       typeof config === 'object' && Object.values(config).some(Boolean)
+     );
+     if (!enabled) continue;
+     const componentInfo = componentSync.version.components[component];
+     if (!componentInfo) {
+       throw new Error(`managed component is absent from shared/version.json: ${component}`);
+     }
+     for (const file of componentInfo.files ?? []) {
+       if (typeof config === 'object') {
+         const subcomponent = path.basename(path.dirname(file));
+         if (config[subcomponent] === false) continue;
+       }
+       const destination = componentSync.mapDestRelativePath(file)
+         .split(path.sep)
+         .join('/');
+       if (managedDestinations.includes(destination)) {
+         throw new Error(`duplicate managed destination: ${destination}`);
+       }
+       managedDestinations.push(destination);
+     }
+   }
    const indexModes = new Map(
      execFileSync('git', ['-C', root, 'ls-files', '--stage', '-z'], {
        encoding: 'utf8',
@@ -241,7 +262,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    )
    ```
 
-   formatter checkoutはtracked fileを1件ずつ監査済みSHAのblobへ照合するため、managed sourceだけでなく同期script、import先、`package.json`、lockfile、metadataもsparse checkout、欠損、symlink、skip-worktreeで隠された変更があれば同期前に拒否する。rootの`node_modules/`は照合済みlockfileから`npm ci --ignore-scripts`で再構築し、root以外の`node_modules`は未追跡・ignored・symlinkを含めて同期前に拒否する。consumer側の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。各destinationについてignore規則、tracked fileの欠損・file mode、全ancestorのindex modeとworktree file typeを確認し、gitlink、symlink、通常directory以外の境界を拒否する。`shared/version.json`へmanaged fileを追加する場合はmapping表とdestination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。EXIT trapは成功時と途中失敗時の両方で、同期差分を持つ一時worktreeを`--force`付きで登録解除・削除する。同期結果をこの一時worktreeからcommitしない。
+   formatter checkoutはtracked fileを1件ずつ監査済みSHAのblobへ照合するため、managed sourceだけでなく同期script、import先、`package.json`、lockfile、metadataもsparse checkout、欠損、symlink、skip-worktreeで隠された変更があれば同期前に拒否する。rootの`node_modules/`は照合済みlockfileから`npm ci --ignore-scripts`で再構築し、root以外の`node_modules`は未追跡・ignored・symlinkを含めて同期前に拒否する。consumer側の有限リストは、監査済み`ComponentSync.determineComponents()`、`shared/version.json`、実行時と同じ上位component filterから導出し、書籍側のcomponent / subcomponent opt-outを保持する。これに、このコマンドが更新し得る`book-config.json`を加える。各destinationについてignore規則、tracked fileの欠損・file mode、全ancestorのindex modeとworktree file typeを確認し、gitlink、symlink、通常directory以外の境界を拒否する。`shared/version.json`へmanaged fileを追加した場合も選択結果から自動的に検査対象となる。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。EXIT trapは成功時と途中失敗時の両方で、同期差分を持つ一時worktreeを`--force`付きで登録解除・削除する。同期結果をこの一時worktreeからcommitしない。
 
 5. managed file以外、書籍本文、書籍固有設定が差分へ入っていないことを確認する。`book-config.json`は`shared.version` / `lastSync`以外の変更を許容しない。
 6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。
