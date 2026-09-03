@@ -18,7 +18,8 @@ writeを開始する前に、runtimeは次を検証します。
   一致する。formatter/consumerのactiveなGit `filter` attributeは、dry-runの
   `git status`でも任意のclean
   driverを実行し得るため、filter-sensitiveな監査より前に一律拒否する。LFS等で
-  working bytesがcommit blobと異なるworktreeも監査対象として拒否する
+  working bytesがcommit blobと異なるworktreeも監査対象として拒否する。tracked
+  submodule（gitlink）もnested worktreeのfilterやhookを監査前に実行し得るため拒否する
 - rollbackはcheckout filterに依存せず、差分が残ったtracked fileをbase SHAのraw blobから
   復元して再検証する
 - planがschema version 1、最大6件、重複なしの有限集合である

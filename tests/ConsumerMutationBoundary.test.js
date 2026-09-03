@@ -696,6 +696,70 @@ describe('ConsumerMutationBoundary transaction', () => {
     assert.strictEqual(await fs.pathExists(marker), false);
   });
 
+  test('tracked submoduleをstatus実行前に拒否してnested clean filterを実行しない', async () => {
+    const nestedSource = path.join(tempDir, 'nested-source');
+    await initRepository(nestedSource, { 'nested.txt': 'audited nested bytes\n' });
+    const fixture = await createLinkedConsumer(tempDir);
+    git(
+      fixture.sourceRoot,
+      '-c', 'protocol.file.allow=always',
+      'submodule', 'add', nestedSource, 'vendor/nested'
+    );
+    git(fixture.sourceRoot, 'commit', '-am', 'add nested fixture');
+    const baseSha = git(fixture.sourceRoot, 'rev-parse', 'HEAD');
+    git(fixture.sourceRoot, 'worktree', 'remove', '--force', fixture.worktree);
+    git(fixture.sourceRoot, 'worktree', 'add', '--detach', fixture.worktree, baseSha);
+    git(
+      fixture.worktree,
+      '-c', 'protocol.file.allow=always',
+      'submodule', 'update', '--init', '--recursive'
+    );
+
+    const nestedWorktree = path.join(fixture.worktree, 'vendor/nested');
+    const attributes = path.resolve(
+      nestedWorktree,
+      git(nestedWorktree, 'rev-parse', '--git-path', 'info/attributes')
+    );
+    const marker = path.join(tempDir, 'nested-clean-filter-executed');
+    await fs.ensureDir(path.dirname(attributes));
+    await fs.writeFile(attributes, '/nested.txt filter=nested-side-effect\n');
+    git(
+      nestedWorktree,
+      'config',
+      'filter.nested-side-effect.clean',
+      `touch ${marker}; cat`
+    );
+    git(nestedWorktree, 'config', 'filter.nested-side-effect.required', 'true');
+    await fs.writeFile(path.join(nestedWorktree, 'nested.txt'), 'changed nested bytes\n');
+
+    const consumer = consumerEntry({
+      ...fixture,
+      baseSha,
+      allowedPaths: ['book-config.json']
+    });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    let called = false;
+
+    await assert.rejects(
+      createBoundary().run({
+        plan,
+        consumer,
+        managedPaths: ['book-config.json'],
+        dryRun: true,
+        mutate: async () => { called = true; }
+      }),
+      /Consumer tracked gitlinks are not allowed before mutation audit: vendor\/nested/
+    );
+
+    assert.strictEqual(called, false);
+    assert.strictEqual(await fs.pathExists(marker), false);
+  });
+
   test('required smudge filterをcheckout前に拒否する', async () => {
     const fixture = await createLinkedConsumer(tempDir);
     const consumer = consumerEntry({

@@ -142,12 +142,27 @@ function gitNullPaths(repoRoot, args) {
 }
 
 function assertNoActiveGitFilters(repoRoot, revision, label) {
+  const treeEntries = trackedTreeEntries(repoRoot, revision);
+  const indexModes = readIndexModes(repoRoot);
+  const gitlinks = [...new Set([
+    ...treeEntries
+      .filter(({ mode, type }) => mode === '160000' && type === 'commit')
+      .map(({ relativePath }) => relativePath),
+    ...[...indexModes]
+      .filter(([, mode]) => mode === '160000')
+      .map(([relativePath]) => relativePath)
+  ])].sort();
+  if (gitlinks.length > 0) {
+    throw new ConsumerMutationError(
+      `${label} tracked gitlinks are not allowed before mutation audit: ${gitlinks.join(', ')}`
+    );
+  }
+
   const trackedPaths = [...new Set([
-    ...trackedTreeEntries(repoRoot, revision)
+    ...treeEntries
       .filter(({ type }) => type === 'blob')
       .map(({ relativePath }) => relativePath),
-    ...gitNullPaths(repoRoot, ['ls-files'])
-      .map((relativePath) => normalizeManagedPath(relativePath, 'consumer index path'))
+    ...indexModes.keys()
   ])].sort();
   if (trackedPaths.length === 0) return;
 
