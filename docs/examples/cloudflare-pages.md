@@ -69,4 +69,4 @@ build cacheは正本や検証済みartifactの代替ではありません。利�
 - paid/internal markerが0
 - previewとproductionのURL/branchが区別される
 
-一次資料は[Web出力のデプロイ契約](../web-deployment.md#一次資料2026-09-04確認)を参照してください。
+一次資料は[Web出力のデプロイ契約](../web-deployment.md#一次資料2026-09-04-jst確認)を参照してください。
