@@ -62,6 +62,8 @@ npm run sync-components -- \
 
 `.github/workflows/book-sync.yml`は`workflow_dispatch`専用であり、formatterのmergeだけでは起動しない。
 
+[#129](https://github.com/itdojp/book-formatter/issues/129)が`ComponentSync`のdestination symlink境界をruntimeで強制するまで、preview / writeともdispatchしない。現行previewもcloneへ実同期してから差分を表示するため、手動Runbookのpreflightを代替しない。
+
 - 既定はdry-run。
 - 最大3冊を明示する。`all`は指定できない。
 - write modeは確認tokenとcross-repository tokenを要求する。
@@ -71,7 +73,7 @@ npm run sync-components -- \
 
 ## `rollout-ux`との関係
 
-`rollout-ux --apply-ux-core`は同じ`ComponentSync`を使う。`--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する。portfolio-level book registry version 1とは入力互換ではない。
+`rollout-ux --apply-ux-core`は同じ`ComponentSync`を使う。#129完了までは次のdry-runだけを予定差分の粗い確認に使い、core writeは実行しない。`--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する別契約である。portfolio-level book registry version 1とは入力互換ではない。
 
 ```bash
 npm start rollout-ux \

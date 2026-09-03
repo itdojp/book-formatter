@@ -16,8 +16,8 @@
 | `create-book` / `update-book` | legacy `book-config.json` | 組み込みJekyll templateと`shared/`を使う既存生成処理 | 指定したlegacy書籍directory |
 | `scripts/scaffold-new-book.sh` | owner / repository名 | template展開処理は保持されているが、現在は利用不可 | EXIT時に一時出力を削除し、`--create`もlocal Git repositoryを作らない。[#128](https://github.com/itdojp/book-formatter/issues/128) |
 | `sync-components` | legacy `book-config.json`と`shared/version.json` | layouts / includes / assetsの選択同期 | consumerの`docs/`配下 |
-| `rollout-ux` | legacy UX registry / `book-config.json` | UX profile更新と、明示指定時の共通component同期 | 既存consumer。既定で一括適用しない |
-| `Book Sync` workflow | 最大3冊の明示対象 | consumer clone、dry-run、allowlist付きPR作成 | 既定はdry-run。直接mainを更新しない |
+| `rollout-ux` | legacy UX registry / `book-config.json` | UX profile更新と、明示指定時の共通component同期 | `--apply-ux-core`のwriteは[#129](https://github.com/itdojp/book-formatter/issues/129)完了まで停止 |
+| `Book Sync` workflow | 最大3冊の明示対象 | consumer clone、preview、allowlist付きPR作成 | preview / writeとも#129完了までdispatchしない |
 | adapter `build` | 標準`book.yaml`とedition | visibility検査済みbuild planの記録 | skeleton `manifest.json`のみ |
 
 legacy `book-config.json`と標準`book.yaml`は別契約である。`create-book`、`update-book`、`sync-components`、`rollout-ux`へ`book.yaml`を暗黙変換して渡さない。反対に、既存書籍に`book.yaml`がないことを理由にlegacy経路を停止しない。
@@ -150,14 +150,15 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。
 7. consumerのBook QA、main CI、Pages deployment、公開HTTPと主要markerを確認する。
 
-`Book Sync` workflowを使う場合も、既定dry-run、最大3冊、確認token、対象repositoryへのwrite権限、Open PR 0というworkflow側のgateを維持する。
+`Book Sync` workflowは[#129](https://github.com/itdojp/book-formatter/issues/129)がruntimeの同じsymlink境界を強制するまで利用しない。現行workflowはpreview / writeの両経路で、上のpreflightを通さずcloneへ実同期するためである。既定preview、最大3冊、確認token、対象repositoryへのwrite権限、Open PR 0という既存gateだけでは、clone外を指すtracked symlinkへの書込みを防げない。
 
 ## `rollout-ux`との境界
 
 - `--apply-ux-core`は`ComponentSync`を介してlayouts / includes / assetsを同期する。
 - `--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する。
 - portfolio-level [`book-registry.yaml` version 1](../../docs/book-registry.md)は同じ名前でも入力互換ではない。
-- `--apply-ux-core`、`--apply-ux-profile`とも、実行前にdry-runとconsumer差分を確認する。
+- `--apply-ux-core --dry-run`は予定差分の粗い確認に限る。writeは#129完了まで実行せず、必要なcomponent更新は上のsymlink preflight付き隔離手順で1 consumerずつ監査する。
+- `--apply-ux-profile`は別のconfig更新契約である。core writeを迂回する手段として併用しない。
 
 ## 維持する互換path
 

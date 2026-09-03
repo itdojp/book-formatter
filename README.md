@@ -202,8 +202,8 @@ npm start rollout-ux --registry ./book-registry.json --apply-ux-profile
 # 共通コアのみを適用（layouts/includes/assets）
 npm start rollout-ux --apply-ux-core --dry-run
 
-# 併用（レジストリは必須）
-npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-profile
+# 共通コアのwriteはdestination symlink検査をruntimeへ追加する#129完了まで停止
+# 必要な更新はweb-jekyll-legacy contractの隔離・preflight手順で監査
 ```
 
 補足:
@@ -212,6 +212,8 @@ npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-
 - このcommandの `book-registry.json` は `profile` / `modules` を持つ
   legacy UX registryです。portfolio-level registry version 1との関係は
   [docs/book-registry.md](docs/book-registry.md) を参照してください。
+- `--apply-ux-core`の非dry-run、および`Book Sync` workflowのpreview / writeは、
+  [#129](https://github.com/itdojp/book-formatter/issues/129)完了まで実行しないでください。
 
 ## 品質チェック（ローカル）
 
