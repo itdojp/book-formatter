@@ -4,15 +4,15 @@ This guide is retained for existing Jekyll / GitHub Pages books. New standard We
 
 This guide describes the retained structure for maintaining or reconstructing an existing legacy Jekyll book repository:
 
-- Restore `templates/_config.yml` only through the fixed-SHA block below (permalink: pretty, plugins, kramdown).
-- Restore `docs/includes/page-navigation.html` as `docs/_includes/page-navigation.html` through the same block.
+- Restore `templates/starter/docs/_config.yml` only through the fixed-SHA block below (permalink: pretty, plugins, kramdown).
+- Restore the managed `shared/includes/page-navigation.html` as `docs/_includes/page-navigation.html` through the same block.
 - Top page (root) does NOT render prev/next navigation; chapters and appendices do.
 - Prefer directory-style links (e.g., `/src/chapter-1/`) instead of `index.html`.
 - Use `jekyll-redirect-from` (optional) to map old slugs when renaming chapters.
 
 ## Steps
 1. In an isolated task branch or worktree for the existing legacy repository, confirm that `docs/` is its publication root.
-2. Select `config` in the fixed-SHA restoration block for a missing `_config.yml`, then restore the consumer-specific `title`, `baseurl`, and `repository` values in a separate reviewed change.
+2. Select `config` in the fixed-SHA restoration block for a missing `_config.yml`, then replace every `<...>` placeholder (`title`, `description`, `author`, `url`, `baseurl`, and `repository`) with the consumer-specific value in a separate reviewed change.
 3. Select `page-navigation` in that block for a missing `docs/_includes/page-navigation.html`.
 4. Ensure `defaults.layout: book` and `permalink: pretty`.
 5. For renamed pages, use redirect-from in the destination page:
@@ -55,8 +55,8 @@ test "$(git -C "$CONSUMER_ROOT" rev-parse HEAD)" = "$AUDITED_CONSUMER_SHA"
 test -z "$(git -C "$CONSUMER_ROOT" status --porcelain)"
 
 case "$RESTORE_ITEM" in
-  config)             SOURCE_REL=templates/_config.yml; DEST_REL=docs/_config.yml ;;
-  page-navigation)    SOURCE_REL=docs/includes/page-navigation.html; DEST_REL=docs/_includes/page-navigation.html ;;
+  config)             SOURCE_REL=templates/starter/docs/_config.yml; DEST_REL=docs/_config.yml ;;
+  page-navigation)    SOURCE_REL=shared/includes/page-navigation.html; DEST_REL=docs/_includes/page-navigation.html ;;
   sidebar-navigation) SOURCE_REL=templates/starter/docs/_includes/sidebar-nav.html; DEST_REL=docs/_includes/sidebar-nav.html ;;
   navigation)         SOURCE_REL=templates/starter/docs/_data/navigation.yml; DEST_REL=docs/_data/navigation.yml ;;
   index)              SOURCE_REL=templates/starter/docs/index.md; DEST_REL=docs/index.md ;;
