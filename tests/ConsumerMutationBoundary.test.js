@@ -350,6 +350,43 @@ describe('ConsumerMutationBoundary transaction', () => {
     git(formatter.formatterRoot, 'update-index', '--no-skip-worktree', 'audited.txt');
     git(formatter.formatterRoot, 'checkout', '--', 'audited.txt');
 
+    const attributesPath = path.resolve(
+      formatter.formatterRoot,
+      git(formatter.formatterRoot, 'rev-parse', '--git-path', 'info/attributes')
+    );
+    const normalizedContentPath = path.join(tempDir, 'normalized-audited.txt');
+    await fs.ensureDir(path.dirname(attributesPath));
+    await fs.writeFile(attributesPath, 'audited.txt filter=normalize-audited\n');
+    await fs.writeFile(normalizedContentPath, 'formatter fixture\n');
+    git(
+      formatter.formatterRoot,
+      'config',
+      'filter.normalize-audited.clean',
+      `cat ${normalizedContentPath}`
+    );
+    git(formatter.formatterRoot, 'config', 'filter.normalize-audited.required', 'true');
+    await fs.writeFile(
+      path.join(formatter.formatterRoot, 'audited.txt'),
+      'working bytes hidden by clean filter\n'
+    );
+    git(formatter.formatterRoot, 'add', 'audited.txt');
+    assert.strictEqual(
+      git(formatter.formatterRoot, 'status', '--porcelain', '--untracked-files=no'),
+      ''
+    );
+    await assert.rejects(
+      createBoundary().preflight({
+        plan: basePlan,
+        consumer,
+        managedPaths: ['index.md'],
+        dryRun: false
+      }),
+      /tracked file differs/
+    );
+    git(formatter.formatterRoot, 'config', '--unset', 'filter.normalize-audited.required');
+    git(formatter.formatterRoot, 'config', '--unset', 'filter.normalize-audited.clean');
+    git(formatter.formatterRoot, 'checkout', '--', 'audited.txt');
+
     await fs.writeFile(path.join(fixture.worktree, 'dirty.txt'), 'dirty\n');
     await assert.rejects(
       createBoundary().preflight({

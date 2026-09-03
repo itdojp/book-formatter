@@ -247,7 +247,10 @@ async function assertTrackedFormatterTree(repoRoot, revision) {
         `Formatter tracked file mode differs from ${revision}: ${relativePath}`
       );
     }
-    const actualHash = gitOutput(repoRoot, ['hash-object', '--', relativePath]).trim();
+    const actualHash = gitOutput(
+      repoRoot,
+      ['hash-object', '--no-filters', '--', relativePath]
+    ).trim();
     if (actualHash !== expectedHash) {
       throw new ConsumerMutationError(
         `Formatter tracked file differs from ${revision}: ${relativePath}`

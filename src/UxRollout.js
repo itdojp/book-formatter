@@ -115,11 +115,16 @@ export class UxRollout {
    * @param {string} bookPath - 書籍パス
    * @param {Object|null} config - book-config の内容
    * @param {Object} registry - レジストリ
+   * @param {string|null} consumerId - 監査済みplanのconsumer ID
    * @returns {{key: string, entry: Object}|null} 解決結果
    */
-  resolveRegistryEntry(bookPath, config, registry) {
+  resolveRegistryEntry(bookPath, config, registry, consumerId = null) {
     const books = registry.books || {};
     const bookName = path.basename(bookPath);
+
+    if (consumerId && books[consumerId]) {
+      return { key: consumerId, entry: books[consumerId] };
+    }
 
     if (books[bookName]) {
       return { key: bookName, entry: books[bookName] };
@@ -303,7 +308,12 @@ export class UxRollout {
 
       let registryEntry = null;
       if (registry) {
-        const resolved = this.resolveRegistryEntry(bookPath, config, registry);
+        const resolved = this.resolveRegistryEntry(
+          bookPath,
+          config,
+          registry,
+          consumer.id
+        );
         if (resolved) {
           registryEntry = resolved.entry;
         } else {

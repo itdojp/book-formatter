@@ -66,6 +66,24 @@ describe('UxRollout', () => {
     assert.strictEqual(result.key, 'sample-book');
   });
 
+  test('resolveRegistryEntry は隔離worktree名よりplanのconsumer IDを優先する', () => {
+    const registry = {
+      books: {
+        'sample-book': { profile: 'A', modules: { quickStart: true } },
+        'book-formatter-sync': { profile: 'B', modules: { quickStart: false } }
+      }
+    };
+    const result = rollout.resolveRegistryEntry(
+      '/workspace/sample-book/book-formatter-sync',
+      null,
+      registry,
+      'sample-book'
+    );
+    assert.ok(result);
+    assert.strictEqual(result.key, 'sample-book');
+    assert.strictEqual(result.entry.profile, 'A');
+  });
+
   test('updateBookConfig は監査済みtransaction外の直接writeを拒否する', async () => {
     const bookPath = path.join(tempDir, 'book');
     await fs.ensureDir(bookPath);
