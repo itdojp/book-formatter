@@ -108,7 +108,8 @@ function gitOutput(repoRoot, args, options = {}) {
   try {
     return execFileSync('git', ['-C', repoRoot, ...args], {
       encoding: options.encoding || 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
+      input: options.input,
+      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
         GIT_NO_REPLACE_OBJECTS: '1',
@@ -133,6 +134,47 @@ function gitNullPaths(repoRoot, args) {
     : [...args.slice(0, pathspecIndex), '-z', ...args.slice(pathspecIndex)];
   const output = gitOutput(repoRoot, nullTerminatedArgs, { encoding: 'buffer' });
   return output.toString('utf8').split('\0').filter(Boolean);
+}
+
+function assertNoActiveGitFilters(repoRoot, revision) {
+  const trackedPaths = [...new Set([
+    ...trackedTreeEntries(repoRoot, revision)
+      .filter(({ type }) => type === 'blob')
+      .map(({ relativePath }) => relativePath),
+    ...gitNullPaths(repoRoot, ['ls-files'])
+      .map((relativePath) => normalizeManagedPath(relativePath, 'consumer index path'))
+  ])].sort();
+  if (trackedPaths.length === 0) return;
+
+  const input = Buffer.from(`${trackedPaths.join('\0')}\0`);
+  const output = gitOutput(
+    repoRoot,
+    ['check-attr', '-z', '--stdin', 'filter'],
+    { encoding: 'buffer', input }
+  ).toString('utf8');
+  const fields = output.split('\0');
+  if (fields.at(-1) === '') fields.pop();
+  if (fields.length !== trackedPaths.length * 3) {
+    throw new ConsumerMutationError('Unexpected git check-attr output for consumer filter audit');
+  }
+
+  const active = [];
+  for (let index = 0; index < fields.length; index += 3) {
+    const [relativePath, attribute, value] = fields.slice(index, index + 3);
+    if (attribute !== 'filter') {
+      throw new ConsumerMutationError(
+        `Unexpected git attribute during consumer filter audit: ${attribute}`
+      );
+    }
+    if (!['unspecified', 'unset'].includes(value)) {
+      active.push(`${relativePath} (${value})`);
+    }
+  }
+  if (active.length > 0) {
+    throw new ConsumerMutationError(
+      `Consumer Git filter attributes are not allowed: ${active.join(', ')}`
+    );
+  }
 }
 
 function trackedTreeEntries(repoRoot, revision) {
@@ -657,6 +699,9 @@ class ConsumerMutationBoundary {
         `Consumer base SHA mismatch for ${consumer.id}: expected ${consumer.baseSha}, received ${head}`
       );
     }
+    // `git status` can execute a configured clean filter even in dry-run.
+    // Reject every active filter attribute before any filter-sensitive audit.
+    assertNoActiveGitFilters(consumerRoot, consumer.baseSha);
     const status = gitOutput(consumerRoot, ['status', '--porcelain=v1', '--untracked-files=all']);
     const ignored = gitNullPaths(
       consumerRoot,
@@ -815,10 +860,11 @@ class ConsumerMutationBoundary {
       baseSha,
       rawTrackedDifferences(consumerRoot, baseSha)
     );
-    // Refresh index stat data only after every differing tracked path has
-    // been restored from its audited blob. `git add` uses clean filters but
-    // never needs to materialize content through a smudge filter.
-    gitOutput(consumerRoot, ['add', '-u', '--']);
+    // A callback must not add a filter attribute in Git metadata and make a
+    // later verification command execute it. A filter introduced mid-run is
+    // an explicit rollback failure for manual audit; raw tracked bytes have
+    // already been restored without invoking that filter.
+    assertNoActiveGitFilters(consumerRoot, baseSha);
     assertNoReplacementRefs(consumerRoot, 'Consumer rollback repository');
     assertNoIndexFlags(consumerRoot, 'Consumer rollback repository');
     const head = gitOutput(consumerRoot, ['rev-parse', 'HEAD']).trim();
@@ -859,6 +905,7 @@ class ConsumerMutationBoundary {
 
     try {
       await mutate(context);
+      assertNoActiveGitFilters(context.consumerRoot, consumer.baseSha);
       assertNoReplacementRefs(context.consumerRoot, `Consumer ${consumer.id}`);
       assertNoIndexFlags(context.consumerRoot, `Consumer ${consumer.id}`);
       const changedPaths = collectChangedPaths(context.consumerRoot, consumer.baseSha);

@@ -428,7 +428,7 @@ describe('ConsumerMutationBoundary transaction', () => {
         managedPaths: ['index.md'],
         dryRun: false
       }),
-      /Consumer tracked bytes must match/
+      /Consumer Git filter attributes are not allowed: book-config\.json \(normalize-config\)/
     );
     git(fixture.worktree, 'config', '--unset', 'filter.normalize-config.required');
     git(fixture.worktree, 'config', '--unset', 'filter.normalize-config.clean');
@@ -666,7 +666,7 @@ describe('ConsumerMutationBoundary transaction', () => {
     assert.deepStrictEqual(await fs.readFile(outside), original);
   });
 
-  test('consumer clean filterで隠したallowlist外raw差分を検出しrollbackする', async () => {
+  test('consumer clean filterを実行前に拒否する', async () => {
     const fixture = await createLinkedConsumer(tempDir);
     const consumer = consumerEntry({
       ...fixture,
@@ -682,52 +682,35 @@ describe('ConsumerMutationBoundary transaction', () => {
       fixture.worktree,
       git(fixture.worktree, 'rev-parse', '--git-path', 'info/attributes')
     );
-    const normalizedIndexPath = path.join(tempDir, 'normalized-index.md');
-    const indexPath = path.join(fixture.worktree, 'index.md');
-    const original = await fs.readFile(indexPath);
+    const marker = path.join(tempDir, 'clean-filter-executed');
 
     await fs.ensureDir(path.dirname(attributes));
-    await fs.writeFile(attributes, '/index.md filter=normalize-index\n');
-    await fs.writeFile(normalizedIndexPath, original);
+    await fs.writeFile(attributes, '/index.md filter=side-effect\n');
     git(
       fixture.worktree,
       'config',
-      'filter.normalize-index.clean',
-      `cat >/dev/null; cat ${normalizedIndexPath}`
+      'filter.side-effect.clean',
+      `touch ${marker}; cat`
     );
-    git(fixture.worktree, 'config', 'filter.normalize-index.required', 'true');
-    assert.strictEqual(
-      git(fixture.worktree, 'status', '--porcelain=v1', '--untracked-files=all'),
-      ''
-    );
-    assert.strictEqual(
-      git(fixture.worktree, 'ls-files', '--others', '--ignored', '--exclude-standard'),
-      ''
-    );
+    git(fixture.worktree, 'config', 'filter.side-effect.required', 'true');
+    let called = false;
 
     await assert.rejects(
       createBoundary().run({
         plan,
         consumer,
         managedPaths: ['book-config.json'],
-        dryRun: false,
-        mutate: async ({ consumerRoot }) => {
-          await fs.writeFile(path.join(consumerRoot, 'index.md'), '# Hidden mutation\n');
-          git(consumerRoot, 'add', 'index.md');
-          assert.strictEqual(
-            git(consumerRoot, 'status', '--porcelain', '--untracked-files=no'),
-            ''
-          );
-        }
+        dryRun: true,
+        mutate: async () => { called = true; }
       }),
-      /outside allowedPaths: index\.md/
+      /Consumer Git filter attributes are not allowed: index\.md \(side-effect\)/
     );
 
-    assert.deepStrictEqual(await fs.readFile(indexPath), original);
-    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
+    assert.strictEqual(called, false);
+    assert.strictEqual(await fs.pathExists(marker), false);
   });
 
-  test('required smudge filterが失敗してもraw blobでrollbackする', async () => {
+  test('required smudge filterをcheckout前に拒否する', async () => {
     const fixture = await createLinkedConsumer(tempDir);
     const consumer = consumerEntry({
       ...fixture,
@@ -743,15 +726,12 @@ describe('ConsumerMutationBoundary transaction', () => {
       fixture.worktree,
       git(fixture.worktree, 'rev-parse', '--git-path', 'info/attributes')
     );
-    const indexPath = path.join(fixture.worktree, 'index.md');
-    const original = await fs.readFile(indexPath);
+    let called = false;
 
     await fs.ensureDir(path.dirname(attributes));
     await fs.writeFile(attributes, '/index.md filter=required-smudge\n');
-    git(fixture.worktree, 'config', 'filter.required-smudge.clean', 'cat');
     git(fixture.worktree, 'config', 'filter.required-smudge.smudge', 'false');
     git(fixture.worktree, 'config', 'filter.required-smudge.required', 'true');
-    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
 
     await assert.rejects(
       createBoundary().run({
@@ -759,17 +739,12 @@ describe('ConsumerMutationBoundary transaction', () => {
         consumer,
         managedPaths: ['index.md'],
         dryRun: false,
-        mutate: async ({ consumerRoot }) => {
-          await fs.writeFile(path.join(consumerRoot, 'index.md'), '# Partial\n');
-          throw new Error('synthetic interruption before rollback');
-        }
+        mutate: async () => { called = true; }
       }),
-      /Mutation failed and was rolled back/
+      /Consumer Git filter attributes are not allowed: index\.md \(required-smudge\)/
     );
 
-    assert.deepStrictEqual(await fs.readFile(indexPath), original);
-    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
-    assert.strictEqual(git(fixture.worktree, 'rev-parse', 'HEAD'), fixture.baseSha);
+    assert.strictEqual(called, false);
   });
 
   test('operation failureとallowlist外差分をbase SHAへrollbackし、明示再開できる', async () => {
