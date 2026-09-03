@@ -222,8 +222,7 @@ export class BookGenerator {
       ['includes', '_includes'],
       ['assets', 'assets']
     ];
-    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
-    const sharedRoot = path.join(moduleDir, '..', 'shared');
+    const sharedRoot = path.join(this.mutationBoundary.formatterRoot, 'shared');
 
     const collectFiles = async (sourceDir, relativeDir = '') => {
       if (!(await fs.pathExists(sourceDir))) return;
@@ -506,8 +505,7 @@ export class BookGenerator {
    * @param {string} outputPath - 出力パス
    */
   async copyTemplateFiles(outputPath) {
-    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
-    const sharedPath = path.join(moduleDir, '..', 'shared');
+    const sharedPath = path.join(this.mutationBoundary.formatterRoot, 'shared');
     
     // レイアウトファイルをコピー
     const layoutsSource = path.join(sharedPath, 'layouts');

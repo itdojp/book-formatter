@@ -74,7 +74,7 @@ program
   .command('update-book')
   .description('既存の書籍を更新します')
   .requiredOption('--plan <path>', '監査済みconsumer mutation plan')
-  .requiredOption('--target <consumer-id>', '更新する単一consumer ID')
+  .option('--target <consumer-id>', 'writeする単一consumer ID')
   .option('--dry-run', 'preflightとmanaged pathの表示だけを行います', false)
   .action(async (options) => {
     try {
@@ -83,11 +83,14 @@ program
       const plan = await loadConsumerMutationPlan(options.plan, {
         expectedOperation: 'update-book'
       });
-      const [consumer] = selectConsumers(plan, {
+      const consumers = selectConsumers(plan, {
         targetId: options.target,
         dryRun: options.dryRun
       });
-      await bookGenerator.updateBook(plan, consumer, { dryRun: options.dryRun });
+      for (const consumer of consumers) {
+        console.log(chalk.blue(`\n📚 処理中: ${consumer.id}`));
+        await bookGenerator.updateBook(plan, consumer, { dryRun: options.dryRun });
+      }
       
       console.log(chalk.green('✅ 書籍の更新が完了しました!'));
       

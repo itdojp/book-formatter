@@ -170,7 +170,7 @@ npm start validate-config --config ./path/to/config.json
 npm start update-book -- --help
 ```
 
-`update-book`は[legacy consumer mutation contract](docs/legacy-consumer-mutation.md)の有限plan、固定formatter/base SHA、clean linked worktree、完全一致allowlistを要求します。dry-runでmanaged pathを確定した後、`--target`で1 consumerだけを変更します。本文の自動生成は行いません。
+`update-book`は[legacy consumer mutation contract](docs/legacy-consumer-mutation.md)の有限plan、固定formatter/base SHA、clean linked worktree、完全一致allowlistを要求します。dry-runは`--target`省略時にplanの全consumerを検査します。managed pathを確定した後、writeは`--target`で1 consumerだけを変更します。本文の自動生成は行いません。
 
 ### 6. 複数書籍の一括同期
 

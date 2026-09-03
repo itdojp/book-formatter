@@ -78,7 +78,10 @@ async function createFormatterFixture(tempRoot) {
   const formatterRoot = path.join(tempRoot, 'formatter-fixture');
   const formatterSha = await initRepository(formatterRoot, {
     '.gitignore': 'shared/assets/ignored.js\n',
-    'audited.txt': 'formatter fixture\n'
+    'audited.txt': 'formatter fixture\n',
+    'shared/layouts/default.html': '<main>{{ content }}</main>\n',
+    'shared/includes/navigation.html': '<nav>fixture</nav>\n',
+    'shared/assets/main.css': 'main { display: block; }\n'
   });
   return { formatterRoot, formatterSha };
 }
@@ -875,4 +878,18 @@ test('rollout_unificationは安全な単一target wrapperでremote Git操作を�
   assert.notStrictEqual(result.status, 0);
   assert.match(`${result.stdout}${result.stderr}`, /--plan is required/);
   await fs.remove(path.resolve('tests', 'tmp-shell-report-unused'));
+});
+
+test('update-book CLIはdry-runの有限plan全件検査とwriteの単一targetを保持する', async () => {
+  const source = await fs.readFile(path.resolve('src/index.js'), 'utf8');
+  const updateBlock = source.slice(
+    source.indexOf('.command(\'update-book\')'),
+    source.indexOf('// validate-config コマンド')
+  );
+
+  assert.match(updateBlock, /\.option\('--target <consumer-id>'/);
+  assert.doesNotMatch(updateBlock, /\.requiredOption\('--target <consumer-id>'/);
+  assert.match(updateBlock, /const consumers = selectConsumers\(plan,/);
+  assert.match(updateBlock, /for \(const consumer of consumers\)/);
+  assert.match(updateBlock, /bookGenerator\.updateBook\(plan, consumer,/);
 });
