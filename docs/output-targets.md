@@ -29,6 +29,8 @@
 5. deploy方式はadapter buildと分離して決定する。
 
 ```bash
+(
+set -euo pipefail
 npm run validate:standard-book -- ./my-book
 npm start build -- \
   --book ./my-book \
@@ -42,9 +44,10 @@ npm run check-visibility -- \
   --edition free \
   --artifact dist/web-mdbook/book
 npm run check-mdbook-responsive -- --book dist/web-mdbook
+)
 ```
 
-`mdbook`は検証済みversion `0.5.4`へ固定する。CIで使用する公式archive URLとSHA-256は[`web-mdbook` adapter contract](../adapters/web-mdbook/README.md)を正本とし、上のversion gateを通らないbinaryで公開成果物を生成しない。`check-visibility --artifact`は生成後の漏えい検査であり、変換前にadapterが行うsource visibility検査やresponsive検査では代替できない。
+command blockは1つのsubshellとして実行し、いずれかのgateが失敗した時点で後続処理を停止する。`mdbook`は検証済みversion `0.5.4`へ固定する。CIで使用する公式archive URLとSHA-256は[`web-mdbook` adapter contract](../adapters/web-mdbook/README.md)を正本とし、上のversion gateを通らないbinaryで公開成果物を生成しない。`check-visibility --artifact`は生成後の漏えい検査であり、変換前にadapterが行うsource visibility検査やresponsive検査では代替できない。
 
 ### 既存Jekyll / GitHub Pages書籍
 

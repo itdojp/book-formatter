@@ -39,6 +39,8 @@ chmod +x src/index.js
 新規Web書籍は[`examples/standard-book`](examples/standard-book)を基準に`book.yaml`、標準Markdown、editionを定義し、`web-mdbook`へ出力します。
 
 ```bash
+(
+set -euo pipefail
 npm run validate:standard-book -- ./my-book
 npm start build -- \
   --book ./my-book \
@@ -52,9 +54,10 @@ npm run check-visibility -- \
   --edition free \
   --artifact dist/web-mdbook/book
 npm run check-mdbook-responsive -- --book dist/web-mdbook
+)
 ```
 
-mdBookは検証済みversion `0.5.4`へ固定し、生成後artifactのvisibilityも公開前に再検査します。公式binaryの検証方法は[`web-mdbook` adapter contract](adapters/web-mdbook/README.md)を参照してください。
+command blockは1つのsubshellとして実行し、いずれかのgateが失敗した時点で後続処理を停止します。mdBookは検証済みversion `0.5.4`へ固定し、生成後artifactのvisibilityも公開前に再検査します。公式binaryの検証方法は[`web-mdbook` adapter contract](adapters/web-mdbook/README.md)を参照してください。
 
 以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
 
