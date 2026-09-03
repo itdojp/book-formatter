@@ -29,7 +29,7 @@ redirect_from:
 
 - 収録物:
   - `docs/_config.yml`（permalink: pretty、Pages対応plugins、kramdown、layout: book）
-  - `docs/_includes/page-navigation.html`（canonical）
+  - `docs/_includes/page-navigation.html`（legacy scaffold snapshot。managed正本は`shared/includes/page-navigation.html`）
   - `docs/_includes/sidebar-nav.html`（テンプレ）
   - `docs/_data/navigation.yml`（最小スケルトン）
   - `docs/index.md`（トップ雛形。トップでは下部ナビを表示しません）
