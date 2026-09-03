@@ -73,8 +73,12 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
      --book ../.worktrees/consumer-sync-pilot \
      --components layouts includes assets
    git -C ../.worktrees/consumer-sync-pilot status --short
+   git -C ../.worktrees/consumer-sync-pilot add -N --all
    git -C ../.worktrees/consumer-sync-pilot diff --
+   git -C ../.worktrees/consumer-sync-pilot reset --
    ```
+
+   `git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。同期結果をこの一時worktreeからcommitしない。
 
 5. managed file以外、書籍本文、書籍固有設定が差分へ入っていないことを確認する。`book-config.json`は`shared.version` / `lastSync`以外の変更を許容しない。
 6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。

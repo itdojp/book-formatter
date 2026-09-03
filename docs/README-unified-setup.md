@@ -2,7 +2,7 @@
 
 This guide is retained for existing Jekyll / GitHub Pages books. New standard Web books use `book.yaml` and the `web-mdbook` adapter described in [the output target policy](./output-targets.md).
 
-This guide describes the canonical structure for new book repos:
+This guide describes the retained structure for maintaining or reconstructing an existing legacy Jekyll book repository:
 
 - Use `templates/_config.yml` as the starting point (permalink: pretty, plugins, kramdown).
 - Copy `docs/includes/page-navigation.html` as `docs/_includes/page-navigation.html`.
@@ -11,9 +11,9 @@ This guide describes the canonical structure for new book repos:
 - Use `jekyll-redirect-from` (optional) to map old slugs when renaming chapters.
 
 ## Steps
-1. Create repo with `docs/` root.
-2. Place `_config.yml` from `templates/_config.yml` (customize `title`, `baseurl`, `repository`).
-3. Add `docs/_includes/page-navigation.html` from `docs/includes/page-navigation.html`.
+1. In an isolated task branch or worktree for the existing legacy repository, confirm that `docs/` is its publication root.
+2. Restore a missing `_config.yml` from `templates/_config.yml` and preserve the consumer-specific `title`, `baseurl`, and `repository` values.
+3. Restore a missing `docs/_includes/page-navigation.html` from `docs/includes/page-navigation.html`.
 4. Ensure `defaults.layout: book` and `permalink: pretty`.
 5. For renamed pages, use redirect-from in the destination page:
 
@@ -23,9 +23,9 @@ redirect_from:
 ```
 
 
-## スターターテンプレートの利用
+## 既存legacy書籍の再構築に使うスターターテンプレート
 
-新規書籍は `templates/starter/` の雛形をコピーして開始できます。
+`templates/starter/`は、既存Jekyll書籍で欠けた構成を隔離worktree上で再構築する場合のlegacy参照用である。新規Web書籍の作成には使用せず、`book.yaml`と`web-mdbook`を使用する。
 
 - 収録物:
   - `docs/_config.yml`（permalink: pretty、Pages対応plugins、kramdown、layout: book）
@@ -34,12 +34,14 @@ redirect_from:
   - `docs/_data/navigation.yml`（最小スケルトン）
   - `docs/index.md`（トップ雛形。トップでは下部ナビを表示しません）
 
-手動手順（例）:
+既存legacy書籍を再構築する手動手順（例）:
 
 ```bash
-# 任意の作業ディレクトリで
-cp -R templates/starter/docs ./docs
-# _config.yml の <owner>/<repo> 等を自書籍に合わせて置換
+# 例: 既存legacy書籍の隔離worktreeで、欠損したnavigationだけを選定して復旧する
+install -D -m 0644 \
+  templates/starter/docs/_data/navigation.yml \
+  ./docs/_data/navigation.yml
+git diff -- docs/_data/navigation.yml
 ```
 
 ## スキャフォールドスクリプトの利用
@@ -48,7 +50,7 @@ cp -R templates/starter/docs ./docs
 
 - `--create`なしでは、表示される一時出力先がscript終了時に削除されます。
 - `--create`では、`gh repo create --source`の前にlocal Git repositoryを初期化・commitしないため、GitHub repositoryを作成できません。
-- 修復までは前節の手動copyを使用し、remote作成と初回pushを別の監査済み手順で行います。
+- 既存legacy書籍の再構築が必要な場合は、前節の手動copyを隔離worktreeで行い、consumer固有値と全差分を監査します。新規Web書籍はこのscriptやstarterではなく標準`web-mdbook`経路で作成します。
 
 - 章/付録のURLはディレクトリ形式（末尾 /）で統一してください。
 
