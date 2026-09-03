@@ -18,11 +18,14 @@ mdBook projectの`src/`配下へstagingするため、mdBookの`{path}`だけで
 正本pathへ決定的に戻せないためである。repository iconは正規化済みroot URLを提供する。
 
 ```bash
+export BOOK_ROOT=examples/standard-book
+export BOOK_EDITION=free
+export BOOK_OUTPUT_ROOT=dist
 npm start build -- \
-  --book examples/standard-book \
+  --book "$BOOK_ROOT" \
   --target web-mdbook \
-  --edition free \
-  --out-dir dist
+  --edition "$BOOK_EDITION" \
+  --out-dir "$BOOK_OUTPUT_ROOT"
 ```
 
 `--out-dir`は#94で定義したoutput rootです。上のcommandは`dist/web-mdbook/`へ次を生成します。
@@ -55,6 +58,10 @@ mdBook `0.5.4`を使用します。CIとLinux x86_64のローカル検証では�
 ```bash
 (
 set -euo pipefail
+: "${BOOK_ROOT:?set the same book directory used by adapter build}"
+: "${BOOK_EDITION:?set the same edition ID used by adapter build}"
+: "${BOOK_OUTPUT_ROOT:?set the same output root used by adapter build}"
+MDBOOK_PROJECT_DIR="$BOOK_OUTPUT_ROOT/web-mdbook"
 MDBOOK_VERSION=0.5.4
 MDBOOK_TARGET=x86_64-unknown-linux-gnu
 MDBOOK_ARCHIVE="mdbook-v${MDBOOK_VERSION}-${MDBOOK_TARGET}.tar.gz"
@@ -62,6 +69,9 @@ MDBOOK_URL="https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERS
 MDBOOK_SHA256=3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
 MDBOOK_TOOL_ROOT="$PWD/.work/tools"
 
+test -f "$BOOK_ROOT/book.yaml"
+test -f "$MDBOOK_PROJECT_DIR/book.toml"
+test -f "$MDBOOK_PROJECT_DIR/manifest.json"
 test ! -L "$PWD/.work"
 test ! -L "$MDBOOK_TOOL_ROOT"
 mkdir -p "$MDBOOK_TOOL_ROOT"
@@ -86,16 +96,16 @@ curl --fail --location --proto '=https' --tlsv1.2 \
 MDBOOK_BIN="$MDBOOK_TOOL_DIR/mdbook"
 test -x "$MDBOOK_BIN"
 test "$("$MDBOOK_BIN" --version)" = "mdbook v${MDBOOK_VERSION}"
-"$MDBOOK_BIN" build dist/web-mdbook
-npm run check-mdbook-responsive -- --book dist/web-mdbook
+"$MDBOOK_BIN" build "$MDBOOK_PROJECT_DIR"
+npm run check-mdbook-responsive -- --book "$MDBOOK_PROJECT_DIR"
 npm run check-visibility -- \
-  examples/standard-book \
-  --edition free \
-  --artifact dist/web-mdbook/book
+  "$BOOK_ROOT" \
+  --edition "$BOOK_EDITION" \
+  --artifact "$MDBOOK_PROJECT_DIR/book"
 )
 ```
 
-URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理する。各buildはworkspace内の新しい一時directoryへarchiveを取得・検証・展開し、同じfail-fast block内でbuildと公開前検査まで完了してからdirectoryを削除する。展開済みbinaryや既存tool directoryを再利用せず、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。
+`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`はadapter project生成時に設定した同じ値を維持する。これにより、生成artifactを別のsample書籍から抽出したprotected fragmentで検査しない。URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理する。各buildはworkspace内の新しい一時directoryへarchiveを取得・検証・展開し、同じfail-fast block内でbuildと公開前検査まで完了してからdirectoryを削除する。展開済みbinaryや既存tool directoryを再利用せず、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。
 
 responsive checkerは生成project/HTML/CSS契約に加え、利用可能なChromeで全generated content pageに対し、次のviewportのsidebar/content非重複とhidden状態のbody overflowを検証します。mdBook 0.5.4のsidebar support pageであるroot `toc.html`だけを有限に除外し、他のHTMLでresponsive DOM IDが欠けた場合はfail closedです。
 

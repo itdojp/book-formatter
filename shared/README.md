@@ -39,22 +39,9 @@
 
 ## ローカル同期
 
-最初にdry-runでversion差分と予定componentを粗く確認する。
+最初のdry-runから[`web-jekyll-legacy` adapter contractの「安全な同期手順」](../adapters/web-jekyll-legacy/README.md#安全な同期手順)を正本として実行する。この入口はformatterの全tracked fileを監査済みSHAのblobへ照合し、照合済みlockfileから依存関係を再構築してから予定componentを確認する。`shared/README.md`には同等の実行blockを複製しない。
 
-```bash
-(
-set -euo pipefail
-: "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
-test "$(git rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
-test -z "$(git status --porcelain)"
-npm run sync-components -- \
-  --book ../consumer-book \
-  --components layouts includes assets \
-  --dry-run
-)
-```
-
-現行dry-runはconsumerの`shared.version`が現行versionと一致するとmanaged fileのbyte差分を検査せず終了するため、差分0の証拠には使用しない。隔離worktreeへの通常同期は、[`web-jekyll-legacy` adapter contractの「安全な同期手順」手順4](../adapters/web-jekyll-legacy/README.md#安全な同期手順)を正本として実行する。その手順にあるmanaged destinationと全ancestorのsymlink検査を省略して`sync-components`を実行しない。
+現行dry-runはconsumerの`shared.version`が現行versionと一致するとmanaged fileのbyte差分を検査せず終了するため、差分0の証拠には使用しない。隔離worktreeへの通常同期も同じadapter contractの手順4を実行する。その手順にあるmanaged destinationと全ancestorのsymlink検査を省略して`sync-components`を実行しない。
 
 同手順の`git add -N --all`は未追跡の新規managed fileを内容付きdiffへ含めるためだけに使い、監査後の`reset`でintent-to-addを解除する。同期結果を一時worktreeからcommitしない。consumerの`book-config.json`にあるopt-outはCLI指定で上書きしない。実fileまたはcomponent versionに差分がある場合だけ`shared.version`と同期時刻を更新する。確認済み差分だけをconsumerのtask branchへ再現し、Book QA前にallowlist外の変更がないことを確認する。
 

@@ -29,18 +29,21 @@
 5. deploy方式はadapter buildと分離して決定する。
 
 ```bash
+export BOOK_ROOT=./my-book
+export BOOK_EDITION=free
+export BOOK_OUTPUT_ROOT=dist
 (
 set -euo pipefail
-npm run validate:standard-book -- ./my-book
+npm run validate:standard-book -- "$BOOK_ROOT"
 npm start build -- \
-  --book ./my-book \
+  --book "$BOOK_ROOT" \
   --target web-mdbook \
-  --edition free \
-  --out-dir dist
+  --edition "$BOOK_EDITION" \
+  --out-dir "$BOOK_OUTPUT_ROOT"
 )
 ```
 
-adapter project生成後は、[`web-mdbook` adapter contract](../adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained blockを実行する。このblockは公式URL・SHA-256検証、fresh directoryへの展開、mdBook `0.5.4` gate、build、responsive検査、生成後artifact visibility検査を1つのfail-fast実行単位で完了し、展開済みbinaryを再利用しない。`check-visibility --artifact`は生成後の漏えい検査であり、変換前にadapterが行うsource visibility検査やresponsive検査では代替できない。
+adapter project生成後は、同じ`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`を維持して、[`web-mdbook` adapter contract](../adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained blockを実行する。このblockは公式URL・SHA-256検証、fresh directoryへの展開、mdBook `0.5.4` gate、build、responsive検査、実際に生成した書籍/editionに対するartifact visibility検査を1つのfail-fast実行単位で完了し、展開済みbinaryを再利用しない。`check-visibility --artifact`は生成後の漏えい検査であり、変換前にadapterが行うsource visibility検査やresponsive検査では代替できない。
 
 ### 既存Jekyll / GitHub Pages書籍
 

@@ -87,6 +87,9 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    set -euo pipefail
    : "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
    : "${AUDITED_BASE_SHA:?set the audited 40-character consumer base SHA}"
+   [[ "$AUDITED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+   test "$(git -C ../consumer-book rev-parse --verify "$AUDITED_BASE_SHA^{commit}")" = \
+     "$AUDITED_BASE_SHA"
    test "$(git rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
    test -z "$(git status --porcelain)"
    TRACKED_FORMATTER_FILES=0
@@ -102,6 +105,9 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    CONSUMER_SYNC_WORKTREE=../.worktrees/consumer-sync-pilot
    git -C ../consumer-book worktree add --detach \
      "$CONSUMER_SYNC_WORKTREE" "$AUDITED_BASE_SHA"
+   test "$(git -C "$CONSUMER_SYNC_WORKTREE" rev-parse HEAD)" = \
+     "$AUDITED_BASE_SHA"
+   test -z "$(git -C "$CONSUMER_SYNC_WORKTREE" status --porcelain)"
 
    # 現行sync scriptは同期先のsymlink境界を検査しない。通常同期の前に、
    # 今回更新され得る有限のmanaged destinationと全ancestorをlstatする。

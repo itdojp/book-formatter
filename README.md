@@ -39,14 +39,17 @@ chmod +x src/index.js
 新規Web書籍は[`examples/standard-book`](examples/standard-book)を基準に`book.yaml`、標準Markdown、editionを定義し、`web-mdbook`へ出力します。
 
 ```bash
+export BOOK_ROOT=./my-book
+export BOOK_EDITION=free
+export BOOK_OUTPUT_ROOT=dist
 (
 set -euo pipefail
-npm run validate:standard-book -- ./my-book
+npm run validate:standard-book -- "$BOOK_ROOT"
 npm start build -- \
-  --book ./my-book \
+  --book "$BOOK_ROOT" \
   --target web-mdbook \
-  --edition free \
-  --out-dir dist
+  --edition "$BOOK_EDITION" \
+  --out-dir "$BOOK_OUTPUT_ROOT"
 )
 ```
 
@@ -229,8 +232,11 @@ npm start build -- --book examples/standard-book \
   --target web-mdbook --edition free --dry-run
 
 # mdBook projectをdist/web-mdbookへ生成してbuild/viewportを検証
-npm start build -- --book examples/standard-book \
-  --target web-mdbook --edition free --out-dir dist
+export BOOK_ROOT=examples/standard-book
+export BOOK_EDITION=free
+export BOOK_OUTPUT_ROOT=dist
+npm start build -- --book "$BOOK_ROOT" \
+  --target web-mdbook --edition "$BOOK_EDITION" --out-dir "$BOOK_OUTPUT_ROOT"
 
 # 文章校正（textlint + PRH辞書）
 npm run check-textlint -- <book-dir> --output textlint-report.json
@@ -239,7 +245,7 @@ npm run check-textlint -- <book-dir> --output textlint-report.json
 npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 ```
 
-project生成後のmdBook build / viewport / artifact visibility検査は、[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のfresh binaryを使うfail-fast blockだけを正本として実行します。
+project生成後のmdBook build / viewport / artifact visibility検査は、[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のfresh binaryを使うfail-fast blockだけを正本として実行します。adapter生成時と同じ`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`を維持し、別の書籍やeditionをvisibility検査へ渡しません。
 
 標準書籍metadataは[標準書籍フォーマット](docs/standard-book-format.md)、有償本文と内部本文の分離は[Edition visibilityと有償本文の混入防止](docs/paid-editions.md)、新規出力とlegacy経路の選択は[出力target方針](docs/output-targets.md)を参照してください。
 出力先adapterの責務、有限target、manifest version 1は[Adapter開発契約](adapters/README.md)を参照してください。
