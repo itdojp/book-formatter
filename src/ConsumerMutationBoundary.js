@@ -40,6 +40,7 @@ const FORMATTER_MUTATION_INPUTS = [
   'shared/assets',
   'templates'
 ];
+const AUDITED_GIT_OPTIONS = ['-c', 'core.fsmonitor=false'];
 
 class ConsumerMutationError extends Error {
   constructor(message, options = {}) {
@@ -106,7 +107,7 @@ function normalizedUniquePaths(values, label, { required = true } = {}) {
 
 function gitOutput(repoRoot, args, options = {}) {
   try {
-    return execFileSync('git', ['-C', repoRoot, ...args], {
+    return execFileSync('git', [...AUDITED_GIT_OPTIONS, '-C', repoRoot, ...args], {
       encoding: options.encoding || 'utf8',
       input: options.input,
       stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
@@ -803,7 +804,11 @@ class ConsumerMutationBoundary {
       await this.componentSync.assertManagedDestination(consumerRoot, managedPath);
       const ignoreCheck = spawnSync(
         'git',
-        ['-C', consumerRoot, 'check-ignore', '--quiet', '--', managedPath],
+        [
+          ...AUDITED_GIT_OPTIONS,
+          '-C', consumerRoot,
+          'check-ignore', '--quiet', '--', managedPath
+        ],
         {
           encoding: 'utf8',
           env: {

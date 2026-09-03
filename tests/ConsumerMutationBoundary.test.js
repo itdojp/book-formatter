@@ -877,6 +877,34 @@ describe('ConsumerMutationBoundary transaction', () => {
     assert.deepStrictEqual(result.changedPaths, []);
     assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
   });
+
+  test('dry-run preflightはconsumer fsmonitor hookを実行しない', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    const marker = path.join(tempDir, 'fsmonitor-executed');
+    const hook = path.join(tempDir, 'fsmonitor-hook.sh');
+    await fs.writeFile(hook, `#!/bin/sh\ntouch ${marker}\nexit 1\n`, { mode: 0o755 });
+    git(fixture.worktree, 'config', 'core.fsmonitor', hook);
+    let called = false;
+
+    const result = await createBoundary().run({
+      plan,
+      consumer,
+      managedPaths: ['index.md'],
+      dryRun: true,
+      mutate: async () => { called = true; }
+    });
+
+    assert.strictEqual(called, false);
+    assert.deepStrictEqual(result.changedPaths, []);
+    assert.strictEqual(await fs.pathExists(marker), false);
+  });
 });
 
 describe('audited legacy operations', () => {

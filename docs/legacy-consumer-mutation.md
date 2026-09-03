@@ -11,6 +11,7 @@ writeを開始する前に、runtimeは次を検証します。
 - formatterの現在のcommitがplanで固定した40文字SHAと一致し、tracked内容・modeが
   commitと同一で、managed sourceにuntracked/ignored入力がない
 - formatter/consumerにGit replacement refがない
+- consumer監査時はoptional index lockとfilesystem monitor hookを無効化する
 - consumerが監査済みbase SHAから作ったcleanなlinked worktreeであり、tracked fileに
   `skip-worktree`、`assume-unchanged`などのindex flagがない
 - consumerのtracked blobのraw bytes、executable mode、symbolic-link targetがbase SHAと
