@@ -12,7 +12,7 @@ This guide describes the retained structure for maintaining or reconstructing an
 
 ## Steps
 1. In an isolated task branch or worktree for the existing legacy repository, confirm that `docs/` is its publication root.
-2. Select `config` in the fixed-SHA restoration block for a missing `_config.yml`, then replace every `<...>` placeholder (`title`, `description`, `author`, `url`, `baseurl`, and `repository`) with the consumer-specific value in a separate reviewed change.
+2. Select `config` in the fixed-SHA restoration block for a missing `_config.yml`, then audit every metadata field against the existing consumer record in a separate reviewed change. Replace every `<...>` placeholder (`title`, `description`, `author`, `url`, `baseurl`, and `repository`) and explicitly confirm or replace the non-placeholder starter defaults for `version`, `lang`, `contact.email`, `license_text`, and `repository_branch`. Use the existing `book-config.json`, license file, default branch, release record, and publication contact as evidence; a starter default is not evidence that the value is correct.
 3. Select `page-navigation` in that block for a missing `docs/_includes/page-navigation.html`.
 4. Ensure `defaults.layout: book` and `permalink: pretty`.
 5. For renamed pages, use redirect-from in the destination page:
@@ -93,14 +93,14 @@ git -C "$CONSUMER_ROOT" reset -- "$DEST_REL"
 
 `RESTORE_ITEM`は上の有限集合から1件ずつ選ぶ。既存fileは上書きせず、変更が必要な場合は通常のconsumer task branchで別途差分を作成・レビューする。
 
-`navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleと`/introduction/`、`/chapters/chapter-01/`等のpathをconsumerのcanonical route inventoryへ置換し、不要な行を削除する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、例示本文をconsumerの概要・対象読者・読書経路へ書き換える。次の検査でstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
+`navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleと`/introduction/`、`/chapters/chapter-01/`等のpathをconsumerのcanonical route inventoryへ置換し、不要な行を削除する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、概要・対象読者・到達目標・読書経路を含む全例示本文を書き換える。次の検査で既知のstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
 
 ```bash
 CHECKED_SKELETON_FILES=0
 for RESTORED_REL in docs/index.md docs/_data/navigation.yml; do
   test -f "$CONSUMER_ROOT/$RESTORED_REL" || continue
   CHECKED_SKELETON_FILES=$((CHECKED_SKELETON_FILES + 1))
-  if grep -nE '(<BOOK TITLE>|第[12]章 タイトル|付録[AB] タイトル)' \
+  if grep -nE '(<BOOK TITLE>|第[12]章 タイトル|付録[AB] タイトル|ここに概要や書誌情報|（例）|目次はサイドバー|章ページは /chapters/|付録は /appendices/)' \
     "$CONSUMER_ROOT/$RESTORED_REL"
   then
     echo "starter title markers remain: $RESTORED_REL" >&2
