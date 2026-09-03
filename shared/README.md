@@ -41,7 +41,7 @@
 
 最初のdry-runから[`web-jekyll-legacy` adapter contractの「安全な同期手順」](../adapters/web-jekyll-legacy/README.md#安全な同期手順)を正本として実行する。この入口はformatterの全tracked fileを監査済みSHAのblobへ照合し、照合済みlockfileから依存関係を再構築してから予定componentを確認する。`shared/README.md`には同等の実行blockを複製しない。
 
-現行dry-runはconsumerの`shared.version`が現行versionと一致するとmanaged fileのbyte差分を検査せず終了するため、差分0の証拠には使用しない。隔離worktreeへの通常同期も同じadapter contractの手順4を実行する。その手順にあるmanaged destinationと全ancestorのsymlink検査を省略して`sync-components`を実行しない。
+現行dry-runはconsumerの`shared.version`が現行versionと一致するとmanaged fileのbyte差分を検査せず終了するため、差分0の証拠には使用しない。隔離worktreeへの通常同期も同じadapter contractの手順4を実行する。`sync-components` runtime自体も、選択された全managed destinationと`book-config.json`を最初のwrite前に`lstat`し、root/ancestor/final symlink、non-directory ancestor、non-regular final、root escapeを拒否する。runtime検査は固定SHA・clean base・差分reviewを代替しない。
 
 同手順の`git add -N --all`は未追跡の新規managed fileを内容付きdiffへ含めるためだけに使い、監査後の`reset`でintent-to-addを解除する。同期結果を一時worktreeからcommitしない。consumerの`book-config.json`にあるopt-outはCLI指定で上書きしない。実fileまたはcomponent versionに差分がある場合だけ`shared.version`と同期時刻を更新する。確認済み差分だけをconsumerのtask branchへ再現し、Book QA前にallowlist外の変更がないことを確認する。
 
@@ -49,7 +49,7 @@
 
 `.github/workflows/book-sync.yml`は`workflow_dispatch`専用であり、formatterのmergeだけでは起動しない。
 
-[#129](https://github.com/itdojp/book-formatter/issues/129)が`ComponentSync`のdestination symlink境界をruntimeで強制するまで、preview / writeともdispatchしない。現行previewもcloneへ実同期してから差分を表示するため、手動Runbookのpreflightを代替しない。
+preview / writeはいずれもconsumer cloneで同じ`ComponentSync` destination境界を通る。previewもcloneへ実同期して差分を表示するため、下記のworkflow gateとruntime検査を併用し、手動Runbookの固定SHA・全tracked blob監査と同等であるとは扱わない。
 
 - 既定はdry-run。
 - 最大3冊を明示する。`all`は指定できない。
@@ -60,7 +60,7 @@
 
 ## `rollout-ux`との関係
 
-`rollout-ux --apply-ux-core`は同じ`ComponentSync`を使う。#129完了までは次のdry-runだけを予定差分の粗い確認に使い、core writeは実行しない。`--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する別契約である。portfolio-level book registry version 1とは入力互換ではない。
+`rollout-ux --apply-ux-core`は同じ`ComponentSync`境界を使う。core writeは固定formatter SHAからconsumerごとの隔離task branchへ適用し、有限差分をreviewする。`--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する別契約であり、[#130](https://github.com/itdojp/book-formatter/issues/130)完了まではdry-runだけに限定する。portfolio-level book registry version 1とは入力互換ではない。
 
 ```bash
 npm start rollout-ux -- \

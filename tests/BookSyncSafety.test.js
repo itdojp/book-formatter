@@ -10,6 +10,7 @@ import {
   WRITE_CONFIRMATION_TOKEN,
   validateBookSyncRequest
 } from '../scripts/validate-book-sync-request.js';
+import { ComponentSync } from '../scripts/sync-components.js';
 
 const WORKFLOW_PATH = path.resolve('.github/workflows/book-sync.yml');
 const ALLOWLIST_PATH = path.resolve('config/book-sync-allowlist.json');
@@ -24,6 +25,34 @@ function validateForTest(request) {
     ...request,
     allowedRepositories: TEST_ALLOWLIST
   });
+}
+
+async function createComponentSyncBook(rootPath, overrides = {}) {
+  await fs.ensureDir(rootPath);
+  await fs.writeJson(path.join(rootPath, 'book-config.json'), {
+    title: 'Component destination boundary fixture',
+    shared: {
+      version: '0.0.0',
+      lastSync: '2026-01-01T00:00:00.000Z',
+      components: { layouts: true }
+    },
+    ...overrides
+  }, { spaces: 2 });
+}
+
+function runComponentSync(bookPath, extraArgs = []) {
+  return spawnSync(
+    process.execPath,
+    [
+      'scripts/sync-components.js',
+      '--book',
+      bookPath,
+      '--components',
+      'layouts',
+      ...extraArgs
+    ],
+    { encoding: 'utf8' }
+  );
 }
 
 test('book-sync: manual-only、dry-run既定、全dispatch直列化を構造として保持する', () => {
@@ -304,6 +333,204 @@ test('component sync: CLI filterでも書籍側のsubcomponent opt-outを保持�
     );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('component sync path resolver: absolute pathとconsumer root escapeを拒否する', async () => {
+  const tempDir = mkdtempSync(path.join('tests', 'tmp-component-path-'));
+  const bookPath = path.join(tempDir, 'book');
+
+  try {
+    await createComponentSyncBook(bookPath);
+    const sync = new ComponentSync();
+    const consumerRoot = await sync.assertConsumerRoot(bookPath);
+
+    assert.throws(
+      () => sync.resolveManagedDestination(consumerRoot, '../outside.txt'),
+      /must stay below the consumer root/
+    );
+    assert.throws(
+      () => sync.resolveManagedDestination(consumerRoot, path.resolve(tempDir, 'outside.txt')),
+      /must stay below the consumer root/
+    );
+    assert.deepStrictEqual(
+      sync.resolveManagedDestination(consumerRoot, 'docs/_layouts/book.html'),
+      {
+        relativePath: path.join('docs', '_layouts', 'book.html'),
+        absolutePath: path.join(consumerRoot, 'docs', '_layouts', 'book.html')
+      }
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('component sync: root/ancestor/finalのsymlinkと不正file typeをwrite前に拒否する', async (t) => {
+  const cases = [
+    {
+      name: 'root symlink',
+      expected: /Consumer root must not be a symbolic link/,
+      setup: async (fixtureRoot) => {
+        const realBook = path.join(fixtureRoot, 'real-book');
+        const bookPath = path.join(fixtureRoot, 'book-link');
+        await createComponentSyncBook(realBook);
+        await fs.symlink(realBook, bookPath, 'dir');
+        return {
+          bookPath,
+          assertNoWrite: async () => {
+            assert.equal(await fs.pathExists(path.join(realBook, 'docs')), false);
+            assert.equal((await fs.readJson(path.join(realBook, 'book-config.json'))).shared.version, '0.0.0');
+          }
+        };
+      }
+    },
+    {
+      name: 'parent symlink',
+      expected: /must not contain a symbolic link/,
+      setup: async (fixtureRoot) => {
+        const bookPath = path.join(fixtureRoot, 'book');
+        const outsidePath = path.join(fixtureRoot, 'outside');
+        await createComponentSyncBook(bookPath);
+        await fs.ensureDir(outsidePath);
+        await fs.symlink(outsidePath, path.join(bookPath, 'docs'), 'dir');
+        return {
+          bookPath,
+          assertNoWrite: async () => {
+            assert.deepStrictEqual(await fs.readdir(outsidePath), []);
+          }
+        };
+      }
+    },
+    {
+      name: 'dangling final symlink',
+      expected: /must not contain a symbolic link/,
+      setup: async (fixtureRoot) => {
+        const bookPath = path.join(fixtureRoot, 'book');
+        const outsideTarget = path.join(fixtureRoot, 'outside', 'book.html');
+        await createComponentSyncBook(bookPath);
+        await fs.ensureDir(path.join(bookPath, 'docs', '_layouts'));
+        await fs.symlink(outsideTarget, path.join(bookPath, 'docs', '_layouts', 'book.html'), 'file');
+        return {
+          bookPath,
+          assertNoWrite: async () => {
+            assert.equal(await fs.pathExists(outsideTarget), false);
+          }
+        };
+      }
+    },
+    {
+      name: 'non-directory ancestor',
+      expected: /ancestor must be a directory/,
+      setup: async (fixtureRoot) => {
+        const bookPath = path.join(fixtureRoot, 'book');
+        await createComponentSyncBook(bookPath);
+        await fs.writeFile(path.join(bookPath, 'docs'), 'not a directory\n');
+        return {
+          bookPath,
+          assertNoWrite: async () => {
+            assert.equal(await fs.readFile(path.join(bookPath, 'docs'), 'utf8'), 'not a directory\n');
+          }
+        };
+      }
+    },
+    {
+      name: 'final directory',
+      expected: /must be a regular file/,
+      setup: async (fixtureRoot) => {
+        const bookPath = path.join(fixtureRoot, 'book');
+        const finalPath = path.join(bookPath, 'docs', '_layouts', 'book.html');
+        await createComponentSyncBook(bookPath);
+        await fs.ensureDir(finalPath);
+        return {
+          bookPath,
+          assertNoWrite: async () => {
+            assert.equal((await fs.lstat(finalPath)).isDirectory(), true);
+          }
+        };
+      }
+    },
+    {
+      name: 'book-config symlink',
+      expected: /must not contain a symbolic link/,
+      setup: async (fixtureRoot) => {
+        const bookPath = path.join(fixtureRoot, 'book');
+        const outsideConfig = path.join(fixtureRoot, 'outside-config.json');
+        const initialConfig = '{"shared":{"version":"outside"}}\n';
+        await fs.ensureDir(bookPath);
+        await fs.writeFile(outsideConfig, initialConfig);
+        await fs.symlink(outsideConfig, path.join(bookPath, 'book-config.json'), 'file');
+        return {
+          bookPath,
+          assertNoWrite: async () => {
+            assert.equal(await fs.readFile(outsideConfig, 'utf8'), initialConfig);
+            assert.equal(await fs.pathExists(path.join(bookPath, 'docs')), false);
+          }
+        };
+      }
+    }
+  ];
+
+  for (const fixture of cases) {
+    await t.test(fixture.name, async () => {
+      const fixtureRoot = mkdtempSync(path.join('tests', 'tmp-component-boundary-'));
+      try {
+        const { bookPath, assertNoWrite } = await fixture.setup(fixtureRoot);
+        const result = runComponentSync(bookPath);
+        assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+        assert.match(result.stderr, fixture.expected);
+        await assertNoWrite();
+      } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test('component sync: 後段destinationが不正でも先行fileをcopyしない', async () => {
+  const tempDir = mkdtempSync(path.join('tests', 'tmp-component-preflight-'));
+  const bookPath = path.join(tempDir, 'book');
+  const firstDestination = path.join(bookPath, 'docs', '_layouts', 'book.html');
+  const invalidDestination = path.join(bookPath, 'docs', '_layouts', 'default.html');
+
+  try {
+    await createComponentSyncBook(bookPath);
+    await fs.ensureDir(invalidDestination);
+
+    const result = runComponentSync(bookPath);
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stderr, /must be a regular file/);
+    assert.equal(await fs.pathExists(firstDestination), false);
+    assert.equal((await fs.readJson(path.join(bookPath, 'book-config.json'))).shared.version, '0.0.0');
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('book-sync preview/write: 共通runtime guardがclone外writeを拒否する', async (t) => {
+  const document = workflow();
+  for (const jobName of ['dry-run', 'write-sync']) {
+    await t.test(jobName, async () => {
+      const syncSteps = document.jobs[jobName].steps.filter((step) =>
+        typeof step.run === 'string' && step.run.includes('scripts/sync-components.js')
+      );
+      assert.equal(syncSteps.length, 1);
+
+      const tempDir = mkdtempSync(path.join('tests', `tmp-book-sync-${jobName}-`));
+      const bookPath = path.join(tempDir, 'book');
+      const outsidePath = path.join(tempDir, 'outside');
+      try {
+        await createComponentSyncBook(bookPath);
+        await fs.ensureDir(outsidePath);
+        await fs.symlink(outsidePath, path.join(bookPath, 'docs'), 'dir');
+
+        const result = runComponentSync(bookPath);
+        assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+        assert.match(result.stderr, /must not contain a symbolic link/);
+        assert.deepStrictEqual(await fs.readdir(outsidePath), []);
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
   }
 });
 

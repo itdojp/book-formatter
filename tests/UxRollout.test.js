@@ -108,6 +108,36 @@ describe('UxRollout', () => {
     assert.deepStrictEqual(yamlRegistry.books, {});
   });
 
+  test('applyUxCore はdry/writeともconsumer ancestor symlinkを拒否して外部へ書き込まない', async () => {
+    await rollout.componentSync.loadVersion();
+
+    for (const dryRun of [true, false]) {
+      const fixturePath = path.join(tempDir, dryRun ? 'dry-run' : 'write');
+      const bookPath = path.join(fixturePath, 'book');
+      const outsidePath = path.join(fixturePath, 'outside');
+      await fs.ensureDir(bookPath);
+      await fs.ensureDir(outsidePath);
+      await fs.writeJson(path.join(bookPath, 'book-config.json'), {
+        title: 'UX core destination boundary fixture',
+        shared: {
+          version: dryRun ? rollout.componentSync.version.version : '0.0.0',
+          components: { layouts: true, includes: true, assets: { css: true, js: true } }
+        }
+      }, { spaces: 2 });
+      await fs.symlink(outsidePath, path.join(bookPath, 'docs'), 'dir');
+
+      await assert.rejects(
+        rollout.applyUxCore(bookPath, { dryRun }),
+        /Managed destination must not contain a symbolic link/
+      );
+      assert.deepStrictEqual(await fs.readdir(outsidePath), []);
+      assert.equal(
+        (await fs.readJson(path.join(bookPath, 'book-config.json'))).shared.version,
+        dryRun ? rollout.componentSync.version.version : '0.0.0'
+      );
+    }
+  });
+
   test('mobile sidebarの未選択ruleは後続base ruleより高いspecificityを持つ', async () => {
     const mainCss = await fs.readFile(
       path.resolve('shared/assets/css/main.css'),
