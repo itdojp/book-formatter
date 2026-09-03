@@ -122,8 +122,14 @@ export class UxRollout {
     const books = registry.books || {};
     const bookName = path.basename(bookPath);
 
-    if (consumerId && books[consumerId]) {
-      return { key: consumerId, entry: books[consumerId] };
+    if (consumerId) {
+      if (books[consumerId]) {
+        return { key: consumerId, entry: books[consumerId] };
+      }
+      console.warn(
+        chalk.yellow(`  ⚠️  監査済みconsumer IDのレジストリエントリがありません: ${consumerId}`)
+      );
+      return null;
     }
 
     if (books[bookName]) {
