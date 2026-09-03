@@ -57,7 +57,7 @@ test -z "$(git -C "$CONSUMER_ROOT" status --porcelain)"
 case "$RESTORE_ITEM" in
   config)             SOURCE_REL=templates/starter/docs/_config.yml; DEST_REL=docs/_config.yml ;;
   page-navigation)    SOURCE_REL=shared/includes/page-navigation.html; DEST_REL=docs/_includes/page-navigation.html ;;
-  sidebar-navigation) SOURCE_REL=templates/starter/docs/_includes/sidebar-nav.html; DEST_REL=docs/_includes/sidebar-nav.html ;;
+  sidebar-navigation) SOURCE_REL=shared/includes/sidebar-nav.html; DEST_REL=docs/_includes/sidebar-nav.html ;;
   navigation)         SOURCE_REL=templates/starter/docs/_data/navigation.yml; DEST_REL=docs/_data/navigation.yml ;;
   index)              SOURCE_REL=templates/starter/docs/index.md; DEST_REL=docs/index.md ;;
   safe-main)          SOURCE_REL=templates/starter/docs/assets/js/safe-main.js; DEST_REL=docs/assets/js/safe-main.js ;;

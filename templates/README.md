@@ -10,7 +10,7 @@
 | `.github/workflows/` | active legacy consumer QA | scaffold scriptとNode.js Actions検査が参照 | consumer workflow templateとして保持。formatter自身のworkflowではない |
 | `.github/PULL_REQUEST_TEMPLATE.md` | active scaffold metadata | scaffold scriptが`.github/`単位でcopy | Jekyll固有とは断定しない。script修復後の配布対象 |
 | `ux/core/`, `ux/modules/`, `ux/profiles/` | active legacy generator / rollout input | `BookGenerator`が本文生成時に読み、`rollout-ux`がprofile / module設定を扱う | 動的参照があるため移動・archiveしない |
-| `_config.yml` | legacy manual template | `docs/README-unified-setup.md`が手動開始点として参照 | `templates/starter/docs/_config.yml`や組み込みTemplateEngineと同一ではない。正本統合まで保持 |
+| `_config.yml` | compatibility snapshot / ownership unresolved | activeな直接copy consumerは未確認。`DiagnosticTool`の同名literalは`shared/templates/_config.yml`を検査し、top-level fileを参照しない | `yurl`誤記を含むため手動復旧元にしない。#103で外部参照を監査し、#102のarchive判断まで保持 |
 | `_data/`, `_includes/`, `assets/` | compatibility snapshot / ownership unresolved | 現行runtimeからの直接copyを確認できない | `shared/`やstarterとの内容差があるため、正本とみなさず移動・削除しない |
 
 ## 正本境界
