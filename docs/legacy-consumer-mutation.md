@@ -11,11 +11,12 @@ writeを開始する前に、runtimeは次を検証します。
 - formatterの現在のcommitがplanで固定した40文字SHAと一致し、tracked内容・modeが
   commitと同一で、managed sourceにuntracked/ignored入力がない
 - formatter/consumerにGit replacement refがない
-- consumer監査時はoptional index lockとfilesystem monitor hookを無効化する
+- formatter/consumer監査時はoptional index lock、filesystem monitor、Git hookを無効化する
 - consumerが監査済みbase SHAから作ったcleanなlinked worktreeであり、tracked fileに
   `skip-worktree`、`assume-unchanged`などのindex flagがない
 - consumerのtracked blobのraw bytes、executable mode、symbolic-link targetがbase SHAと
-  一致する。activeなGit `filter` attributeは、dry-runの`git status`でも任意のclean
+  一致する。formatter/consumerのactiveなGit `filter` attributeは、dry-runの
+  `git status`でも任意のclean
   driverを実行し得るため、filter-sensitiveな監査より前に一律拒否する。LFS等で
   working bytesがcommit blobと異なるworktreeも監査対象として拒否する
 - rollbackはcheckout filterに依存せず、差分が残ったtracked fileをbase SHAのraw blobから

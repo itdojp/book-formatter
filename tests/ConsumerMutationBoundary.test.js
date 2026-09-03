@@ -354,26 +354,16 @@ describe('ConsumerMutationBoundary transaction', () => {
       formatter.formatterRoot,
       git(formatter.formatterRoot, 'rev-parse', '--git-path', 'info/attributes')
     );
-    const normalizedContentPath = path.join(tempDir, 'normalized-audited.txt');
+    const formatterFilterMarker = path.join(tempDir, 'formatter-filter-executed');
     await fs.ensureDir(path.dirname(attributesPath));
     await fs.writeFile(attributesPath, 'audited.txt filter=normalize-audited\n');
-    await fs.writeFile(normalizedContentPath, 'formatter fixture\n');
     git(
       formatter.formatterRoot,
       'config',
       'filter.normalize-audited.clean',
-      `cat ${normalizedContentPath}`
+      `touch ${formatterFilterMarker}; cat`
     );
     git(formatter.formatterRoot, 'config', 'filter.normalize-audited.required', 'true');
-    await fs.writeFile(
-      path.join(formatter.formatterRoot, 'audited.txt'),
-      'working bytes hidden by clean filter\n'
-    );
-    git(formatter.formatterRoot, 'add', 'audited.txt');
-    assert.strictEqual(
-      git(formatter.formatterRoot, 'status', '--porcelain', '--untracked-files=no'),
-      ''
-    );
     await assert.rejects(
       createBoundary().preflight({
         plan: basePlan,
@@ -381,16 +371,12 @@ describe('ConsumerMutationBoundary transaction', () => {
         managedPaths: ['index.md'],
         dryRun: false
       }),
-      /tracked file differs/
+      /Formatter Git filter attributes are not allowed: audited\.txt \(normalize-audited\)/
     );
+    assert.strictEqual(await fs.pathExists(formatterFilterMarker), false);
     git(formatter.formatterRoot, 'config', '--unset', 'filter.normalize-audited.required');
     git(formatter.formatterRoot, 'config', '--unset', 'filter.normalize-audited.clean');
     await fs.remove(attributesPath);
-    await fs.writeFile(
-      path.join(formatter.formatterRoot, 'audited.txt'),
-      'formatter fixture\n'
-    );
-    git(formatter.formatterRoot, 'add', 'audited.txt');
     assert.strictEqual(
       git(formatter.formatterRoot, 'status', '--porcelain', '--untracked-files=no'),
       ''
@@ -745,6 +731,44 @@ describe('ConsumerMutationBoundary transaction', () => {
     );
 
     assert.strictEqual(called, false);
+  });
+
+  test('rollbackはconsumer post-index-change hookを実行しない', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    const hooks = path.join(tempDir, 'consumer-hooks');
+    const marker = path.join(tempDir, 'post-index-change-executed');
+    await fs.ensureDir(hooks);
+    await fs.writeFile(
+      path.join(hooks, 'post-index-change'),
+      `#!/bin/sh\ntouch ${marker}\n`,
+      { mode: 0o755 }
+    );
+    git(fixture.worktree, 'config', 'core.hooksPath', hooks);
+
+    await assert.rejects(
+      createBoundary().run({
+        plan,
+        consumer,
+        managedPaths: ['index.md'],
+        dryRun: false,
+        mutate: async ({ consumerRoot }) => {
+          await fs.writeFile(path.join(consumerRoot, 'index.md'), '# Partial\n');
+          throw new Error('synthetic interruption before rollback');
+        }
+      }),
+      /Mutation failed and was rolled back/
+    );
+
+    assert.strictEqual(await fs.pathExists(marker), false);
+    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
+    assert.strictEqual(git(fixture.worktree, 'rev-parse', 'HEAD'), fixture.baseSha);
   });
 
   test('operation failureとallowlist外差分をbase SHAへrollbackし、明示再開できる', async () => {
@@ -1249,6 +1273,27 @@ test('rollout_unificationは安全な単一target wrapperでremote Git操作を�
   assert.notStrictEqual(result.status, 0);
   assert.match(`${result.stdout}${result.stderr}`, /--plan is required/);
   await fs.remove(path.resolve('tests', 'tmp-shell-report-unused'));
+
+  const caller = await fs.mkdtemp(path.join(TEST_ROOT, 'tmp-shell-caller-'));
+  const relativePlan = path.join(caller, 'plan.json');
+  const reportRoot = path.join(caller, 'reports');
+  await fs.writeJson(relativePlan, {});
+  const relativeResult = await import('node:child_process').then(({ spawnSync }) => (
+    spawnSync(
+      'bash',
+      [scriptPath, '--plan', 'plan.json', '--target', 'sample-book', '--dry-run'],
+      {
+        cwd: caller,
+        encoding: 'utf8',
+        env: { ...process.env, BOOK_FORMATTER_REPORT_ROOT: reportRoot }
+      }
+    )
+  ));
+  const relativeOutput = `${relativeResult.stdout}${relativeResult.stderr}`;
+  assert.notStrictEqual(relativeResult.status, 0);
+  assert.doesNotMatch(relativeOutput, /--plan not found|Consumer mutation plan does not exist/);
+  assert.match(relativeOutput, /plan\.schemaVersion must be 1/);
+  await fs.remove(caller);
 });
 
 test('update-book CLIはdry-runの有限plan全件検査とwriteの単一targetを保持する', async () => {

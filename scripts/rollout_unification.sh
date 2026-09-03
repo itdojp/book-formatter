@@ -61,6 +61,7 @@ done
 [ -n "$PLAN" ] || { usage; die "--plan is required"; }
 [ -n "$TARGET" ] || { usage; die "--target is required"; }
 [ -f "$PLAN" ] || die "--plan not found: $PLAN"
+PLAN="$(cd -- "$(dirname -- "$PLAN")" && pwd -P)/$(basename -- "$PLAN")"
 
 require_cmd node git
 

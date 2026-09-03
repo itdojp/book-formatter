@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'fs-extra';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ComponentSync } from '../scripts/sync-components.js';
@@ -40,7 +41,10 @@ const FORMATTER_MUTATION_INPUTS = [
   'shared/assets',
   'templates'
 ];
-const AUDITED_GIT_OPTIONS = ['-c', 'core.fsmonitor=false'];
+const AUDITED_GIT_OPTIONS = [
+  '-c', 'core.fsmonitor=false',
+  '-c', `core.hooksPath=${os.devNull}`
+];
 
 class ConsumerMutationError extends Error {
   constructor(message, options = {}) {
@@ -137,7 +141,7 @@ function gitNullPaths(repoRoot, args) {
   return output.toString('utf8').split('\0').filter(Boolean);
 }
 
-function assertNoActiveGitFilters(repoRoot, revision) {
+function assertNoActiveGitFilters(repoRoot, revision, label) {
   const trackedPaths = [...new Set([
     ...trackedTreeEntries(repoRoot, revision)
       .filter(({ type }) => type === 'blob')
@@ -173,7 +177,7 @@ function assertNoActiveGitFilters(repoRoot, revision) {
   }
   if (active.length > 0) {
     throw new ConsumerMutationError(
-      `Consumer Git filter attributes are not allowed: ${active.join(', ')}`
+      `${label} Git filter attributes are not allowed: ${active.join(', ')}`
     );
   }
 }
@@ -638,6 +642,7 @@ class ConsumerMutationBoundary {
         `Formatter HEAD mismatch: expected ${plan.formatterSha}, received ${head}`
       );
     }
+    assertNoActiveGitFilters(this.formatterRoot, plan.formatterSha, 'Formatter');
     const trackedStatus = gitOutput(
       this.formatterRoot,
       ['status', '--porcelain=v1', '--untracked-files=no']
@@ -702,7 +707,7 @@ class ConsumerMutationBoundary {
     }
     // `git status` can execute a configured clean filter even in dry-run.
     // Reject every active filter attribute before any filter-sensitive audit.
-    assertNoActiveGitFilters(consumerRoot, consumer.baseSha);
+    assertNoActiveGitFilters(consumerRoot, consumer.baseSha, 'Consumer');
     const status = gitOutput(consumerRoot, ['status', '--porcelain=v1', '--untracked-files=all']);
     const ignored = gitNullPaths(
       consumerRoot,
@@ -869,7 +874,7 @@ class ConsumerMutationBoundary {
     // later verification command execute it. A filter introduced mid-run is
     // an explicit rollback failure for manual audit; raw tracked bytes have
     // already been restored without invoking that filter.
-    assertNoActiveGitFilters(consumerRoot, baseSha);
+    assertNoActiveGitFilters(consumerRoot, baseSha, 'Consumer');
     assertNoReplacementRefs(consumerRoot, 'Consumer rollback repository');
     assertNoIndexFlags(consumerRoot, 'Consumer rollback repository');
     const head = gitOutput(consumerRoot, ['rev-parse', 'HEAD']).trim();
@@ -910,7 +915,7 @@ class ConsumerMutationBoundary {
 
     try {
       await mutate(context);
-      assertNoActiveGitFilters(context.consumerRoot, consumer.baseSha);
+      assertNoActiveGitFilters(context.consumerRoot, consumer.baseSha, 'Consumer');
       assertNoReplacementRefs(context.consumerRoot, `Consumer ${consumer.id}`);
       assertNoIndexFlags(context.consumerRoot, `Consumer ${consumer.id}`);
       const changedPaths = collectChangedPaths(context.consumerRoot, consumer.baseSha);
