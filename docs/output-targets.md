@@ -35,9 +35,16 @@ npm start build -- \
   --target web-mdbook \
   --edition free \
   --out-dir dist
+test "$(mdbook --version)" = "mdbook v0.5.4"
 mdbook build dist/web-mdbook
+npm run check-visibility -- \
+  ./my-book \
+  --edition free \
+  --artifact dist/web-mdbook/book
 npm run check-mdbook-responsive -- --book dist/web-mdbook
 ```
+
+`mdbook`は検証済みversion `0.5.4`へ固定する。CIで使用する公式archive URLとSHA-256は[`web-mdbook` adapter contract](../adapters/web-mdbook/README.md)を正本とし、上のversion gateを通らないbinaryで公開成果物を生成しない。`check-visibility --artifact`は生成後の漏えい検査であり、変換前にadapterが行うsource visibility検査やresponsive検査では代替できない。
 
 ### 既存Jekyll / GitHub Pages書籍
 

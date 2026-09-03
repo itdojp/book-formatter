@@ -26,14 +26,21 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 
 現在`sync-components`が扱うJekyll consumer向け正本はrepository rootの`shared/`である。
 
-| formatter source | consumer destination | 備考 |
+| formatter source（`shared/version.json`のmanaged file） | consumer destination | 備考 |
 | --- | --- | --- |
-| `shared/layouts/*.html` | `docs/_layouts/*.html` | Jekyll layout |
-| `shared/includes/*.html` | `docs/_includes/*.html` | Liquid include |
-| `shared/assets/**` | `docs/assets/**` | CSS / JavaScript等 |
+| `shared/layouts/book.html` | `docs/_layouts/book.html` | Jekyll layout |
+| `shared/layouts/default.html` | `docs/_layouts/default.html` | Jekyll layout |
+| `shared/includes/sidebar-nav.html` | `docs/_includes/sidebar-nav.html` | Liquid include |
+| `shared/includes/page-navigation.html` | `docs/_includes/page-navigation.html` | Liquid include |
+| `shared/assets/css/main.css` | `docs/assets/css/main.css` | CSS |
+| `shared/assets/css/mobile-responsive.css` | `docs/assets/css/mobile-responsive.css` | CSS |
+| `shared/assets/css/syntax-highlighting.css` | `docs/assets/css/syntax-highlighting.css` | CSS |
+| `shared/assets/js/code-copy-lightweight.js` | `docs/assets/js/code-copy-lightweight.js` | JavaScript |
+| `shared/assets/js/search.js` | `docs/assets/js/search.js` | JavaScript |
+| `shared/assets/js/theme.js` | `docs/assets/js/theme.js` | JavaScript |
 | `shared/version.json` | `book-config.json`の`shared.version` | 実fileまたはversion差分がある場合に更新 |
 
-`shared/schema/`、`shared/schemas/`、`shared/markdown/`、`shared/mdbook/`はこの同期mappingに含めない。`shared/schemas/book-config.schema.json`はlegacy config互換のschemaだが、Jekyll componentとして`docs/`へ配布するfileではない。
+表は現行`shared/version.json`に列挙された有限集合であり、directory wildcardではない。たとえば、同じsource directoryにある未列挙fileは自動同期されない。`shared/schema/`、`shared/schemas/`、`shared/markdown/`、`shared/mdbook/`もこのJekyll同期mappingに含めない。`shared/schemas/book-config.schema.json`はlegacy config互換のschemaだが、Jekyll componentとして`docs/`へ配布するfileではない。
 
 `templates/`の分類は[`templates/README.md`](../../templates/README.md)を参照する。top-level template、starter、UX template、workflow templateは用途と正本状態が異なるため、directory全体をJekyll adapterの実装資産として一括移動しない。
 
@@ -43,7 +50,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 
 1. 監査済みのformatter commit SHAを固定する。mutableな`main`を同期根拠にしない。
 2. consumerのdefault branch、dirty status、Open PR、現在のPages方式を確認する。
-3. 対象を1冊に限定し、最初にdry-runする。
+3. 対象を1冊に限定し、dry-runでversion差分と予定componentを粗く確認する。
 
    ```bash
    npm run sync-components -- \
@@ -52,9 +59,24 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
      --dry-run
    ```
 
-4. 差分を確認し、書籍本文や書籍固有設定が同期対象に入っていないことを確認する。
-5. 書き込みはconsumerごとのbranch / PRで行う。複数書籍を同じPRへ混在させない。
-6. consumerのBook QA、main CI、Pages deployment、公開HTTPと主要markerを確認する。
+   現行dry-runは`shared.version`が一致するとfile内容を比較せず終了するため、差分0の証拠には使用しない。
+
+4. consumerの監査済みbase SHAから隔離した一時worktreeを作り、そのcopyへ通常同期して`git diff`を確認する。
+
+   ```bash
+   : "${AUDITED_BASE_SHA:?set the audited 40-character consumer base SHA}"
+   git -C ../consumer-book worktree add --detach \
+     ../.worktrees/consumer-sync-pilot "$AUDITED_BASE_SHA"
+   npm run sync-components -- \
+     --book ../.worktrees/consumer-sync-pilot \
+     --components layouts includes assets
+   git -C ../.worktrees/consumer-sync-pilot status --short
+   git -C ../.worktrees/consumer-sync-pilot diff --
+   ```
+
+5. managed file以外、書籍本文、書籍固有設定が差分へ入っていないことを確認する。`book-config.json`は`shared.version` / `lastSync`以外の変更を許容しない。
+6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。
+7. consumerのBook QA、main CI、Pages deployment、公開HTTPと主要markerを確認する。
 
 `Book Sync` workflowを使う場合も、既定dry-run、最大3冊、確認token、対象repositoryへのwrite権限、Open PR 0というworkflow側のgateを維持する。
 

@@ -20,11 +20,18 @@
 
 `scripts/sync-components.js`はJekyll向けのlayouts / includes / assetsに次のmappingを使用する。
 
-| formatter source | consumer destination |
+| formatter source（managed file） | consumer destination |
 | --- | --- |
-| `shared/layouts/<file>` | `docs/_layouts/<file>` |
-| `shared/includes/<file>` | `docs/_includes/<file>` |
-| `shared/assets/<path>` | `docs/assets/<path>` |
+| `shared/layouts/book.html` | `docs/_layouts/book.html` |
+| `shared/layouts/default.html` | `docs/_layouts/default.html` |
+| `shared/includes/sidebar-nav.html` | `docs/_includes/sidebar-nav.html` |
+| `shared/includes/page-navigation.html` | `docs/_includes/page-navigation.html` |
+| `shared/assets/css/main.css` | `docs/assets/css/main.css` |
+| `shared/assets/css/mobile-responsive.css` | `docs/assets/css/mobile-responsive.css` |
+| `shared/assets/css/syntax-highlighting.css` | `docs/assets/css/syntax-highlighting.css` |
+| `shared/assets/js/code-copy-lightweight.js` | `docs/assets/js/code-copy-lightweight.js` |
+| `shared/assets/js/search.js` | `docs/assets/js/search.js` |
+| `shared/assets/js/theme.js` | `docs/assets/js/theme.js` |
 
 章本文、付録、書籍固有`index.md`、`docs/_config.yml`、workflow、標準Markdown、mdBook themeはこのJekyll mappingに含めない。別component名を明示した場合、sync scriptはsource相対pathを維持するfallbackを持つが、Issue #96のJekyll同期手順と`Book Sync` workflowはlayouts / includes / assetsだけを選択する。
 
@@ -32,7 +39,7 @@
 
 ## ローカル同期
 
-最初に必ずdry-runする。
+最初にdry-runでversion差分と予定componentを粗く確認する。
 
 ```bash
 npm run sync-components -- \
@@ -41,15 +48,20 @@ npm run sync-components -- \
   --dry-run
 ```
 
-差分を確認した後、同じ有限componentを同期する。
+現行dry-runはconsumerの`shared.version`が現行versionと一致するとmanaged fileのbyte差分を検査せず終了するため、差分0の証拠には使用しない。監査済みbase SHAから隔離した一時worktreeを作り、同じ有限componentを通常同期して実差分を確認する。
 
 ```bash
+: "${AUDITED_BASE_SHA:?set the audited 40-character consumer base SHA}"
+git -C ../consumer-book worktree add --detach \
+  ../.worktrees/consumer-sync-pilot "$AUDITED_BASE_SHA"
 npm run sync-components -- \
-  --book ../consumer-book \
+  --book ../.worktrees/consumer-sync-pilot \
   --components layouts includes assets
+git -C ../.worktrees/consumer-sync-pilot status --short
+git -C ../.worktrees/consumer-sync-pilot diff --
 ```
 
-consumerの`book-config.json`にあるopt-outはCLI指定で上書きしない。実fileまたはcomponent versionに差分がある場合だけ`shared.version`と同期時刻を更新する。
+consumerの`book-config.json`にあるopt-outはCLI指定で上書きしない。実fileまたはcomponent versionに差分がある場合だけ`shared.version`と同期時刻を更新する。確認済み差分だけをconsumerのtask branchへ再現し、Book QA前にallowlist外の変更がないことを確認する。
 
 ## Book Sync workflow
 
