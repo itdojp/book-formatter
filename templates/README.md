@@ -6,9 +6,9 @@
 
 | path | 分類 | 現在のconsumer / 責務 | 取扱い |
 | --- | --- | --- | --- |
-| `starter/` | active legacy scaffold | `scripts/scaffold-new-book.sh`がJekyll `docs/`雛形としてcopy | 既存互換のため保持。新規標準Web書籍の既定ではない |
-| `.github/workflows/` | active legacy consumer QA | scaffoldとNode.js Actions検査が参照 | consumer workflow templateとして保持。formatter自身のworkflowではない |
-| `.github/PULL_REQUEST_TEMPLATE.md` | active scaffold metadata | scaffoldが`.github/`単位でcopy | Jekyll固有とは断定しないが、現在はlegacy scaffold経由で配布 |
+| `starter/` | active legacy template source | `scripts/scaffold-new-book.sh`がJekyll `docs/`雛形としてcopy | 資産は保持。script自体は[#128](https://github.com/itdojp/book-formatter/issues/128)完了まで利用不可 |
+| `.github/workflows/` | active legacy consumer QA | scaffold scriptとNode.js Actions検査が参照 | consumer workflow templateとして保持。formatter自身のworkflowではない |
+| `.github/PULL_REQUEST_TEMPLATE.md` | active scaffold metadata | scaffold scriptが`.github/`単位でcopy | Jekyll固有とは断定しない。script修復後の配布対象 |
 | `ux/core/`, `ux/modules/`, `ux/profiles/` | active legacy generator / rollout input | `BookGenerator`が本文生成時に読み、`rollout-ux`がprofile / module設定を扱う | 動的参照があるため移動・archiveしない |
 | `_config.yml` | legacy manual template | `docs/README-unified-setup.md`が手動開始点として参照 | `templates/starter/docs/_config.yml`や組み込みTemplateEngineと同一ではない。正本統合まで保持 |
 | `_data/`, `_includes/`, `assets/` | compatibility snapshot / ownership unresolved | 現行runtimeからの直接copyを確認できない | `shared/`やstarterとの内容差があるため、正本とみなさず移動・削除しない |
@@ -30,7 +30,7 @@
 3. `shared/layouts/`、`shared/includes/`、`shared/assets/`をJekyllの`docs/`配置へcopyする。
 4. owner、repository、titleのplaceholderを置換する。
 
-この経路は既存互換のため残すlegacy scaffoldである。新規標準Web書籍は`book.yaml`と`web-mdbook`を使用する。詳細は[出力target方針](../docs/output-targets.md)を参照する。
+この処理pathとtemplate資産は既存互換のため残すが、現行scriptは処理終了時に一時出力を削除し、`--create`でもlocal Git repositoryを初期化・commitしない。したがって[#128](https://github.com/itdojp/book-formatter/issues/128)が完了するまで実行手順として使用しない。legacy書籍を手動で準備する場合は[`docs/README-unified-setup.md`](../docs/README-unified-setup.md)、新規標準Web書籍は`book.yaml`と`web-mdbook`を使用する。詳細は[出力target方針](../docs/output-targets.md)を参照する。
 
 ## 変更規則
 

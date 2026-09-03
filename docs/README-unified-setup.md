@@ -1,4 +1,6 @@
-# Book Formatter: Unified Setup Guide
+# Book Formatter: Legacy Jekyll Setup Guide
+
+This guide is retained for existing Jekyll / GitHub Pages books. New standard Web books use `book.yaml` and the `web-mdbook` adapter described in [the output target policy](./output-targets.md).
 
 This guide describes the canonical structure for new book repos:
 
@@ -42,17 +44,12 @@ cp -R templates/starter/docs ./docs
 
 ## スキャフォールドスクリプトの利用
 
-`scripts/scaffold-new-book.sh` で雛形のコピーと基本置換を自動化できます。
+`scripts/scaffold-new-book.sh`は[#128](https://github.com/itdojp/book-formatter/issues/128)が完了するまで利用しないでください。
 
-```bash
-# 試行実行（ローカルに雛形を展開）
-./scripts/scaffold-new-book.sh <owner> <repo>
+- `--create`なしでは、表示される一時出力先がscript終了時に削除されます。
+- `--create`では、`gh repo create --source`の前にlocal Git repositoryを初期化・commitしないため、GitHub repositoryを作成できません。
+- 修復までは前節の手動copyを使用し、remote作成と初回pushを別の監査済み手順で行います。
 
-# GitHub上に新規リポを作成して初回pushまで実施
-./scripts/scaffold-new-book.sh <owner> <repo> --create
-```
-
-- 展開場所は一時ディレクトリに表示されます。`docs/_config.yml` の `title/description/author` を編集し、章/付録ディレクトリを追加してください。
 - 章/付録のURLはディレクトリ形式（末尾 /）で統一してください。
 
 ## 章スラッグ変更時のリダイレクト

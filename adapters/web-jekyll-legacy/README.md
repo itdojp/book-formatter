@@ -14,13 +14,15 @@
 | 入口 | 入力 | 現在の責務 | 書き込み先 / 結果 |
 | --- | --- | --- | --- |
 | `create-book` / `update-book` | legacy `book-config.json` | 組み込みJekyll templateと`shared/`を使う既存生成処理 | 指定したlegacy書籍directory |
-| `scripts/scaffold-new-book.sh` | owner / repository名 | `templates/starter/`、`templates/.github/`、`shared/`を展開する既存scaffold | 一時directory。`--create`指定時だけrepository作成 |
+| `scripts/scaffold-new-book.sh` | owner / repository名 | template展開処理は保持されているが、現在は利用不可 | EXIT時に一時出力を削除し、`--create`もlocal Git repositoryを作らない。[#128](https://github.com/itdojp/book-formatter/issues/128) |
 | `sync-components` | legacy `book-config.json`と`shared/version.json` | layouts / includes / assetsの選択同期 | consumerの`docs/`配下 |
 | `rollout-ux` | legacy UX registry / `book-config.json` | UX profile更新と、明示指定時の共通component同期 | 既存consumer。既定で一括適用しない |
 | `Book Sync` workflow | 最大3冊の明示対象 | consumer clone、dry-run、allowlist付きPR作成 | 既定はdry-run。直接mainを更新しない |
 | adapter `build` | 標準`book.yaml`とedition | visibility検査済みbuild planの記録 | skeleton `manifest.json`のみ |
 
 legacy `book-config.json`と標準`book.yaml`は別契約である。`create-book`、`update-book`、`sync-components`、`rollout-ux`へ`book.yaml`を暗黙変換して渡さない。反対に、既存書籍に`book.yaml`がないことを理由にlegacy経路を停止しない。
+
+`scripts/scaffold-new-book.sh`は互換pathとして削除しないが、[#128](https://github.com/itdojp/book-formatter/issues/128)が完了するまで新規作成手順には使用しない。現行scriptは`--create`なしでもEXIT trapで一時出力を削除し、`--create`では`gh repo create --source`が要求する初期化済みlocal Git repositoryを用意しないため、永続的なlocal scaffoldもGitHub repositoryも作成できない。
 
 ## Jekyll componentの正本と同期先
 
