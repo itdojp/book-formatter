@@ -81,11 +81,11 @@
 - `fix_root_links.sh`
 - `rollout_codeowners.sh`
 - `rollout_fix_config_yaml.sh`
-- `rollout_unification.sh`（`ComponentSync`のdestination境界は利用するが、batch/base/review境界を強制する#130完了までdry-runを含め利用停止）
+- `rollout_unification.sh`（有限planから明示した1 consumerだけを`ComponentSync` transactionで処理する互換wrapper）
 - `scaffold-new-book.sh`
 - `lib.sh`（上記shell scriptの共通関数）
 
-これらはJekyll consumerまたは一括rolloutに依存する。fileは参照関係を持つためinventory上は`active`とし、各scriptの利用可否は個別の安全契約に従う。`rollout_unification.sh`は#130完了まで実行せず、その後の要否は#102で再監査する。
+これらはJekyll consumerまたはrolloutに依存する。fileは参照関係を持つためinventory上は`active`とし、各scriptの利用可否は個別の安全契約に従う。`rollout_unification.sh`は[legacy consumer mutation contract](legacy-consumer-mutation.md)を迂回せず、旧来の自動branch/commit/push/PR処理は行わない。長期的な要否は#102で再監査する。
 
 ### archive候補
 

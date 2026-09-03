@@ -5,6 +5,9 @@ import chalk from 'chalk';
 import { ConfigValidator } from './ConfigValidator.js';
 import { FileSystemUtils } from './FileSystemUtils.js';
 import { ComponentSync } from '../scripts/sync-components.js';
+import { ConsumerMutationBoundary, ConsumerMutationError } from './ConsumerMutationBoundary.js';
+
+const PROFILE_MUTATION_TOKEN = Symbol('profile-mutation-token');
 
 /**
  * 既存書籍にUX設定/共通コアを段階適用するロールアウトユーティリティ
@@ -13,9 +16,12 @@ export class UxRollout {
   /**
    * @param {Object} options - 依存の初期化オプション
    */
-  constructor() {
+  constructor(options = {}) {
     this.fsUtils = new FileSystemUtils();
-    this.componentSync = new ComponentSync();
+    this.componentSync = options.componentSync || new ComponentSync();
+    this.mutationBoundary = options.mutationBoundary || new ConsumerMutationBoundary({
+      componentSync: this.componentSync
+    });
     this.configValidator = new ConfigValidator();
   }
 
@@ -151,10 +157,14 @@ export class UxRollout {
    * @returns {Promise<{updated: boolean, skipped: boolean}>} 結果
    */
   async updateBookConfig(bookPath, entry, options) {
+    if (options.mutationToken !== PROFILE_MUTATION_TOKEN) {
+      throw new ConsumerMutationError(
+        'UX profile writes require the audited consumer transaction'
+      );
+    }
     const configPath = path.join(bookPath, 'book-config.json');
     if (!(await this.fsUtils.exists(configPath))) {
-      console.log(chalk.yellow(`⚠️  book-config.json が見つかりません: ${bookPath}`));
-      return { updated: false, skipped: true };
+      throw new ConsumerMutationError(`book-config.json is required: ${bookPath}`);
     }
 
     const config = await fs.readJson(configPath);
@@ -167,8 +177,10 @@ export class UxRollout {
       // レジストリ由来の ux 設定を事前に検証し、無効な設定を書き込まない。
       this.configValidator.validateUx({ ux: nextUx });
     } catch (error) {
-      console.log(chalk.red(`  ❌ レジストリの ux 設定が不正です: ${error.message}`));
-      return { updated: false, skipped: true };
+      throw new ConsumerMutationError(
+        `Legacy UX registry entry is invalid: ${error.message}`,
+        { cause: error }
+      );
     }
 
     const currentUx = config.ux || null;
@@ -182,10 +194,6 @@ export class UxRollout {
       console.log(chalk.yellow(`  [DRY RUN] ux を更新します: ${configPath}`));
       console.log(chalk.gray(`    profile: ${currentUx?.profile || '未設定'} -> ${nextUx.profile}`));
       return { updated: false, skipped: false };
-    }
-
-    if (options.backup !== false) {
-      await this.fsUtils.createBackup(configPath);
     }
 
     const updatedConfig = { ...config, ux: nextUx };
@@ -215,10 +223,32 @@ export class UxRollout {
    * @returns {Promise<void>}
    */
   async rollout(options) {
-    const { directory, pattern, registryPath, applyUxCore, applyUxProfile, dryRun } = options;
+    const {
+      plan,
+      consumers,
+      registryPath,
+      applyUxCore,
+      applyUxProfile,
+      dryRun
+    } = options;
 
     if (!applyUxCore && !applyUxProfile) {
       throw new Error('--apply-ux-core もしくは --apply-ux-profile を指定してください');
+    }
+    if (!plan || !Array.isArray(consumers) || consumers.length === 0) {
+      throw new ConsumerMutationError(
+        'rollout requires a finite audited plan and explicit consumer selection'
+      );
+    }
+    const expectedOperation = applyUxCore && applyUxProfile
+      ? 'rollout-ux-core-profile'
+      : applyUxCore
+        ? 'rollout-ux-core'
+        : 'rollout-ux-profile';
+    if (plan.operation !== expectedOperation) {
+      throw new ConsumerMutationError(
+        `rollout does not accept plan.operation=${plan.operation}; expected ${expectedOperation}`
+      );
     }
 
     let registry = null;
@@ -228,28 +258,22 @@ export class UxRollout {
       throw new Error('--apply-ux-profile を指定する場合は --registry が必要です');
     }
 
-    const books = await this.listBooks(directory, pattern);
-    if (books.length === 0) {
-      console.log(chalk.yellow('⚠️  対象書籍が見つかりませんでした'));
-      return;
-    }
-
     if (applyUxCore) {
       await this.componentSync.loadVersion();
     }
 
     let updatedCount = 0;
     let skippedCount = 0;
-    let missingRegistry = 0;
 
-    for (const bookPath of books) {
+    for (const consumer of consumers) {
+      const bookPath = consumer.worktree;
       const bookName = path.basename(bookPath);
       console.log(chalk.blue(`\n📚 処理中: ${bookName}`));
 
-      const configPath = path.join(bookPath, 'book-config.json');
-      const config = (await this.fsUtils.exists(configPath))
-        ? await fs.readJson(configPath)
-        : null;
+      const config = await this.componentSync.loadBookConfig(bookPath);
+      if (!config) {
+        throw new ConsumerMutationError(`book-config.json is required for ${consumer.id}`);
+      }
 
       let registryEntry = null;
       if (registry) {
@@ -257,31 +281,74 @@ export class UxRollout {
         if (resolved) {
           registryEntry = resolved.entry;
         } else {
-          missingRegistry++;
-          skippedCount++;
-          continue;
+          throw new ConsumerMutationError(
+            `Legacy UX registry entry is required for ${consumer.id}`
+          );
+        }
+      }
+      if (applyUxProfile && registryEntry) {
+        try {
+          this.configValidator.validateUx({
+            ux: {
+              profile: registryEntry.profile,
+              modules: registryEntry.modules
+            }
+          });
+        } catch (error) {
+          throw new ConsumerMutationError(
+            `Legacy UX registry entry is invalid for ${consumer.id}: ${error.message}`,
+            { cause: error }
+          );
         }
       }
 
-      if (applyUxProfile && registryEntry) {
-        const result = await this.updateBookConfig(bookPath, registryEntry, {
-          backup: options.backup,
-          dryRun
+      const managedPaths = new Set();
+      if (applyUxProfile) managedPaths.add('book-config.json');
+      if (applyUxCore) {
+        const components = this.componentSync.determineComponents(config, {
+          components: ['layouts', 'includes', 'assets']
         });
-        if (result.updated || (dryRun && !result.skipped)) updatedCount++;
-        if (result.skipped) skippedCount++;
+        const syncPlan = this.componentSync.createSyncPlan(bookPath, components);
+        managedPaths.add('book-config.json');
+        for (const entry of syncPlan) managedPaths.add(entry.destRel.split(path.sep).join('/'));
       }
 
-      if (applyUxCore) {
-        await this.applyUxCore(bookPath, { dryRun });
+      const mutationResult = await this.mutationBoundary.run({
+        plan,
+        consumer,
+        managedPaths: [...managedPaths],
+        dryRun,
+        mutate: async () => {
+          if (applyUxProfile && registryEntry) {
+            await this.updateBookConfig(bookPath, registryEntry, {
+              dryRun: false,
+              backup: false,
+              mutationToken: PROFILE_MUTATION_TOKEN
+            });
+          }
+          if (applyUxCore) {
+            await this.applyUxCore(bookPath, { dryRun: false });
+          }
+        }
+      });
+
+      if (dryRun) {
+        console.log(chalk.yellow(
+          `  [DRY RUN] ${mutationResult.managedPaths.length} managed path(s)を検証しました`
+        ));
+        for (const managedPath of mutationResult.managedPaths) {
+          console.log(chalk.gray(`    - ${managedPath}`));
+        }
+        updatedCount++;
+      } else if (mutationResult.changedPaths.length > 0) {
+        updatedCount++;
+      } else {
+        skippedCount++;
       }
     }
 
     console.log(chalk.blue('\n📊 ロールアウト結果:'));
     console.log(chalk.green(`  ${dryRun ? '更新(予定)' : '更新'}: ${updatedCount}`));
     console.log(chalk.gray(`  スキップ: ${skippedCount}`));
-    if (registry && missingRegistry > 0) {
-      console.log(chalk.yellow(`  レジストリ未登録: ${missingRegistry}`));
-    }
   }
 }

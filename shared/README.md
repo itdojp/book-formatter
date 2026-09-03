@@ -60,10 +60,11 @@ preview / writeはいずれもconsumer cloneで同じ`ComponentSync` destination
 
 ## `rollout-ux`との関係
 
-`rollout-ux --apply-ux-core`は同じ`ComponentSync`境界を使う。core writeは固定formatter SHAからconsumerごとの隔離task branchへ適用し、有限差分をreviewする。`--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する別契約であり、[#130](https://github.com/itdojp/book-formatter/issues/130)完了まではdry-runだけに限定する。portfolio-level book registry version 1とは入力互換ではない。
+`rollout-ux --apply-ux-core`は同じ`ComponentSync`境界を使う。core/profile writeはいずれも[legacy consumer mutation contract](../docs/legacy-consumer-mutation.md)の固定formatter/base SHA、clean linked worktree、有限allowlist、rollback、単一targetを要求する。`--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する別operationであり、portfolio-level book registry version 1とは入力互換ではない。
 
 ```bash
 npm start rollout-ux -- \
+  --plan .codex-local/tmp/ux-plan.json \
   --registry ./legacy-ux-registry.json \
   --apply-ux-core \
   --apply-ux-profile \

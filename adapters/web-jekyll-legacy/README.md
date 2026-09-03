@@ -13,11 +13,11 @@
 
 | 入口 | 入力 | 現在の責務 | 書き込み先 / 結果 |
 | --- | --- | --- | --- |
-| `create-book` / `update-book` | legacy `book-config.json` | 組み込みJekyll templateと`shared/`を使う既存生成処理 | `update-book` writeは[#130](https://github.com/itdojp/book-formatter/issues/130)完了まで停止 |
-| `sync-all-books` | directory配下のlegacy `book-config.json` | 対象候補の列挙 | #130完了まで`--dry-run`限定 |
+| `create-book` / `update-book` | legacy `book-config.json` | 組み込みJekyll templateと`shared/`を使う既存生成処理 | `update-book`は有限planから1 consumerのmanaged metadata/templateだけを更新 |
+| `sync-all-books` | 最大6件の有限consumer plan | dry-run全件検査、または明示した1 consumerの更新 | fixed SHA / linked worktree / allowlist / rollbackをruntimeで強制 |
 | `scripts/scaffold-new-book.sh` | owner / repository名 | template展開処理は保持されているが、現在は利用不可 | EXIT時に一時出力を削除し、`--create`もlocal Git repositoryを作らない。[#128](https://github.com/itdojp/book-formatter/issues/128) |
 | `sync-components` | legacy `book-config.json`と`shared/version.json` | layouts / includes / assetsの選択同期 | consumerの`docs/`配下 |
-| `rollout-ux` | legacy UX registry / `book-config.json` | UX profile更新と、明示指定時の共通component同期 | core writeはruntime destination検査に加えて本書の隔離手順を要求。profile writeは[#130](https://github.com/itdojp/book-formatter/issues/130)完了まで停止 |
+| `rollout-ux` | finite consumer plan / legacy UX registry | UX profile更新と、明示指定時の共通component同期 | fixed SHA / linked worktree / allowlist / rollback / 単一targetをruntimeで強制 |
 | `Book Sync` workflow | 最大3冊の明示対象 | consumer clone、preview、allowlist付きPR作成 | preview / writeともruntime destination検査とworkflow gateを要求 |
 | adapter `build` | 標準`book.yaml`とedition | visibility検査済みbuild planの記録 | skeleton `manifest.json`のみ |
 
@@ -270,15 +270,16 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 
 `Book Sync` workflowのpreview / writeは、いずれも選択destinationと`book-config.json`を全write前に検査する同じ`ComponentSync`を使用する。root/ancestor/final symlink（danglingを含む）、non-directory ancestor、non-regular final、root escapeを拒否し、後段destinationが不正な場合も先行fileをcopyしない。各write直前にも境界を再検査するが、同じconsumer treeを別processが同時に変更する競合まで原子的に防ぐ契約ではないため、隔離checkoutを単独で操作する。既定preview、最大3冊、確認token、対象repositoryへのwrite権限、Open PR 0、allowlist付きconsumer別PRという既存gateも引き続き必須である。
 
-旧一括経路`scripts/rollout_unification.sh`は`ComponentSync`のdestination境界を利用するが、[#130](https://github.com/itdojp/book-formatter/issues/130)が完了するまでdry-runを含め利用しない。現行の非dry-runは固定base SHA、隔離worktree、有限batch、consumer別reviewを強制せず、dry-runもformatter全tracked fileの監査済みSHA照合を行わない。必要な確認は上の手順3・4へ一本化する。
+`scripts/rollout_unification.sh`は[legacy consumer mutation contract](../../docs/legacy-consumer-mutation.md)を使う単一consumer wrapperである。旧来のbranch切替、commit、push、PR作成は行わない。fixed formatter/base SHA、clean linked worktree、有限allowlist、`ComponentSync` destination境界を同じruntime transactionで検証し、consumer別review gateが終わるまで次targetへ進まない。
 
 ## `rollout-ux`との境界
 
 - `--apply-ux-core`は`ComponentSync`を介してlayouts / includes / assetsを同期する。
 - `--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する。
 - portfolio-level [`book-registry.yaml` version 1](../../docs/book-registry.md)は同じ名前でも入力互換ではない。
-- `--apply-ux-core --dry-run`は予定差分の粗い確認に限る。writeはruntimeのdestination検査に加えて、上の固定SHA・隔離・有限差分手順で1 consumerずつ監査する。
-- `--apply-ux-profile`は別のconfig更新契約である。#130完了まではdry-runだけに限定し、core writeを迂回する手段として併用しない。
+- dry-runは有限planの全targetまたは明示targetを検査し、file内容を変更しない。
+- writeは`--target`で1 consumerだけを選び、profile/coreを同じtransactionへ含める。profileをcore writeの境界迂回には利用できない。
+- plan schema、allowlist確定、rollback、明示再開は[legacy consumer mutation contract](../../docs/legacy-consumer-mutation.md)を正本とする。
 
 ## 維持する互換path
 

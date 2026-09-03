@@ -13,6 +13,10 @@ import {
 } from './AdapterBuild.js';
 import { VisibilityValidationError } from './VisibilityChecker.js';
 import { StandardBookValidationError } from './StandardBookValidator.js';
+import {
+  loadConsumerMutationPlan,
+  selectConsumers
+} from './ConsumerMutationBoundary.js';
 
 const program = new Command();
 const bookGenerator = new BookGenerator();
@@ -69,27 +73,21 @@ program
 program
   .command('update-book')
   .description('既存の書籍を更新します')
-  .option('-c, --config <path>', '設定ファイルのパス', './book-config.json')
-  .option('-b, --book <path>', '書籍のパス', './book')
-  .option('--no-backup', 'バックアップを作成しません', false)
+  .requiredOption('--plan <path>', '監査済みconsumer mutation plan')
+  .requiredOption('--target <consumer-id>', '更新する単一consumer ID')
+  .option('--dry-run', 'preflightとmanaged pathの表示だけを行います', false)
   .action(async (options) => {
     try {
       console.log(chalk.blue('📚 書籍を更新しています...'));
-      
-      // 設定ファイルの存在チェック
-      if (!(await fsUtils.exists(options.config))) {
-        console.error(chalk.red(`❌ 設定ファイルが見つかりません: ${options.config}`));
-        process.exit(1);
-      }
 
-      // 書籍ディレクトリの存在チェック
-      if (!(await fsUtils.exists(options.book))) {
-        console.error(chalk.red(`❌ 書籍ディレクトリが見つかりません: ${options.book}`));
-        process.exit(1);
-      }
-
-      // 書籍の更新
-      await bookGenerator.updateBook(options.config, options.book);
+      const plan = await loadConsumerMutationPlan(options.plan, {
+        expectedOperation: 'update-book'
+      });
+      const [consumer] = selectConsumers(plan, {
+        targetId: options.target,
+        dryRun: options.dryRun
+      });
+      await bookGenerator.updateBook(plan, consumer, { dryRun: options.dryRun });
       
       console.log(chalk.green('✅ 書籍の更新が完了しました!'));
       
@@ -152,65 +150,33 @@ program
 // sync-all-books コマンド
 program
   .command('sync-all-books')
-  .description('複数の書籍を一括で同期します')
-  .option('-d, --directory <path>', '書籍ディレクトリのパス', './books')
-  .option('-p, --pattern <pattern>', '設定ファイルのパターン', '**/book-config.json')
+  .description('有限planの書籍を検査し、write時は1冊だけ更新します')
+  .requiredOption('--plan <path>', '監査済みconsumer mutation plan')
+  .option('--target <consumer-id>', 'writeする単一consumer ID')
   .option('--dry-run', '実際には実行せず、実行予定の操作を表示します', false)
   .action(async (options) => {
     try {
-      console.log(chalk.blue('🔄 書籍を一括同期しています...'));
-      
-      // 書籍ディレクトリの存在チェック
-      if (!(await fsUtils.exists(options.directory))) {
-        console.error(chalk.red(`❌ 書籍ディレクトリが見つかりません: ${options.directory}`));
-        process.exit(1);
-      }
-
-      // 設定ファイルの検索
-      const configFiles = await fsUtils.listDirectory(options.directory, {
-        recursive: true,
-        pattern: options.pattern,
-        filesOnly: true
+      console.log(chalk.blue('🔄 有限consumer planを検査しています...'));
+      const plan = await loadConsumerMutationPlan(options.plan, {
+        expectedOperation: 'sync-all-books'
       });
-
-      if (configFiles.length === 0) {
-        console.log(chalk.yellow('⚠️  設定ファイルが見つかりませんでした'));
-        return;
-      }
-
-      console.log(chalk.blue(`📁 ${configFiles.length} 個の設定ファイルが見つかりました`));
-
-      // 各書籍の処理
+      const consumers = selectConsumers(plan, {
+        targetId: options.target,
+        dryRun: options.dryRun
+      });
       const results = [];
-      for (const configFile of configFiles) {
-        const configPath = path.join(options.directory, configFile);
-        const bookPath = path.dirname(configPath);
-        
-        try {
-          console.log(chalk.blue(`\n📚 処理中: ${configFile}`));
-          
-          if (options.dryRun) {
-            console.log(chalk.yellow(`  [DRY RUN] 更新予定: ${bookPath}`));
-          } else {
-            await bookGenerator.updateBook(configPath, bookPath);
-            console.log(chalk.green(`  ✅ 更新完了: ${bookPath}`));
-          }
-          
-          results.push({ path: configFile, success: true });
-        } catch (error) {
-          console.error(chalk.red(`  ❌ 更新失敗: ${error.message}`));
-          results.push({ path: configFile, success: false, error: error.message });
-        }
+      for (const consumer of consumers) {
+        console.log(chalk.blue(`\n📚 処理中: ${consumer.id}`));
+        const result = await bookGenerator.updateBook(plan, consumer, {
+          dryRun: options.dryRun
+        });
+        results.push({ id: consumer.id, result });
       }
 
-      // 結果の表示
-      const successful = results.filter(r => r.success).length;
-      const failed = results.filter(r => !r.success).length;
-      
       console.log(chalk.blue('\n📊 同期結果:'));
-      console.log(chalk.green(`  成功: ${successful}`));
-      if (failed > 0) {
-        console.log(chalk.red(`  失敗: ${failed}`));
+      console.log(chalk.green(`  ${options.dryRun ? '検査' : '更新'}: ${results.length}`));
+      if (!options.dryRun) {
+        console.log(chalk.yellow('  次のconsumerはreview gate完了後に別実行で明示してください'));
       }
       
     } catch (error) {
@@ -223,25 +189,39 @@ program
 program
   .command('rollout-ux')
   .description('レジストリに基づき既存書籍へUX設定/共通コアを段階適用します')
-  .option('-d, --directory <path>', '書籍ディレクトリのパス', './books')
-  .option('-p, --pattern <pattern>', '設定ファイルのパターン', '**/book-config.json')
+  .requiredOption('--plan <path>', '監査済みconsumer mutation plan')
+  .option('--target <consumer-id>', 'writeする単一consumer ID')
   .option('-r, --registry <path>', 'book-registry のパス（json/yaml）')
   .option('--apply-ux-core', '共通コア（layouts/includes/assets）を適用します', false)
   .option('--apply-ux-profile', 'book-config に ux.profile/modules を付与します', false)
   .option('--dry-run', '実際には実行せず、予定のみ表示します', false)
-  .option('--no-backup', 'バックアップを作成しません', false)
   .action(async (options) => {
     try {
       console.log(chalk.blue('🧭 UX ロールアウトを開始します...'));
 
+      if (!options.applyUxCore && !options.applyUxProfile) {
+        throw new Error('--apply-ux-core もしくは --apply-ux-profile を指定してください');
+      }
+      const operation = options.applyUxCore && options.applyUxProfile
+        ? 'rollout-ux-core-profile'
+        : options.applyUxCore
+          ? 'rollout-ux-core'
+          : 'rollout-ux-profile';
+      const plan = await loadConsumerMutationPlan(options.plan, {
+        expectedOperation: operation
+      });
+      const consumers = selectConsumers(plan, {
+        targetId: options.target,
+        dryRun: options.dryRun
+      });
+
       await uxRollout.rollout({
-        directory: options.directory,
-        pattern: options.pattern,
+        plan,
+        consumers,
         registryPath: options.registry,
         applyUxCore: options.applyUxCore,
         applyUxProfile: options.applyUxProfile,
-        dryRun: options.dryRun,
-        backup: options.backup
+        dryRun: options.dryRun
       });
 
       console.log(chalk.green('✅ UX ロールアウトが完了しました'));

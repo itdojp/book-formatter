@@ -7,18 +7,20 @@ import { FileSystemUtils } from './FileSystemUtils.js';
 import { ErrorHandler } from './ErrorHandler.js';
 import { GitHubPagesHandler } from './GitHubPagesHandler.js';
 import { MobileOptimizer } from './MobileOptimizer.js';
+import { ConsumerMutationBoundary, ConsumerMutationError } from './ConsumerMutationBoundary.js';
 
 /**
  * 設定駆動型のブック生成システムのメインクラス
  */
 export class BookGenerator {
-  constructor() {
+  constructor(options = {}) {
     this.validator = new ConfigValidator();
     this.templateEngine = new TemplateEngine();
     this.fsUtils = new FileSystemUtils();
     this.errorHandler = new ErrorHandler();
     this.gitHubPagesHandler = new GitHubPagesHandler(this.errorHandler);
     this.mobileOptimizer = new MobileOptimizer();
+    this.mutationBoundary = options.mutationBoundary || new ConsumerMutationBoundary();
     this.uxModules = [
       'quickStart',
       'readingGuide',
@@ -107,30 +109,57 @@ export class BookGenerator {
 
   /**
    * 既存の書籍を更新する
-   * @param {string} configPath - 設定ファイルのパス
-   * @param {string} bookPath - 書籍のパス
+   * @param {Object} plan - 監査済みconsumer mutation plan
+   * @param {Object} consumer - 明示選択したconsumer
+   * @param {{dryRun?: boolean}} options - 実行オプション
+   * @returns {Promise<Object>} transaction結果
    */
-  async updateBook(configPath, bookPath) {
+  async updateBook(plan, consumer, options = {}) {
     try {
-      const config = await this.loadConfig(configPath);
-      this.validator.validate(config);
-      
-      // 書籍ディレクトリの存在確認
-      if (!(await this.fsUtils.exists(bookPath))) {
-        throw new Error(`書籍ディレクトリが存在しません: ${bookPath}`);
+      if (
+        !plan
+        || typeof plan !== 'object'
+        || !consumer
+        || typeof consumer !== 'object'
+        || typeof consumer.worktree !== 'string'
+      ) {
+        throw new ConsumerMutationError(
+          'updateBook requires an audited consumer plan and an explicit consumer target'
+        );
       }
-      
-      // 既存ファイルのバックアップ
-      await this.fsUtils.createBackup(bookPath);
-      
-      // 構造の更新
-      await this.updateBookStructure(config, bookPath);
-      
-      // ファイルの更新
-      await this.updateFiles(config, bookPath);
-      
-      console.log(`✅ 書籍 "${config.title}" が正常に更新されました`);
-      return true;
+      if (!['update-book', 'sync-all-books'].includes(plan.operation)) {
+        throw new ConsumerMutationError(
+          `updateBook does not accept plan.operation=${plan.operation}`
+        );
+      }
+
+      const pinnedConfig = await this.mutationBoundary.loadPinnedConfig(plan, consumer);
+      const config = this.parseConfigContent(pinnedConfig.content, pinnedConfig.path);
+      this.validator.validate(config);
+
+      const managedPaths = await this.getLegacyUpdateManagedPaths(config, consumer.worktree);
+      const result = await this.mutationBoundary.run({
+        plan,
+        consumer,
+        managedPaths,
+        dryRun: options.dryRun === true,
+        mutate: async ({ consumerRoot }) => {
+          // Chapter/manuscript generation is intentionally excluded from the
+          // audited legacy update contract. getLegacyUpdateManagedPaths fails
+          // before this callback when the configured structure would add it.
+          await this.updateFiles(config, consumerRoot);
+        }
+      });
+
+      if (options.dryRun) {
+        console.log(`🔎 [DRY RUN] 書籍 "${config.title}" の更新予定を検証しました`);
+        for (const managedPath of result.managedPaths) {
+          console.log(`  - ${managedPath}`);
+        }
+      } else {
+        console.log(`✅ 書籍 "${config.title}" が正常に更新されました`);
+      }
+      return result;
     } catch (error) {
       console.error('❌ 書籍更新中にエラーが発生しました:', error.message);
       throw error;
@@ -144,17 +173,86 @@ export class BookGenerator {
    */
   async loadConfig(configPath) {
     const configContent = await fs.readFile(configPath, 'utf8');
+    return this.parseConfigContent(configContent, configPath);
+  }
+
+  /**
+   * 設定内容を拡張子に従って解析する。
+   * @param {string|Buffer} configContent - 設定内容
+   * @param {string} configPath - 設定ファイルのパス
+   * @returns {Object} 設定オブジェクト
+   */
+  parseConfigContent(configContent, configPath) {
     const ext = path.extname(configPath).toLowerCase();
+    const content = Buffer.isBuffer(configContent)
+      ? configContent.toString('utf8')
+      : configContent;
     
     switch (ext) {
     case '.json':
-      return JSON.parse(configContent);
+      return JSON.parse(content);
     case '.yml':
     case '.yaml':
-      return YAML.parse(configContent);
+      return YAML.parse(content);
     default:
       throw new Error(`サポートされていない設定ファイル形式: ${ext}`);
     }
+  }
+
+  /**
+   * legacy updateが書込み得る有限destinationを返す。
+   * consumer本文の自動追加・上書きはこの契約に含めない。
+   * @param {Object} config - 書籍設定
+   * @param {string} bookPath - consumer worktree
+   * @returns {Promise<string[]>} managed relative paths
+   */
+  async getLegacyUpdateManagedPaths(config, bookPath) {
+    for (const chapter of config.structure?.chapters || []) {
+      const chapterDir = path.join(bookPath, 'src', `chapter-${chapter.id}`);
+      if (!(await fs.pathExists(chapterDir))) {
+        throw new ConsumerMutationError(
+          `Legacy update refuses automatic manuscript creation: src/chapter-${chapter.id}`
+        );
+      }
+    }
+
+    const managedPaths = ['book-config.json', '_config.yml', 'index.md'];
+    const sharedMappings = [
+      ['layouts', '_layouts'],
+      ['includes', '_includes'],
+      ['assets', 'assets']
+    ];
+    const moduleDir = path.dirname(new URL(import.meta.url).pathname);
+    const sharedRoot = path.join(moduleDir, '..', 'shared');
+
+    const collectFiles = async (sourceDir, relativeDir = '') => {
+      if (!(await fs.pathExists(sourceDir))) return;
+      const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        const sourcePath = path.join(sourceDir, entry.name);
+        const relativePath = path.posix.join(relativeDir, entry.name);
+        if (entry.isSymbolicLink()) {
+          throw new ConsumerMutationError(`Legacy managed source must not be a symlink: ${sourcePath}`);
+        }
+        if (entry.isDirectory()) {
+          await collectFiles(sourcePath, relativePath);
+        } else if (entry.isFile()) {
+          managedPaths.push(relativePath);
+        } else {
+          throw new ConsumerMutationError(`Legacy managed source must be a regular file: ${sourcePath}`);
+        }
+      }
+    };
+
+    for (const [sourceName, destinationName] of sharedMappings) {
+      const before = managedPaths.length;
+      await collectFiles(path.join(sharedRoot, sourceName), destinationName);
+      if (managedPaths.length === before && await fs.pathExists(path.join(sharedRoot, sourceName))) {
+        throw new ConsumerMutationError(`Legacy managed source contains no files: ${sourceName}`);
+      }
+    }
+
+    return [...new Set(managedPaths)].sort();
   }
 
   /**

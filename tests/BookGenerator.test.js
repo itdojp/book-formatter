@@ -233,58 +233,10 @@ language: "ja"
   });
 
   describe('updateBook', () => {
-    test('既存の書籍を正常に更新する', async () => {
-      const bookPath = path.join(tempDir, 'existing-book');
-      
-      // 既存の書籍を作成
-      await bookGenerator.createBook(testConfigPath, bookPath);
-      
-      // 設定を更新
-      const updatedConfig = {
-        title: '更新されたテスト書籍',
-        description: 'これは更新されたテスト用の書籍です',
-        author: '更新された作成者',
-        version: '2.0.0',
-        language: 'ja',
-        structure: {
-          chapters: [
-            {
-              id: 'test-chapter',
-              title: '更新されたテスト章',
-              description: '更新されたテスト用の章です'
-            },
-            {
-              id: 'new-chapter',
-              title: '新しい章',
-              description: '新しく追加された章です'
-            }
-          ]
-        }
-      };
-      
-      const updatedConfigPath = path.join(tempDir, 'updated-config.json');
-      await fs.writeFile(updatedConfigPath, JSON.stringify(updatedConfig, null, 2));
-      
-      // 書籍を更新
-      await bookGenerator.updateBook(updatedConfigPath, bookPath);
-      
-      // 新しい章が追加されているかチェック
-      assert.strictEqual(await fs.pathExists(path.join(bookPath, 'src', 'chapter-new-chapter')), true);
-      
-      // 設定ファイルが更新されているかチェック
-      const bookConfigPath = path.join(bookPath, 'book-config.json');
-      const bookConfig = JSON.parse(await fs.readFile(bookConfigPath, 'utf8'));
-      
-      assert.strictEqual(bookConfig.title, '更新されたテスト書籍');
-      assert.strictEqual(bookConfig.version, '2.0.0');
-    });
-
-    test('存在しない書籍パスの場合エラーを投げる', async () => {
-      const nonExistentPath = path.join(tempDir, 'nonexistent-book');
-      
+    test('監査済みplanと明示consumerなしの直接更新を拒否する', async () => {
       await assert.rejects(
-        bookGenerator.updateBook(testConfigPath, nonExistentPath),
-        /書籍ディレクトリが存在しません/
+        bookGenerator.updateBook(testConfigPath, path.join(tempDir, 'book')),
+        /audited consumer plan/
       );
     });
   });

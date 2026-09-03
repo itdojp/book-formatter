@@ -66,7 +66,7 @@ describe('UxRollout', () => {
     assert.strictEqual(result.key, 'sample-book');
   });
 
-  test('updateBookConfig は ux を書き込む', async () => {
+  test('updateBookConfig は監査済みtransaction外の直接writeを拒否する', async () => {
     const bookPath = path.join(tempDir, 'book');
     await fs.ensureDir(bookPath);
     const configPath = path.join(bookPath, 'book-config.json');
@@ -86,12 +86,12 @@ describe('UxRollout', () => {
       }
     };
 
-    const result = await rollout.updateBookConfig(bookPath, entry, { dryRun: false, backup: false });
-    assert.strictEqual(result.updated, true);
-
-    const updated = await fs.readJson(configPath);
-    assert.strictEqual(updated.ux.profile, 'B');
-    assert.strictEqual(updated.ux.modules.checklistPack, true);
+    await assert.rejects(
+      rollout.updateBookConfig(bookPath, entry, { dryRun: false, backup: false }),
+      /audited consumer transaction/
+    );
+    const unchanged = await fs.readJson(configPath);
+    assert.strictEqual(unchanged.ux, undefined);
   });
 
   test('loadRegistry は JSON/YAML を読み込む', async () => {

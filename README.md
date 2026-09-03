@@ -55,7 +55,7 @@ npm start build -- \
 
 adapter project生成後は、同じ変数を維持して[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained blockを実行します。このblockはprojectを同じsource snapshotから再生成し、公式binaryの固定URL・SHA-256検証、fresh directoryへの展開、mdBook `0.5.4` gate、決定的なsource再照合、responsive検査、生成後artifact visibility検査を1つのfail-fast実行単位で完了します。既存projectやbinaryは再利用しません。
 
-以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。`update-book`、`sync-all-books`、`rollout-ux --apply-ux-profile`の非dry-runは、consumer write境界をruntimeで強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了まで利用しません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
+以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。consumer writeを行う互換commandは[legacy consumer mutation contract](docs/legacy-consumer-mutation.md)の固定SHA、clean linked worktree、有限allowlist、単一target、rollbackを要求します。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
 
 ### 1. 既存legacy書籍用サンプル設定ファイルの確認
 
@@ -170,30 +170,32 @@ npm start validate-config --config ./path/to/config.json
 npm start update-book -- --help
 ```
 
-`update-book`にはdry-runがなく、既存consumerへ直接書き込む。固定SHA、隔離worktree、destination symlink検査、変更allowlistをruntimeで強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了までは実行せず、必要な変更はconsumerごとのtask branchで作成・レビューする。
+`update-book`は[legacy consumer mutation contract](docs/legacy-consumer-mutation.md)の有限plan、固定formatter/base SHA、clean linked worktree、完全一致allowlistを要求します。dry-runでmanaged pathを確定した後、`--target`で1 consumerだけを変更します。本文の自動生成は行いません。
 
 ### 6. 複数書籍の一括同期
 
 ```bash
-# 実行せず対象候補だけを表示
-npm start sync-all-books -- --directory ./books --dry-run
+# 有限plan全件を検査する（書込みなし）
+npm start sync-all-books -- --plan .codex-local/tmp/sync-plan.json --dry-run
 ```
 
-`sync-all-books`の非dry-runは、検出した複数consumerへ`update-book`相当の変更を直接適用する。対象の有限化、隔離、preflight、途中失敗、consumer別reviewをruntimeで強制する#130完了までは実行しない。dry-runの表示も変更差分または適用安全性の証拠には使用しない。
+`sync-all-books`はdirectory globを使用しません。planは最大6件ですが、writeには`--target`が必須で1 consumerだけを処理します。失敗時は対象をrollbackしてnon-zeroで終了し、後続へ継続しません。次consumerまたは失敗後の再開は、consumer別review gate後の別実行で明示します。
 
 ### 7. UXロールアウト（既存書籍向け）
 
 ```bash
 # profile差分の予定だけを確認
 npm start rollout-ux -- --registry ./book-registry.json \
-  --apply-ux-profile --dry-run
+  --plan .codex-local/tmp/profile-plan.json --apply-ux-profile --dry-run
 
 # 共通コアのみを適用（layouts/includes/assets）
-npm start rollout-ux -- --apply-ux-core --dry-run
+npm start rollout-ux -- --plan .codex-local/tmp/core-plan.json \
+  --apply-ux-core --dry-run
 
 # writeはweb-jekyll-legacy contractの隔離consumer task branchで実行
 # runtimeが選択destinationとbook-config.jsonを最初のwrite前に検査
-npm start rollout-ux -- --apply-ux-core
+npm start rollout-ux -- --plan .codex-local/tmp/core-plan.json \
+  --target sample-book --apply-ux-core
 ```
 
 補足:
@@ -202,8 +204,8 @@ npm start rollout-ux -- --apply-ux-core
 - このcommandの `book-registry.json` は `profile` / `modules` を持つ
   legacy UX registryです。portfolio-level registry version 1との関係は
   [docs/book-registry.md](docs/book-registry.md) を参照してください。
-- `--apply-ux-profile`の非dry-runは、config write境界を強制する#130完了まで実行しないでください。
-- `--apply-ux-core`の非dry-runはruntimeのdestination境界を通るが、任意の既存checkoutへ直接適用せず、[`web-jekyll-legacy` contract](adapters/web-jekyll-legacy/README.md#安全な同期手順)の固定formatter SHA・隔離consumer task branch・有限差分reviewを併用してください。
+- profile/coreの非dry-runは共通transactionを通り、fixed SHA、clean linked worktree、全destination preflight、完全一致allowlist、rollback、単一targetを強制します。
+- 詳細は[legacy consumer mutation contract](docs/legacy-consumer-mutation.md)と[`web-jekyll-legacy` contract](adapters/web-jekyll-legacy/README.md#安全な同期手順)を参照してください。
 - `Book Sync` workflowのpreview / writeも同じruntime境界を通る。既定preview、最大3冊、明示allowlist、権限・Open PR preflight、consumer別PRというworkflow gateを省略しないでください。
 
 ## 品質チェック（ローカル）
@@ -260,7 +262,7 @@ project生成後のmdBook build / viewport / artifact visibility検査は、[`we
 主なスクリプト:
 - `scripts/check_pages.sh`: 公開GitHub Pagesのトップ/共通アセット/ナビ由来ページのHTTPステータスを点検
 - `scripts/add_nav_check_workflow.sh`: `Nav + Pages Link Check` ワークフローを各書籍へ追加（ローカルclone前提）
-- `scripts/rollout_unification.sh`: shared components（layouts/includes/assets）の旧一括同期script。`ComponentSync`のdestination境界は利用するが、固定base SHA・隔離worktree・有限batch・consumer別reviewを強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了まではdry-runを含め利用しない
+- `scripts/rollout_unification.sh`: 有限planから1 consumerだけへshared componentsを適用するwrapper。branch/commit/push/PRは行わず、consumer別review gateを要求
 - `scripts/rollout_codeowners.sh`: `.book-formatter/**` のCODEOWNERSを各書籍へ追加（ローカルclone前提）
 - `scripts/rollout_fix_config_yaml.sh`: `docs/_config.yml` の `url/baseurl/repository` を監査/正規化（監査がデフォルト）
 - `scripts/fix_review_issues.sh`: PRレビュー本文/インラインコメントをJSONとして収集し退避（API 429耐性あり）
@@ -276,10 +278,10 @@ project生成後のmdBook build / viewport / artifact visibility検査は、[`we
 |---------|------|----------|
 | `init` | サンプル設定ファイルを作成 | `--output`, `--force` |
 | `create-book` | legacy `book-config.json`からJekyll構成を生成（既存書籍の再構築用途） | `--config`, `--output`, `--force` |
-| `update-book` | 既存書籍の更新interface。writeは#130完了まで停止 | `--config`, `--book`, `--no-backup` |
+| `update-book` | 監査済みplanから既存書籍のmanaged metadata/templateを1冊更新 | `--plan`, `--target`, `--dry-run` |
 | `validate-config` | 設定ファイルをバリデーション | `--config`, `--verbose` |
-| `sync-all-books` | 複数書籍の候補列挙。現在は`--dry-run`限定 | `--directory`, `--pattern`, `--dry-run` |
-| `rollout-ux` | UX差分候補の確認。現在は`--dry-run`限定 | `--directory`, `--pattern`, `--registry`, `--apply-ux-core`, `--apply-ux-profile`, `--dry-run`, `--no-backup` |
+| `sync-all-books` | 有限planの検査。writeは明示した1冊のみ | `--plan`, `--target`, `--dry-run` |
+| `rollout-ux` | 有限planのUX profile/core検査・単一consumer適用 | `--plan`, `--target`, `--registry`, `--apply-ux-core`, `--apply-ux-profile`, `--dry-run` |
 | `build` | 標準書籍をadapter向けに検証しmanifestを生成 | `--book`, `--target`, `--edition`, `--out-dir`, `--dry-run` |
 
 ## 設定ファイル仕様
