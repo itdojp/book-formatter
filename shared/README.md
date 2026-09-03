@@ -58,10 +58,12 @@ npm run sync-components -- \
   --book ../.worktrees/consumer-sync-pilot \
   --components layouts includes assets
 git -C ../.worktrees/consumer-sync-pilot status --short
+git -C ../.worktrees/consumer-sync-pilot add -N --all
 git -C ../.worktrees/consumer-sync-pilot diff --
+git -C ../.worktrees/consumer-sync-pilot reset --
 ```
 
-consumerの`book-config.json`にあるopt-outはCLI指定で上書きしない。実fileまたはcomponent versionに差分がある場合だけ`shared.version`と同期時刻を更新する。確認済み差分だけをconsumerのtask branchへ再現し、Book QA前にallowlist外の変更がないことを確認する。
+`git add -N --all`は未追跡の新規managed fileを内容付きdiffへ含めるためだけに使い、監査後の`reset`でintent-to-addを解除する。同期結果を一時worktreeからcommitしない。consumerの`book-config.json`にあるopt-outはCLI指定で上書きしない。実fileまたはcomponent versionに差分がある場合だけ`shared.version`と同期時刻を更新する。確認済み差分だけをconsumerのtask branchへ再現し、Book QA前にallowlist外の変更がないことを確認する。
 
 ## Book Sync workflow
 

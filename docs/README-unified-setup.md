@@ -37,11 +37,22 @@ redirect_from:
 既存legacy書籍を再構築する手動手順（例）:
 
 ```bash
-# 例: 既存legacy書籍の隔離worktreeで、欠損したnavigationだけを選定して復旧する
+# いずれも絶対pathを指定する
+: "${FORMATTER_ROOT:?set the absolute path to the clean formatter worktree}"
+: "${CONSUMER_ROOT:?set the absolute path to the isolated consumer worktree}"
+: "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
+test "${FORMATTER_ROOT#/}" != "$FORMATTER_ROOT"
+test "${CONSUMER_ROOT#/}" != "$CONSUMER_ROOT"
+test "$(git -C "$FORMATTER_ROOT" rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
+test -z "$(git -C "$FORMATTER_ROOT" status --porcelain)"
+
+# 例: 欠損したnavigationだけを監査済みformatterからconsumerへ復旧する
 install -D -m 0644 \
-  templates/starter/docs/_data/navigation.yml \
-  ./docs/_data/navigation.yml
-git diff -- docs/_data/navigation.yml
+  "$FORMATTER_ROOT/templates/starter/docs/_data/navigation.yml" \
+  "$CONSUMER_ROOT/docs/_data/navigation.yml"
+git -C "$CONSUMER_ROOT" add -N -- docs/_data/navigation.yml
+git -C "$CONSUMER_ROOT" diff -- docs/_data/navigation.yml
+git -C "$CONSUMER_ROOT" reset -- docs/_data/navigation.yml
 ```
 
 ## スキャフォールドスクリプトの利用
