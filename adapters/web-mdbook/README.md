@@ -84,6 +84,8 @@ test "$("$MDBOOK_BIN" --version)" = "mdbook v${MDBOOK_VERSION}"
 URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理し、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。上の手順は新規directoryだけを受理するため、再実行時は監査済みの既存directoryを再利用するか、別の空directoryを指定する。
 
 ```bash
+(
+set -euo pipefail
 MDBOOK_BIN="$PWD/.work/tools/mdbook-v0.5.4-x86_64-unknown-linux-gnu/mdbook"
 test -x "$MDBOOK_BIN"
 test "$("$MDBOOK_BIN" --version)" = "mdbook v0.5.4"
@@ -93,6 +95,7 @@ npm run check-visibility -- \
   examples/standard-book \
   --edition free \
   --artifact dist/web-mdbook/book
+)
 ```
 
 responsive checkerは生成project/HTML/CSS契約に加え、利用可能なChromeで全generated content pageに対し、次のviewportのsidebar/content非重複とhidden状態のbody overflowを検証します。mdBook 0.5.4のsidebar support pageであるroot `toc.html`だけを有限に除外し、他のHTMLでresponsive DOM IDが欠けた場合はfail closedです。

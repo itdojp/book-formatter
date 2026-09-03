@@ -61,7 +61,7 @@ npm run check-mdbook-responsive -- --book dist/web-mdbook
 
 command blockは1つのsubshellとして実行し、いずれかのgateが失敗した時点で後続処理を停止します。mdBookは検証済みversion `0.5.4`へ固定し、生成後artifactのvisibilityも公開前に再検査します。公式binaryの固定URL・SHA-256検証手順は[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)を実行し、生成したbinaryの絶対pathを`MDBOOK_BIN`に設定してください。
 
-以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
+以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。`update-book`、`sync-all-books`、`rollout-ux --apply-ux-profile`の非dry-runは、consumer write境界をruntimeで強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了まで利用しません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
 
 ### 1. 既存legacy書籍用サンプル設定ファイルの確認
 
@@ -172,34 +172,27 @@ npm start validate-config --config ./path/to/config.json
 ### 5. 既存書籍の更新
 
 ```bash
-# 書籍の更新
-npm start update-book
-
-# 特定のパスを指定
-npm start update-book --config ./book-config.json --book ./existing-book
-
-# バックアップを作成しない
-npm start update-book --no-backup
+# interfaceの確認だけを行う
+npm start update-book -- --help
 ```
+
+`update-book`にはdry-runがなく、既存consumerへ直接書き込む。固定SHA、隔離worktree、destination symlink検査、変更allowlistをruntimeで強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了までは実行せず、必要な変更はconsumerごとのtask branchで作成・レビューする。
 
 ### 6. 複数書籍の一括同期
 
 ```bash
-# すべての書籍を同期
-npm start sync-all-books
-
-# 特定のディレクトリを指定
-npm start sync-all-books --directory ./books
-
-# 実行せず予定を表示
-npm start sync-all-books --dry-run
+# 実行せず対象候補だけを表示
+npm start sync-all-books -- --directory ./books --dry-run
 ```
+
+`sync-all-books`の非dry-runは、検出した複数consumerへ`update-book`相当の変更を直接適用する。対象の有限化、隔離、preflight、途中失敗、consumer別reviewをruntimeで強制する#130完了までは実行しない。dry-runの表示も変更差分または適用安全性の証拠には使用しない。
 
 ### 7. UXロールアウト（既存書籍向け）
 
 ```bash
-# レジストリに基づき ux.profile/modules を付与
-npm start rollout-ux --registry ./book-registry.json --apply-ux-profile
+# profile差分の予定だけを確認
+npm start rollout-ux --registry ./book-registry.json \
+  --apply-ux-profile --dry-run
 
 # 共通コアのみを適用（layouts/includes/assets）
 npm start rollout-ux --apply-ux-core --dry-run
@@ -214,6 +207,7 @@ npm start rollout-ux --apply-ux-core --dry-run
 - このcommandの `book-registry.json` は `profile` / `modules` を持つ
   legacy UX registryです。portfolio-level registry version 1との関係は
   [docs/book-registry.md](docs/book-registry.md) を参照してください。
+- `--apply-ux-profile`の非dry-runは、config write境界を強制する#130完了まで実行しないでください。
 - `--apply-ux-core`の非dry-run、および`Book Sync` workflowのpreview / writeは、
   [#129](https://github.com/itdojp/book-formatter/issues/129)完了まで実行しないでください。
 
@@ -294,10 +288,10 @@ npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 |---------|------|----------|
 | `init` | サンプル設定ファイルを作成 | `--output`, `--force` |
 | `create-book` | legacy `book-config.json`からJekyll構成を生成（既存書籍の再構築用途） | `--config`, `--output`, `--force` |
-| `update-book` | 既存の書籍を更新 | `--config`, `--book`, `--no-backup` |
+| `update-book` | 既存書籍の更新interface。writeは#130完了まで停止 | `--config`, `--book`, `--no-backup` |
 | `validate-config` | 設定ファイルをバリデーション | `--config`, `--verbose` |
-| `sync-all-books` | 複数の書籍を一括同期 | `--directory`, `--pattern`, `--dry-run` |
-| `rollout-ux` | 既存書籍へのUX段階適用 | `--directory`, `--pattern`, `--registry`, `--apply-ux-core`, `--apply-ux-profile`, `--dry-run`, `--no-backup` |
+| `sync-all-books` | 複数書籍の候補列挙。現在は`--dry-run`限定 | `--directory`, `--pattern`, `--dry-run` |
+| `rollout-ux` | UX差分候補の確認。現在は`--dry-run`限定 | `--directory`, `--pattern`, `--registry`, `--apply-ux-core`, `--apply-ux-profile`, `--dry-run`, `--no-backup` |
 | `build` | 標準書籍をadapter向けに検証しmanifestを生成 | `--book`, `--target`, `--edition`, `--out-dir`, `--dry-run` |
 
 ## 設定ファイル仕様

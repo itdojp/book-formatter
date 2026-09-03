@@ -13,10 +13,11 @@
 
 | 入口 | 入力 | 現在の責務 | 書き込み先 / 結果 |
 | --- | --- | --- | --- |
-| `create-book` / `update-book` | legacy `book-config.json` | 組み込みJekyll templateと`shared/`を使う既存生成処理 | 指定したlegacy書籍directory |
+| `create-book` / `update-book` | legacy `book-config.json` | 組み込みJekyll templateと`shared/`を使う既存生成処理 | `update-book` writeは[#130](https://github.com/itdojp/book-formatter/issues/130)完了まで停止 |
+| `sync-all-books` | directory配下のlegacy `book-config.json` | 対象候補の列挙 | #130完了まで`--dry-run`限定 |
 | `scripts/scaffold-new-book.sh` | owner / repository名 | template展開処理は保持されているが、現在は利用不可 | EXIT時に一時出力を削除し、`--create`もlocal Git repositoryを作らない。[#128](https://github.com/itdojp/book-formatter/issues/128) |
 | `sync-components` | legacy `book-config.json`と`shared/version.json` | layouts / includes / assetsの選択同期 | consumerの`docs/`配下 |
-| `rollout-ux` | legacy UX registry / `book-config.json` | UX profile更新と、明示指定時の共通component同期 | `--apply-ux-core`のwriteは[#129](https://github.com/itdojp/book-formatter/issues/129)完了まで停止 |
+| `rollout-ux` | legacy UX registry / `book-config.json` | UX profile更新と、明示指定時の共通component同期 | core writeは[#129](https://github.com/itdojp/book-formatter/issues/129)、profile writeは[#130](https://github.com/itdojp/book-formatter/issues/130)完了まで停止 |
 | `Book Sync` workflow | 最大3冊の明示対象 | consumer clone、preview、allowlist付きPR作成 | preview / writeとも#129完了までdispatchしない |
 | adapter `build` | 標準`book.yaml`とedition | visibility検査済みbuild planの記録 | skeleton `manifest.json`のみ |
 
@@ -158,7 +159,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 - `--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する。
 - portfolio-level [`book-registry.yaml` version 1](../../docs/book-registry.md)は同じ名前でも入力互換ではない。
 - `--apply-ux-core --dry-run`は予定差分の粗い確認に限る。writeは#129完了まで実行せず、必要なcomponent更新は上のsymlink preflight付き隔離手順で1 consumerずつ監査する。
-- `--apply-ux-profile`は別のconfig更新契約である。core writeを迂回する手段として併用しない。
+- `--apply-ux-profile`は別のconfig更新契約である。#130完了まではdry-runだけに限定し、core writeを迂回する手段として併用しない。
 
 ## 維持する互換path
 
