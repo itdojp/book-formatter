@@ -4,16 +4,16 @@ This guide is retained for existing Jekyll / GitHub Pages books. New standard We
 
 This guide describes the retained structure for maintaining or reconstructing an existing legacy Jekyll book repository:
 
-- Use `templates/_config.yml` as the starting point (permalink: pretty, plugins, kramdown).
-- Copy `docs/includes/page-navigation.html` as `docs/_includes/page-navigation.html`.
+- Restore `templates/_config.yml` only through the fixed-SHA block below (permalink: pretty, plugins, kramdown).
+- Restore `docs/includes/page-navigation.html` as `docs/_includes/page-navigation.html` through the same block.
 - Top page (root) does NOT render prev/next navigation; chapters and appendices do.
 - Prefer directory-style links (e.g., `/src/chapter-1/`) instead of `index.html`.
 - Use `jekyll-redirect-from` (optional) to map old slugs when renaming chapters.
 
 ## Steps
 1. In an isolated task branch or worktree for the existing legacy repository, confirm that `docs/` is its publication root.
-2. Restore a missing `_config.yml` from `templates/_config.yml` and preserve the consumer-specific `title`, `baseurl`, and `repository` values.
-3. Restore a missing `docs/_includes/page-navigation.html` from `docs/includes/page-navigation.html`.
+2. Select `config` in the fixed-SHA restoration block for a missing `_config.yml`, then restore the consumer-specific `title`, `baseurl`, and `repository` values in a separate reviewed change.
+3. Select `page-navigation` in that block for a missing `docs/_includes/page-navigation.html`.
 4. Ensure `defaults.layout: book` and `permalink: pretty`.
 5. For renamed pages, use redirect-from in the destination page:
 
@@ -44,6 +44,7 @@ set -euo pipefail
 : "${CONSUMER_ROOT:?set the absolute path to the isolated consumer worktree}"
 : "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
 : "${AUDITED_CONSUMER_SHA:?set the audited 40-character consumer SHA}"
+: "${RESTORE_ITEM:?select config, page-navigation, sidebar-navigation, navigation, index, or safe-main}"
 test "${FORMATTER_ROOT#/}" != "$FORMATTER_ROOT"
 test "${CONSUMER_ROOT#/}" != "$CONSUMER_ROOT"
 test "$(git -C "$FORMATTER_ROOT" rev-parse --show-toplevel)" = "$FORMATTER_ROOT"
@@ -53,15 +54,27 @@ test "$(git -C "$CONSUMER_ROOT" rev-parse --show-toplevel)" = "$CONSUMER_ROOT"
 test "$(git -C "$CONSUMER_ROOT" rev-parse HEAD)" = "$AUDITED_CONSUMER_SHA"
 test -z "$(git -C "$CONSUMER_ROOT" status --porcelain)"
 
-# 例: 欠損したnavigationだけを監査済みformatterからconsumerへ復旧する
-install -D -m 0644 \
-  "$FORMATTER_ROOT/templates/starter/docs/_data/navigation.yml" \
-  "$CONSUMER_ROOT/docs/_data/navigation.yml"
-git -C "$CONSUMER_ROOT" add -N -- docs/_data/navigation.yml
-git -C "$CONSUMER_ROOT" diff -- docs/_data/navigation.yml
-git -C "$CONSUMER_ROOT" reset -- docs/_data/navigation.yml
+case "$RESTORE_ITEM" in
+  config)             SOURCE_REL=templates/_config.yml; DEST_REL=docs/_config.yml ;;
+  page-navigation)    SOURCE_REL=docs/includes/page-navigation.html; DEST_REL=docs/_includes/page-navigation.html ;;
+  sidebar-navigation) SOURCE_REL=templates/starter/docs/_includes/sidebar-nav.html; DEST_REL=docs/_includes/sidebar-nav.html ;;
+  navigation)         SOURCE_REL=templates/starter/docs/_data/navigation.yml; DEST_REL=docs/_data/navigation.yml ;;
+  index)              SOURCE_REL=templates/starter/docs/index.md; DEST_REL=docs/index.md ;;
+  safe-main)          SOURCE_REL=templates/starter/docs/assets/js/safe-main.js; DEST_REL=docs/assets/js/safe-main.js ;;
+  *) echo "unsupported RESTORE_ITEM: $RESTORE_ITEM" >&2; exit 1 ;;
+esac
+
+git -C "$FORMATTER_ROOT" ls-files --error-unmatch "$SOURCE_REL" >/dev/null
+test -f "$FORMATTER_ROOT/$SOURCE_REL"
+test ! -e "$CONSUMER_ROOT/$DEST_REL"
+install -D -m 0644 "$FORMATTER_ROOT/$SOURCE_REL" "$CONSUMER_ROOT/$DEST_REL"
+git -C "$CONSUMER_ROOT" add -N -- "$DEST_REL"
+git -C "$CONSUMER_ROOT" diff -- "$DEST_REL"
+git -C "$CONSUMER_ROOT" reset -- "$DEST_REL"
 )
 ```
+
+`RESTORE_ITEM`は上の有限集合から1件ずつ選ぶ。既存fileは上書きせず、変更が必要な場合は通常のconsumer task branchで別途差分を作成・レビューする。
 
 ## スキャフォールドスクリプトの利用
 
