@@ -34,6 +34,8 @@ redirect_from:
   - `docs/_data/navigation.yml`（最小スケルトン）
   - `docs/index.md`（トップ雛形。トップでは下部ナビを表示しません）
 
+`docs/assets/js/safe-main.js`の復旧元はstarter snapshotではなく、legacy scaffoldの最終overlayと`BookGenerator.setupSafeJavaScript`がsourceにする`shared/assets/js/safe-main.js`である。
+
 既存legacy書籍を再構築する手動手順（例）:
 
 ```bash
@@ -60,7 +62,7 @@ case "$RESTORE_ITEM" in
   sidebar-navigation) SOURCE_REL=shared/includes/sidebar-nav.html; DEST_REL=docs/_includes/sidebar-nav.html ;;
   navigation)         SOURCE_REL=templates/starter/docs/_data/navigation.yml; DEST_REL=docs/_data/navigation.yml ;;
   index)              SOURCE_REL=templates/starter/docs/index.md; DEST_REL=docs/index.md ;;
-  safe-main)          SOURCE_REL=templates/starter/docs/assets/js/safe-main.js; DEST_REL=docs/assets/js/safe-main.js ;;
+  safe-main)          SOURCE_REL=shared/assets/js/safe-main.js; DEST_REL=docs/assets/js/safe-main.js ;;
   *) echo "unsupported RESTORE_ITEM: $RESTORE_ITEM" >&2; exit 1 ;;
 esac
 
@@ -90,6 +92,24 @@ git -C "$CONSUMER_ROOT" reset -- "$DEST_REL"
 ```
 
 `RESTORE_ITEM`は上の有限集合から1件ずつ選ぶ。既存fileは上書きせず、変更が必要な場合は通常のconsumer task branchで別途差分を作成・レビューする。
+
+`navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleと`/introduction/`、`/chapters/chapter-01/`等のpathをconsumerのcanonical route inventoryへ置換し、不要な行を削除する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、例示本文をconsumerの概要・対象読者・読書経路へ書き換える。次の検査でstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
+
+```bash
+CHECKED_SKELETON_FILES=0
+for RESTORED_REL in docs/index.md docs/_data/navigation.yml; do
+  test -f "$CONSUMER_ROOT/$RESTORED_REL" || continue
+  CHECKED_SKELETON_FILES=$((CHECKED_SKELETON_FILES + 1))
+  if grep -nE '(<BOOK TITLE>|第[12]章 タイトル|付録[AB] タイトル)' \
+    "$CONSUMER_ROOT/$RESTORED_REL"
+  then
+    echo "starter title markers remain: $RESTORED_REL" >&2
+    exit 1
+  fi
+done
+test "$CHECKED_SKELETON_FILES" -gt 0
+# 続けてconsumer固有のBook QAとlocal link checkを実行する。
+```
 
 ## スキャフォールドスクリプトの利用
 
