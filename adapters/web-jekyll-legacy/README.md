@@ -61,6 +61,16 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    : "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
    test "$(git rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
    test -z "$(git status --porcelain)"
+   TRACKED_FORMATTER_FILES=0
+   while IFS= read -r -d '' FORMATTER_REL; do
+     test -f "$FORMATTER_REL"
+     test ! -L "$FORMATTER_REL"
+     test "$(git hash-object -- "$FORMATTER_REL")" = \
+       "$(git rev-parse "$AUDITED_FORMATTER_SHA:$FORMATTER_REL")"
+     TRACKED_FORMATTER_FILES=$((TRACKED_FORMATTER_FILES + 1))
+   done < <(git ls-files -z)
+   test "$TRACKED_FORMATTER_FILES" -gt 0
+   npm ci --ignore-scripts
    npm run sync-components -- \
      --book ../consumer-book \
      --components layouts includes assets \
@@ -79,33 +89,19 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    : "${AUDITED_BASE_SHA:?set the audited 40-character consumer base SHA}"
    test "$(git rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
    test -z "$(git status --porcelain)"
+   TRACKED_FORMATTER_FILES=0
+   while IFS= read -r -d '' FORMATTER_REL; do
+     test -f "$FORMATTER_REL"
+     test ! -L "$FORMATTER_REL"
+     test "$(git hash-object -- "$FORMATTER_REL")" = \
+       "$(git rev-parse "$AUDITED_FORMATTER_SHA:$FORMATTER_REL")"
+     TRACKED_FORMATTER_FILES=$((TRACKED_FORMATTER_FILES + 1))
+   done < <(git ls-files -z)
+   test "$TRACKED_FORMATTER_FILES" -gt 0
+   npm ci --ignore-scripts
    CONSUMER_SYNC_WORKTREE=../.worktrees/consumer-sync-pilot
    git -C ../consumer-book worktree add --detach \
      "$CONSUMER_SYNC_WORKTREE" "$AUDITED_BASE_SHA"
-
-   # clean statusだけではsparse checkout / skip-worktreeを検出できない。
-   # 選択componentの全sourceとversion metadataをHEAD blobへ照合する。
-   MANAGED_SOURCES=(
-     shared/version.json
-     shared/layouts/book.html
-     shared/layouts/default.html
-     shared/includes/sidebar-nav.html
-     shared/includes/page-navigation.html
-     shared/assets/css/main.css
-     shared/assets/css/mobile-responsive.css
-     shared/assets/css/syntax-highlighting.css
-     shared/assets/js/code-copy-lightweight.js
-     shared/assets/js/search.js
-     shared/assets/js/theme.js
-   )
-   test "${#MANAGED_SOURCES[@]}" -eq 11
-   for SOURCE_REL in "${MANAGED_SOURCES[@]}"; do
-     git ls-files --error-unmatch "$SOURCE_REL" >/dev/null
-     test -f "$SOURCE_REL"
-     test ! -L "$SOURCE_REL"
-     test "$(git hash-object -- "$SOURCE_REL")" = \
-       "$(git rev-parse "HEAD:$SOURCE_REL")"
-   done
 
    # 現行sync scriptは同期先のsymlink境界を検査しない。通常同期の前に、
    # 今回更新され得る有限のmanaged destinationと全ancestorをlstatする。
@@ -169,7 +165,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    )
    ```
 
-   source検査の有限リストは`shared/version.json`と、今回選択するlayouts / includes / assetsのmanaged fileに対応する。これにより、sparse checkout、欠損file、skip-worktreeで隠された変更を通常同期前に拒否する。symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表、source検査、destination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。同期結果をこの一時worktreeからcommitしない。
+   formatter checkoutはtracked fileを1件ずつ監査済みSHAのblobへ照合するため、managed sourceだけでなく同期script、import先、`package.json`、lockfile、metadataもsparse checkout、欠損、symlink、skip-worktreeで隠された変更があれば同期前に拒否する。照合済みlockfileから`npm ci --ignore-scripts`で依存関係を再構築した後だけ同期を実行する。symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表とdestination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。同期結果をこの一時worktreeからcommitしない。
 
 5. managed file以外、書籍本文、書籍固有設定が差分へ入っていないことを確認する。`book-config.json`は`shared.version` / `lastSync`以外の変更を許容しない。
 6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。

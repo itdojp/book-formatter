@@ -87,6 +87,9 @@ for INDEX in "${!SOURCE_RELS[@]}"; do
   DEST_REL=${DEST_RELS[$INDEX]}
   git -C "$FORMATTER_ROOT" ls-files --error-unmatch "$SOURCE_REL" >/dev/null
   test -f "$FORMATTER_ROOT/$SOURCE_REL"
+  test ! -L "$FORMATTER_ROOT/$SOURCE_REL"
+  test "$(git -C "$FORMATTER_ROOT" hash-object -- "$SOURCE_REL")" = \
+    "$(git -C "$FORMATTER_ROOT" rev-parse "$AUDITED_FORMATTER_SHA:$SOURCE_REL")"
   DEST_PARENT=$CONSUMER_ROOT
   DEST_REMAINDER=$DEST_REL
   while [[ "$DEST_REMAINDER" == */* ]]; do
@@ -116,7 +119,7 @@ git -C "$CONSUMER_ROOT" reset -- "${DEST_RELS[@]}"
 )
 ```
 
-`RESTORE_ITEMS`には上の有限集合から、同じ監査単位で復旧する項目を空白区切りで1件以上指定する（例: `RESTORE_ITEMS="config page-navigation navigation index"`）。全source / destination / symlink境界をcopy前に検査し、重複項目と既存fileを拒否する。変更が必要な既存fileは通常のconsumer task branchで別途差分を作成・レビューする。
+`RESTORE_ITEMS`には上の有限集合から、同じ監査単位で復旧する項目を空白区切りで1件以上指定する（例: `RESTORE_ITEMS="config page-navigation navigation index"`）。全sourceをnon-symlinkのregular fileかつ監査済みformatter SHAのblob一致として照合し、全destination / symlink境界もcopy前に検査して、重複項目と既存fileを拒否する。これにより、clean statusに現れないskip-worktree変更もconsumerへcopyしない。変更が必要な既存fileは通常のconsumer task branchで別途差分を作成・レビューする。
 
 `navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleと`/introduction/`、`/chapters/chapter-01/`等のpathをconsumerのcanonical route inventoryへ置換し、不要な行を削除する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、概要・対象読者・到達目標・読書経路を含む全例示本文を書き換える。次の検査で既知のstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
 
