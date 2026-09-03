@@ -1,0 +1,154 @@
+name: Deploy mdBook to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Replace only through a reviewed PR; never use main or a mutable tag.
+  BOOK_FORMATTER_SHA: 198935ff8f60653c40e513343dc5f02573d9968e
+  BOOK_EDITION: free
+  MDBOOK_VERSION: 0.5.4
+  MDBOOK_SHA256: 3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout consumer book
+        uses: actions/checkout@v6
+        with:
+          path: book
+
+      - name: Checkout audited book-formatter
+        uses: actions/checkout@v6
+        with:
+          repository: itdojp/book-formatter
+          ref: ${{ env.BOOK_FORMATTER_SHA }}
+          path: formatter
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: formatter/package-lock.json
+
+      - name: Install formatter dependencies
+        working-directory: formatter
+        run: npm ci --ignore-scripts
+
+      - name: Resolve GitHub Pages site URL
+        id: site
+        shell: bash
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          # This minimal sample assumes that no custom domain is configured.
+          shopt -s nocasematch
+          if [[ "$REPOSITORY_NAME" == "$REPOSITORY_OWNER.github.io" ]]; then
+            site_url=/
+          else
+            site_url="/$REPOSITORY_NAME/"
+          fi
+          printf 'site_url=%s\n' "$site_url" >> "$GITHUB_OUTPUT"
+
+      - name: Generate audited adapter project
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C formatter rev-parse HEAD)" = "$BOOK_FORMATTER_SHA"
+          npm --prefix formatter run validate:standard-book -- "$GITHUB_WORKSPACE/book"
+          npm --prefix formatter start build -- \
+            --book "$GITHUB_WORKSPACE/book" \
+            --target web-mdbook \
+            --edition "$BOOK_EDITION" \
+            --out-dir "$GITHUB_WORKSPACE/dist"
+
+      - name: Install verified mdBook
+        id: mdbook
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=x86_64-unknown-linux-gnu
+          archive="mdbook-v${MDBOOK_VERSION}-${target}.tar.gz"
+          url="https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/${archive}"
+          tool_dir="$(mktemp -d "$RUNNER_TEMP/mdbook.XXXXXXXX")"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$tool_dir/$archive" "$url"
+          (
+            cd "$tool_dir"
+            printf '%s  %s\n' "$MDBOOK_SHA256" "$archive" | sha256sum --check --strict
+            test "$(tar -tzf "$archive")" = mdbook
+            tar -xzf "$archive"
+          )
+          test "$("$tool_dir/mdbook" --version)" = "mdbook v${MDBOOK_VERSION}"
+          printf 'bin=%s\n' "$tool_dir/mdbook" >> "$GITHUB_OUTPUT"
+
+      - name: Build and verify deploy artifact
+        shell: bash
+        env:
+          MDBOOK_BIN: ${{ steps.mdbook.outputs.bin }}
+          SITE_URL: ${{ steps.site.outputs.site_url }}
+        run: |
+          set -euo pipefail
+          project="$GITHUB_WORKSPACE/dist/web-mdbook"
+          artifact="$project/book"
+
+          recheck="$RUNNER_TEMP/source-recheck"
+          npm --prefix formatter start build -- \
+            --book "$GITHUB_WORKSPACE/book" \
+            --target web-mdbook \
+            --edition "$BOOK_EDITION" \
+            --out-dir "$recheck"
+          diff --recursive --brief -- "$project" "$recheck/web-mdbook"
+
+          # The responsive checker currently validates a root-mounted build.
+          "$MDBOOK_BIN" build "$project"
+          npm --prefix formatter run check-mdbook-responsive -- --book "$project"
+          "$MDBOOK_BIN" clean "$project"
+
+          MDBOOK_OUTPUT__HTML__SITE_URL="$SITE_URL" "$MDBOOK_BIN" build "$project"
+          test -f "$artifact/index.html"
+          test -f "$artifact/404.html"
+          find "$artifact" -maxdepth 1 -type f -name 'searchindex-*.js' -print -quit | grep -q .
+          test -z "$(find "$artifact" -type l -print -quit)"
+          test -z "$(find "$artifact" -type f -links +1 -print -quit)"
+
+          grep -Fq "<base href=\"${SITE_URL}\">" "$artifact/404.html"
+          npm --prefix formatter run check-visibility -- \
+            "$GITHUB_WORKSPACE/book" \
+            --edition "$BOOK_EDITION" \
+            --artifact "$artifact"
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist/web-mdbook/book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Deploy GitHub Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v5
