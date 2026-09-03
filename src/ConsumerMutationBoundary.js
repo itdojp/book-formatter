@@ -26,6 +26,12 @@ const CONSUMER_KEYS = new Set([
   'configSha256'
 ]);
 const MODULE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const FORMATTER_MUTATION_INPUTS = [
+  'shared/layouts',
+  'shared/includes',
+  'shared/assets',
+  'templates'
+];
 
 class ConsumerMutationError extends Error {
   constructor(message, options = {}) {
@@ -94,7 +100,8 @@ function gitOutput(repoRoot, args, options = {}) {
   try {
     return execFileSync('git', ['-C', repoRoot, ...args], {
       encoding: options.encoding || 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' }
     });
   } catch (error) {
     const detail = Buffer.isBuffer(error.stderr)
@@ -108,7 +115,11 @@ function gitOutput(repoRoot, args, options = {}) {
 }
 
 function gitNullPaths(repoRoot, args) {
-  const output = gitOutput(repoRoot, [...args, '-z'], { encoding: 'buffer' });
+  const pathspecIndex = args.indexOf('--');
+  const nullTerminatedArgs = pathspecIndex < 0
+    ? [...args, '-z']
+    : [...args.slice(0, pathspecIndex), '-z', ...args.slice(pathspecIndex)];
+  const output = gitOutput(repoRoot, nullTerminatedArgs, { encoding: 'buffer' });
   return output.toString('utf8').split('\0').filter(Boolean);
 }
 
@@ -141,6 +152,61 @@ function readIndexModes(repoRoot) {
 
 function sha256(content) {
   return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+function assertNoReplacementRefs(repoRoot, label) {
+  const replacementRefs = gitOutput(
+    repoRoot,
+    ['for-each-ref', '--format=%(refname)', 'refs/replace/']
+  ).trim();
+  if (replacementRefs !== '') {
+    throw new ConsumerMutationError(`${label} must not contain Git replacement refs`);
+  }
+}
+
+function assertNoIndexFlags(repoRoot, label) {
+  const records = gitNullPaths(repoRoot, ['ls-files', '-v']);
+  const flagged = records.filter((entry) => !entry.startsWith('H '));
+  if (flagged.length > 0) {
+    throw new ConsumerMutationError(
+      `${label} tracked files must not use skip-worktree, assume-unchanged, or other index flags`
+    );
+  }
+}
+
+function assertConsumerBelongsToPlan(plan, consumer) {
+  if (!Array.isArray(plan?.consumers)) {
+    throw new ConsumerMutationError('Consumer mutation plan is missing its finite consumer set');
+  }
+  const planned = plan.consumers.find((entry) => entry.id === consumer?.id);
+  const comparable = (entry) => JSON.stringify({
+    id: entry?.id,
+    worktree: entry?.worktree,
+    baseSha: entry?.baseSha,
+    allowedPaths: entry?.allowedPaths,
+    configPath: entry?.configPath,
+    configSha256: entry?.configSha256
+  });
+  if (!planned || comparable(planned) !== comparable(consumer)) {
+    throw new ConsumerMutationError(
+      `Consumer target must exactly match an entry in the audited plan: ${consumer?.id || '(missing)'}`
+    );
+  }
+}
+
+function assertNoUntrackedMutationInputs(repoRoot) {
+  const pathspec = ['--', ...FORMATTER_MUTATION_INPUTS];
+  const untracked = [
+    ...gitNullPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', ...pathspec]),
+    ...gitNullPaths(repoRoot, [
+      'ls-files', '--others', '--ignored', '--exclude-standard', ...pathspec
+    ])
+  ];
+  if (untracked.length > 0) {
+    throw new ConsumerMutationError(
+      `Formatter mutation inputs must come from the audited commit: ${untracked.sort().join(', ')}`
+    );
+  }
 }
 
 async function assertTrackedFormatterTree(repoRoot, revision) {
@@ -348,6 +414,7 @@ class ConsumerMutationBoundary {
         `Formatter root must equal its Git repository root: ${this.formatterRoot}`
       );
     }
+    assertNoReplacementRefs(this.formatterRoot, 'Formatter repository');
     const head = gitOutput(this.formatterRoot, ['rev-parse', 'HEAD']).trim();
     if (head !== plan.formatterSha) {
       throw new ConsumerMutationError(
@@ -362,6 +429,7 @@ class ConsumerMutationBoundary {
       throw new ConsumerMutationError('Formatter tracked files must be clean at the audited SHA');
     }
     await assertTrackedFormatterTree(this.formatterRoot, plan.formatterSha);
+    assertNoUntrackedMutationInputs(this.formatterRoot);
     const dependenciesPath = path.join(this.formatterRoot, 'node_modules');
     try {
       const dependencyStat = await fs.lstat(dependenciesPath);
@@ -392,6 +460,8 @@ class ConsumerMutationBoundary {
         `Consumer worktree must equal its Git repository root: ${consumerRoot}`
       );
     }
+    assertNoReplacementRefs(consumerRoot, `Consumer ${consumer.id}`);
+    assertNoIndexFlags(consumerRoot, `Consumer ${consumer.id}`);
 
     const gitDirectory = path.resolve(
       consumerRoot,
@@ -451,6 +521,7 @@ class ConsumerMutationBoundary {
   }
 
   async preflight({ plan, consumer, managedPaths, dryRun }) {
+    assertConsumerBelongsToPlan(plan, consumer);
     await this.assertFormatterRevision(plan);
     const consumerRoot = await this.assertConsumerWorktree(consumer);
     const normalizedManagedPaths = normalizedUniquePaths(managedPaths, 'managedPaths');
@@ -478,7 +549,10 @@ class ConsumerMutationBoundary {
       const ignoreCheck = spawnSync(
         'git',
         ['-C', consumerRoot, 'check-ignore', '--quiet', '--', managedPath],
-        { encoding: 'utf8' }
+        {
+          encoding: 'utf8',
+          env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' }
+        }
       );
       if (ignoreCheck.error || ![0, 1].includes(ignoreCheck.status)) {
         throw new ConsumerMutationError(
@@ -516,6 +590,8 @@ class ConsumerMutationBoundary {
   rollback(consumerRoot, baseSha) {
     gitOutput(consumerRoot, ['reset', '--hard', baseSha]);
     gitOutput(consumerRoot, ['clean', '-fdx', '--']);
+    assertNoReplacementRefs(consumerRoot, 'Consumer rollback repository');
+    assertNoIndexFlags(consumerRoot, 'Consumer rollback repository');
     const head = gitOutput(consumerRoot, ['rev-parse', 'HEAD']).trim();
     const status = gitOutput(consumerRoot, ['status', '--porcelain=v1', '--untracked-files=all']);
     const ignored = gitNullPaths(
@@ -544,6 +620,8 @@ class ConsumerMutationBoundary {
 
     try {
       await mutate(context);
+      assertNoReplacementRefs(context.consumerRoot, `Consumer ${consumer.id}`);
+      assertNoIndexFlags(context.consumerRoot, `Consumer ${consumer.id}`);
       const changedPaths = collectChangedPaths(context.consumerRoot);
       const unexpected = changedPaths.filter((entry) => !consumer.allowedPaths.includes(entry));
       if (unexpected.length > 0) {

@@ -77,6 +77,7 @@ async function createLinkedConsumer(tempRoot, options = {}) {
 async function createFormatterFixture(tempRoot) {
   const formatterRoot = path.join(tempRoot, 'formatter-fixture');
   const formatterSha = await initRepository(formatterRoot, {
+    '.gitignore': 'shared/assets/ignored.js\n',
     'audited.txt': 'formatter fixture\n'
   });
   return { formatterRoot, formatterSha };
@@ -303,25 +304,128 @@ describe('ConsumerMutationBoundary transaction', () => {
     );
     await fs.remove(path.join(fixture.worktree, 'dirty.txt'));
 
+    const wrongBaseConsumer = { ...consumer, baseSha: 'e'.repeat(40) };
     await assert.rejects(
       createBoundary().preflight({
-        plan: basePlan,
-        consumer: { ...consumer, baseSha: 'e'.repeat(40) },
+        plan: { ...basePlan, consumers: [wrongBaseConsumer] },
+        consumer: wrongBaseConsumer,
         managedPaths: ['index.md'],
         dryRun: false
       }),
       /base SHA mismatch/
     );
 
+    const primaryCheckoutConsumer = { ...consumer, worktree: fixture.sourceRoot };
     await assert.rejects(
       createBoundary().preflight({
-        plan: basePlan,
-        consumer: { ...consumer, worktree: fixture.sourceRoot },
+        plan: { ...basePlan, consumers: [primaryCheckoutConsumer] },
+        consumer: primaryCheckoutConsumer,
         managedPaths: ['index.md'],
         dryRun: false
       }),
       /isolated linked worktree/
     );
+
+    await assert.rejects(
+      createBoundary().preflight({
+        plan: basePlan,
+        consumer: { ...consumer, id: 'not-in-plan' },
+        managedPaths: ['index.md'],
+        dryRun: false
+      }),
+      /exactly match an entry in the audited plan/
+    );
+
+    for (const [setFlag, clearFlag] of [
+      ['--skip-worktree', '--no-skip-worktree'],
+      ['--assume-unchanged', '--no-assume-unchanged']
+    ]) {
+      git(fixture.worktree, 'update-index', setFlag, 'book-config.json');
+      await fs.writeFile(path.join(fixture.worktree, 'book-config.json'), '{"hidden":true}\n');
+      await assert.rejects(
+        createBoundary().preflight({
+          plan: basePlan,
+          consumer,
+          managedPaths: ['index.md'],
+          dryRun: false
+        }),
+        /must not use skip-worktree, assume-unchanged/
+      );
+      git(fixture.worktree, 'update-index', clearFlag, 'book-config.json');
+      git(fixture.worktree, 'checkout', '--', 'book-config.json');
+    }
+
+    const replacement = git(
+      fixture.worktree,
+      'commit-tree',
+      git(fixture.worktree, 'write-tree'),
+      '-p',
+      fixture.baseSha,
+      '-m',
+      'replacement fixture'
+    );
+    git(fixture.worktree, 'replace', fixture.baseSha, replacement);
+    await assert.rejects(
+      createBoundary().preflight({
+        plan: basePlan,
+        consumer,
+        managedPaths: ['index.md'],
+        dryRun: false
+      }),
+      /must not contain Git replacement refs/
+    );
+    git(fixture.worktree, 'replace', '-d', fixture.baseSha);
+
+    const formatterReplacement = git(
+      formatter.formatterRoot,
+      'commit-tree',
+      git(formatter.formatterRoot, 'write-tree'),
+      '-p',
+      formatter.formatterSha,
+      '-m',
+      'formatter replacement fixture'
+    );
+    git(formatter.formatterRoot, 'replace', formatter.formatterSha, formatterReplacement);
+    await assert.rejects(
+      createBoundary().preflight({
+        plan: basePlan,
+        consumer,
+        managedPaths: ['index.md'],
+        dryRun: false
+      }),
+      /Formatter repository must not contain Git replacement refs/
+    );
+    git(formatter.formatterRoot, 'replace', '-d', formatter.formatterSha);
+  });
+
+  test('formatter mutation inputのuntracked/ignored fileを拒否する', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+
+    for (const relativePath of [
+      'shared/layouts/injected.html',
+      'shared/assets/ignored.js'
+    ]) {
+      const injectedPath = path.join(formatter.formatterRoot, relativePath);
+      await fs.ensureDir(path.dirname(injectedPath));
+      await fs.writeFile(injectedPath, 'untracked mutation input\n');
+      await assert.rejects(
+        createBoundary().preflight({
+          plan,
+          consumer,
+          managedPaths: ['index.md'],
+          dryRun: false
+        }),
+        /mutation inputs must come from the audited commit/
+      );
+      await fs.remove(injectedPath);
+    }
   });
 
   test('root、ancestor、final symlinkをcallback前に拒否しconsumer外へ書かない', async () => {
@@ -669,6 +773,36 @@ describe('audited legacy operations', () => {
       /registry entry is invalid/
     );
     assert.deepStrictEqual(await snapshotFiles(fixture.worktree), before);
+  });
+
+  test('UX rolloutのprogrammatic writeも複数consumerを拒否する', async () => {
+    const first = await createLinkedConsumer(tempDir, { name: 'first' });
+    const second = await createLinkedConsumer(tempDir, { name: 'second' });
+    const consumers = [first, second].map((fixture, index) => consumerEntry({
+      id: `consumer-${index + 1}`,
+      ...fixture,
+      allowedPaths: ['book-config.json']
+    }));
+    const plan = planFor({
+      operation: 'rollout-ux-profile',
+      formatterSha: formatter.formatterSha,
+      consumers,
+      planPath: path.join(tempDir, 'multi-plan.json')
+    });
+    const { rollout } = dependencies();
+
+    await assert.rejects(
+      rollout.rollout({
+        plan,
+        consumers,
+        applyUxCore: false,
+        applyUxProfile: true,
+        dryRun: false
+      }),
+      /write mode requires exactly one consumer/
+    );
+    assert.strictEqual(git(first.worktree, 'status', '--porcelain'), '');
+    assert.strictEqual(git(second.worktree, 'status', '--porcelain'), '');
   });
 
   test('UX coreは#129 destination planを同じ単一consumer transactionで使う', async () => {

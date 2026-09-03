@@ -240,6 +240,11 @@ export class UxRollout {
         'rollout requires a finite audited plan and explicit consumer selection'
       );
     }
+    if (!dryRun && consumers.length !== 1) {
+      throw new ConsumerMutationError(
+        'UX rollout write mode requires exactly one consumer target'
+      );
+    }
     const expectedOperation = applyUxCore && applyUxProfile
       ? 'rollout-ux-core-profile'
       : applyUxCore

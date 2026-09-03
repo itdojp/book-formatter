@@ -8,10 +8,14 @@ runtime契約を定義します。この契約は新規標準書籍のadapter bu
 
 writeを開始する前に、runtimeは次を検証します。
 
-- formatterの現在のcommitがplanで固定した40文字SHAと一致し、tracked差分がない
-- consumerが監査済みbase SHAから作ったcleanなlinked worktreeである
+- formatterの現在のcommitがplanで固定した40文字SHAと一致し、tracked内容・modeが
+  commitと同一で、managed sourceにuntracked/ignored入力がない
+- formatter/consumerにGit replacement refがない
+- consumerが監査済みbase SHAから作ったcleanなlinked worktreeであり、tracked fileに
+  `skip-worktree`、`assume-unchanged`などのindex flagがない
 - planがschema version 1、最大6件、重複なしの有限集合である
 - operationが実行commandと一致する
+- 実行対象がplan内のconsumer entryと完全一致し、write時は1件だけである
 - operationが書き得る全destinationとplanの`allowedPaths`が完全一致する
 - consumer root、全既存ancestor、final pathがsymlinkや想定外file typeでない
 - destinationがGitでignoreされず、index modeが通常fileの契約を満たす
