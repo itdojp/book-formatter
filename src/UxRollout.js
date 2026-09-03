@@ -8,6 +8,7 @@ import { ComponentSync } from '../scripts/sync-components.js';
 import { ConsumerMutationBoundary, ConsumerMutationError } from './ConsumerMutationBoundary.js';
 
 const PROFILE_MUTATION_TOKEN = Symbol('profile-mutation-token');
+const CORE_MUTATION_TOKEN = Symbol('core-mutation-token');
 
 /**
  * 既存書籍にUX設定/共通コアを段階適用するロールアウトユーティリティ
@@ -220,7 +221,12 @@ export class UxRollout {
    * @param {Object} options - 実行オプション
    * @returns {Promise<void>}
    */
-  async applyUxCore(bookPath, options) {
+  async applyUxCore(bookPath, options = {}) {
+    if (options.mutationToken !== CORE_MUTATION_TOKEN) {
+      throw new ConsumerMutationError(
+        'UX core writes require the audited consumer transaction'
+      );
+    }
     if (options.dryRun) {
       await this.componentSync.checkDiff(bookPath, { components: ['layouts', 'includes', 'assets'] });
       return;
@@ -347,7 +353,10 @@ export class UxRollout {
             });
           }
           if (applyUxCore) {
-            await this.applyUxCore(bookPath, { dryRun: false });
+            await this.applyUxCore(bookPath, {
+              dryRun: false,
+              mutationToken: CORE_MUTATION_TOKEN
+            });
           }
         }
       });
