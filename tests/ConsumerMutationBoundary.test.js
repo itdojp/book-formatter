@@ -865,6 +865,43 @@ describe('ConsumerMutationBoundary transaction', () => {
     assert.deepStrictEqual(await snapshotFiles(fixture.worktree), before);
     assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
   });
+
+  test('dry-run preflightはstale statでもconsumer indexを更新しない', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    const indexPath = path.resolve(
+      fixture.worktree,
+      git(fixture.worktree, 'rev-parse', '--git-path', 'index')
+    );
+    const trackedPath = path.join(fixture.worktree, 'index.md');
+    const trackedStat = await fs.stat(trackedPath);
+    await fs.utimes(
+      trackedPath,
+      trackedStat.atime,
+      new Date(trackedStat.mtimeMs + 60_000)
+    );
+    const indexBefore = await fs.readFile(indexPath);
+
+    const result = await createBoundary().run({
+      plan,
+      consumer,
+      managedPaths: ['index.md'],
+      dryRun: true,
+      mutate: async () => {
+        throw new Error('dry-run callback must not execute');
+      }
+    });
+
+    assert.deepStrictEqual(await fs.readFile(indexPath), indexBefore);
+    assert.deepStrictEqual(result.changedPaths, []);
+    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
+  });
 });
 
 describe('audited legacy operations', () => {

@@ -109,7 +109,11 @@ function gitOutput(repoRoot, args, options = {}) {
     return execFileSync('git', ['-C', repoRoot, ...args], {
       encoding: options.encoding || 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' }
+      env: {
+        ...process.env,
+        GIT_NO_REPLACE_OBJECTS: '1',
+        GIT_OPTIONAL_LOCKS: '0'
+      }
     });
   } catch (error) {
     const detail = Buffer.isBuffer(error.stderr)
@@ -757,7 +761,11 @@ class ConsumerMutationBoundary {
         ['-C', consumerRoot, 'check-ignore', '--quiet', '--', managedPath],
         {
           encoding: 'utf8',
-          env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' }
+          env: {
+            ...process.env,
+            GIT_NO_REPLACE_OBJECTS: '1',
+            GIT_OPTIONAL_LOCKS: '0'
+          }
         }
       );
       if (ignoreCheck.error || ![0, 1].includes(ignoreCheck.status)) {
