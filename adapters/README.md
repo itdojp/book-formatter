@@ -1,13 +1,15 @@
 # Adapter開発契約
 
-`adapters/` は、標準書籍フォーマットを出力先ごとの成果物へ変換する責務を分離するための入口です。Issue #94で共通CLIとmanifest契約を実装し、#95で`web-mdbook`を最初の実adapterにしました。その他のtargetはskeletonです。
+`adapters/` は、標準書籍フォーマットを出力先ごとの成果物へ変換する責務を分離するための入口です。Issue #94で共通CLIとmanifest契約を実装し、#95で`web-mdbook`を最初の実adapterにしました。`web-jekyll-legacy`は既存consumerの互換境界を文書化したlegacy support targetであり、build実装はskeletonのままです。その他のtargetもskeletonです。
+
+新規書籍とlegacy consumerのtarget選択は[出力target方針](../docs/output-targets.md)を参照してください。
 
 ## Target registry
 
 | target | 用途 | 状態 | 実装Issue |
 |---|---|---|---|
 | `web-mdbook` | 標準Web / mdBook | `web-mdbook-v1` | [#95](https://github.com/itdojp/book-formatter/issues/95) |
-| `web-jekyll-legacy` | 既存Jekyll / GitHub Pages互換 | skeleton | [#96](https://github.com/itdojp/book-formatter/issues/96) |
+| `web-jekyll-legacy` | 既存Jekyll / GitHub Pages互換 | skeleton / legacy support contract | [#96](https://github.com/itdojp/book-formatter/issues/96) |
 | `zenn` | Zenn book | skeleton | [#98](https://github.com/itdojp/book-formatter/issues/98) |
 | `note` | note投稿用成果物 | skeleton | [#99](https://github.com/itdojp/book-formatter/issues/99) |
 | `kindle` | EPUB / Kindle | skeleton | [#100](https://github.com/itdojp/book-formatter/issues/100) |

@@ -1,10 +1,89 @@
 # web-jekyll-legacy adapter
 
-- 実装状態: skeleton
-- 入力: 検証済み標準書籍とedition visibility plan
-- 現在の出力: version 1 `manifest.json` のみ
-- 完全実装: [Issue #96](https://github.com/itdojp/book-formatter/issues/96)
+- 実装状態: skeleton / legacy support contract
+- 対象: 既存のJekyll / GitHub Pages書籍
+- 現在のadapter出力: version 1 `manifest.json`のみ
+- 互換境界の管理Issue: [#96](https://github.com/itdojp/book-formatter/issues/96)
 
-既存Jekyll / GitHub Pages資産の互換境界、legacy変換、成果物visibility検査は#96で実装します。このskeletonは既存書籍やJekyll資産を変更しません。
+`web-jekyll-legacy`は、既存consumerの保守経路を新規標準Web出力から分離するための名前である。新規書籍の標準Web出力は[`web-mdbook`](../web-mdbook/README.md)を使用する。Jekyllは廃止ではなくlegacy supportだが、新規標準の既定値ではない。
 
-共通CLIと開発規約は[Adapter開発契約](../README.md)を参照してください。
+このREADMEは現行Jekyll資産の所有権と互換pathを定義する。`npm start build -- --target web-jekyll-legacy`はJekyll siteを生成せず、既存書籍を変更せず、deployもしない。Jekyll変換を実装済みと解釈してはならない。
+
+## 現行の互換経路
+
+| 入口 | 入力 | 現在の責務 | 書き込み先 / 結果 |
+| --- | --- | --- | --- |
+| `create-book` / `update-book` | legacy `book-config.json` | 組み込みJekyll templateと`shared/`を使う既存生成処理 | 指定したlegacy書籍directory |
+| `scripts/scaffold-new-book.sh` | owner / repository名 | `templates/starter/`、`templates/.github/`、`shared/`を展開する既存scaffold | 一時directory。`--create`指定時だけrepository作成 |
+| `sync-components` | legacy `book-config.json`と`shared/version.json` | layouts / includes / assetsの選択同期 | consumerの`docs/`配下 |
+| `rollout-ux` | legacy UX registry / `book-config.json` | UX profile更新と、明示指定時の共通component同期 | 既存consumer。既定で一括適用しない |
+| `Book Sync` workflow | 最大3冊の明示対象 | consumer clone、dry-run、allowlist付きPR作成 | 既定はdry-run。直接mainを更新しない |
+| adapter `build` | 標準`book.yaml`とedition | visibility検査済みbuild planの記録 | skeleton `manifest.json`のみ |
+
+legacy `book-config.json`と標準`book.yaml`は別契約である。`create-book`、`update-book`、`sync-components`、`rollout-ux`へ`book.yaml`を暗黙変換して渡さない。反対に、既存書籍に`book.yaml`がないことを理由にlegacy経路を停止しない。
+
+## Jekyll componentの正本と同期先
+
+現在`sync-components`が扱うJekyll consumer向け正本はrepository rootの`shared/`である。
+
+| formatter source | consumer destination | 備考 |
+| --- | --- | --- |
+| `shared/layouts/*.html` | `docs/_layouts/*.html` | Jekyll layout |
+| `shared/includes/*.html` | `docs/_includes/*.html` | Liquid include |
+| `shared/assets/**` | `docs/assets/**` | CSS / JavaScript等 |
+| `shared/version.json` | `book-config.json`の`shared.version` | 実fileまたはversion差分がある場合に更新 |
+
+`shared/schema/`、`shared/schemas/`、`shared/markdown/`、`shared/mdbook/`はこの同期mappingに含めない。`shared/schemas/book-config.schema.json`はlegacy config互換のschemaだが、Jekyll componentとして`docs/`へ配布するfileではない。
+
+`templates/`の分類は[`templates/README.md`](../../templates/README.md)を参照する。top-level template、starter、UX template、workflow templateは用途と正本状態が異なるため、directory全体をJekyll adapterの実装資産として一括移動しない。
+
+## 安全な同期手順
+
+既存consumerへcomponentを反映するときは次の順序を守る。
+
+1. 監査済みのformatter commit SHAを固定する。mutableな`main`を同期根拠にしない。
+2. consumerのdefault branch、dirty status、Open PR、現在のPages方式を確認する。
+3. 対象を1冊に限定し、最初にdry-runする。
+
+   ```bash
+   npm run sync-components -- \
+     --book ../consumer-book \
+     --components layouts includes assets \
+     --dry-run
+   ```
+
+4. 差分を確認し、書籍本文や書籍固有設定が同期対象に入っていないことを確認する。
+5. 書き込みはconsumerごとのbranch / PRで行う。複数書籍を同じPRへ混在させない。
+6. consumerのBook QA、main CI、Pages deployment、公開HTTPと主要markerを確認する。
+
+`Book Sync` workflowを使う場合も、既定dry-run、最大3冊、確認token、対象repositoryへのwrite権限、Open PR 0というworkflow側のgateを維持する。
+
+## `rollout-ux`との境界
+
+- `--apply-ux-core`は`ComponentSync`を介してlayouts / includes / assetsを同期する。
+- `--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する。
+- portfolio-level [`book-registry.yaml` version 1](../../docs/book-registry.md)は同じ名前でも入力互換ではない。
+- `--apply-ux-core`、`--apply-ux-profile`とも、実行前にdry-runとconsumer差分を確認する。
+
+## 維持する互換path
+
+Issue #96では次のpathを移動・削除しない。
+
+- `shared/layouts/`, `shared/includes/`, `shared/assets/`
+- `templates/starter/`, `templates/.github/`, `templates/ux/`
+- top-level `templates/_config.yml`, `templates/_data/`, `templates/_includes/`, `templates/assets/`
+- Jekyll運用を説明する既存`docs/`
+- `create-book`, `update-book`, `sync-components`, `rollout-ux`
+
+正本が未確定のsnapshotを含むため、単純なcopyやhash一致だけを移動・削除根拠にしない。物理移動は[`docs/archive-plan.md`](../../docs/archive-plan.md)に従い、fixed-SHA consumer pilotと互換shimの要否を確認する別PRで行う。
+
+## 非目標
+
+- Jekyll assetの移動、削除、archive
+- 既存consumerへの同期またはmdBookへの強制移行
+- GitHub Pages設定、branch source、Actions workflowの変更
+- Jekyll build / deployの新規実装
+- `web-jekyll-legacy`を実装済みadapterへ変更すること
+- standard-book visibilityをlegacy consumerへ未検証で適用すること
+
+Web出力の選択基準は[出力target方針](../../docs/output-targets.md)、共通adapter CLIは[Adapter開発契約](../README.md)を参照する。

@@ -4,13 +4,15 @@
 
 ## 概要
 
-Book Formatterは、JSON設定ファイルから書籍プロジェクトを自動生成する設定駆動型のツールです。テンプレート方式ではなく設定駆動型により、柔軟性と保守性を両立し、新しい書籍の作成と既存書籍の管理を効率化します。
+Book Formatterは、標準`book.yaml`を起点とするマルチチャネルadapterと、既存`book-config.json` / Jekyll書籍の互換保守機能を提供します。新規Web書籍は標準formatと`web-mdbook`を使用し、従来のJekyll / GitHub Pages生成・同期経路は`web-jekyll-legacy`として維持します。
+
+出力先の選択、実装済みadapter、legacy境界は[出力target方針](docs/output-targets.md)を参照してください。
 
 ## 特徴
 
 - ⚡ **高速生成**: 新しい書籍を5分以内で作成
 - 🔧 **設定駆動**: JSON/YAML設定ファイルでカスタマイズ
-- 📝 **テンプレート内蔵**: Markdown、Jekyll、GitHub Pages対応
+- 📝 **マルチチャネル基盤**: 標準Markdown / mdBookと既存Jekyll / GitHub Pages互換
 - 🛡️ **バリデーション**: 設定ファイルの自動検証
 - 🔄 **自動更新**: 既存書籍の構造を自動更新
 - 🧪 **テスト対応**: 充実したテストスイート
@@ -31,6 +33,22 @@ chmod +x src/index.js
 ```
 
 ## 使用方法
+
+### 新規標準Web書籍
+
+新規Web書籍は[`examples/standard-book`](examples/standard-book)を基準に`book.yaml`、標準Markdown、editionを定義し、`web-mdbook`へ出力します。
+
+```bash
+npm run validate:standard-book -- ./my-book
+npm start build -- \
+  --book ./my-book \
+  --target web-mdbook \
+  --edition free \
+  --out-dir dist
+mdbook build dist/web-mdbook
+```
+
+以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
 
 ### 1. サンプル設定ファイルの作成
 
@@ -94,9 +112,9 @@ npm start validate-config --verbose
 npm start validate-config --config ./path/to/config.json
 ```
 
-### 4. 新しい書籍の生成
+### 4. 既存Jekyll形式の書籍生成（legacy）
 
-**⚡ 実証済み効率的手順**: 7つのフェーズを通じて、新しい書籍を約4.5時間で完成させることができます。
+この手順は既存Jekyll / GitHub Pages形式を生成・保守する場合のlegacy手順です。新規標準Web書籍の推奨経路ではありません。
 
 #### 🎯 7つのフェーズ概要
 
@@ -236,7 +254,7 @@ npm run check-textlint -- <book-dir> --output textlint-report.json
 npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 ```
 
-標準書籍metadataは[標準書籍フォーマット](docs/standard-book-format.md)、有償本文と内部本文の分離は[Edition visibilityと有償本文の混入防止](docs/paid-editions.md)を参照してください。
+標準書籍metadataは[標準書籍フォーマット](docs/standard-book-format.md)、有償本文と内部本文の分離は[Edition visibilityと有償本文の混入防止](docs/paid-editions.md)、新規出力とlegacy経路の選択は[出力target方針](docs/output-targets.md)を参照してください。
 出力先adapterの責務、有限target、manifest version 1は[Adapter開発契約](adapters/README.md)を参照してください。
 
 ## メンテナンススクリプト（運用者向け）
