@@ -132,9 +132,10 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
      "$AUDITED_BASE_SHA"
    test -z "$(git -C "$CONSUMER_SYNC_WORKTREE" status --porcelain)"
 
-   # 現行sync scriptは同期先のsymlink境界を検査しない。通常同期の前に、
-   # 今回更新され得る有限のmanaged destinationと全ancestorをlstatする。
+   # 現行sync scriptは同期先のsymlink / gitlink境界を検査しない。通常同期の前に、
+   # 今回更新され得る有限のmanaged destinationと全ancestorをindex / lstatで検査する。
    node --input-type=module - "$CONSUMER_SYNC_WORKTREE" <<'NODE'
+   import { execFileSync } from 'node:child_process';
    import fs from 'node:fs';
    import path from 'node:path';
 
@@ -152,6 +153,17 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
      'docs/assets/js/search.js',
      'docs/assets/js/theme.js',
    ];
+   const indexModes = new Map(
+     execFileSync('git', ['-C', root, 'ls-files', '--stage', '-z'], {
+       encoding: 'utf8',
+     })
+       .split('\0')
+       .filter(Boolean)
+       .map((entry) => {
+         const [metadata, filePath] = entry.split('\t');
+         return [filePath, metadata.split(' ')[0]];
+       }),
+   );
 
    const rootStat = fs.lstatSync(root);
    if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
@@ -164,6 +176,10 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 
      for (const segment of destination.split('/')) {
        current = path.join(current, segment);
+       const relative = path.relative(root, current).split(path.sep).join('/');
+       if (indexModes.get(relative) === '160000') {
+         throw new Error(`refusing gitlink destination boundary: ${relative}`);
+       }
        let stat;
        try {
          stat = fs.lstatSync(current);
@@ -194,7 +210,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    )
    ```
 
-   formatter checkoutはtracked fileを1件ずつ監査済みSHAのblobへ照合するため、managed sourceだけでなく同期script、import先、`package.json`、lockfile、metadataもsparse checkout、欠損、symlink、skip-worktreeで隠された変更があれば同期前に拒否する。rootの`node_modules/`は照合済みlockfileから`npm ci --ignore-scripts`で再構築し、root以外の`node_modules`は未追跡・ignored・symlinkを含めて同期前に拒否する。symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表とdestination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。EXIT trapは成功時と途中失敗時の両方で、同期差分を持つ一時worktreeを`--force`付きで登録解除・削除する。同期結果をこの一時worktreeからcommitしない。
+   formatter checkoutはtracked fileを1件ずつ監査済みSHAのblobへ照合するため、managed sourceだけでなく同期script、import先、`package.json`、lockfile、metadataもsparse checkout、欠損、symlink、skip-worktreeで隠された変更があれば同期前に拒否する。rootの`node_modules/`は照合済みlockfileから`npm ci --ignore-scripts`で再構築し、root以外の`node_modules`は未追跡・ignored・symlinkを含めて同期前に拒否する。consumer側の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応し、各destinationの全ancestorについてindex mode `160000`のgitlinkとworktree上のsymlinkを拒否する。`shared/version.json`へmanaged fileを追加する場合はmapping表とdestination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。EXIT trapは成功時と途中失敗時の両方で、同期差分を持つ一時worktreeを`--force`付きで登録解除・削除する。同期結果をこの一時worktreeからcommitしない。
 
 5. managed file以外、書籍本文、書籍固有設定が差分へ入っていないことを確認する。`book-config.json`は`shared.version` / `lastSync`以外の変更を許容しない。
 6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。
