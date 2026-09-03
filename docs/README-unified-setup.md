@@ -43,10 +43,15 @@ set -euo pipefail
 : "${FORMATTER_ROOT:?set the absolute path to the clean formatter worktree}"
 : "${CONSUMER_ROOT:?set the absolute path to the isolated consumer worktree}"
 : "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
+: "${AUDITED_CONSUMER_SHA:?set the audited 40-character consumer SHA}"
 test "${FORMATTER_ROOT#/}" != "$FORMATTER_ROOT"
 test "${CONSUMER_ROOT#/}" != "$CONSUMER_ROOT"
+test "$(git -C "$FORMATTER_ROOT" rev-parse --show-toplevel)" = "$FORMATTER_ROOT"
 test "$(git -C "$FORMATTER_ROOT" rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
 test -z "$(git -C "$FORMATTER_ROOT" status --porcelain)"
+test "$(git -C "$CONSUMER_ROOT" rev-parse --show-toplevel)" = "$CONSUMER_ROOT"
+test "$(git -C "$CONSUMER_ROOT" rev-parse HEAD)" = "$AUDITED_CONSUMER_SHA"
+test -z "$(git -C "$CONSUMER_ROOT" status --porcelain)"
 
 # 例: 欠損したnavigationだけを監査済みformatterからconsumerへ復旧する
 install -D -m 0644 \
