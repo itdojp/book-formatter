@@ -201,6 +201,7 @@ npm start rollout-ux -- --plan .codex-local/tmp/core-plan.json \
 補足:
 
 - `--apply-ux-profile` は `--registry` が必須です
+- profile用planは`registryPath`と`registrySha256`も必須とし、読み込み時にpathと内容を照合します
 - このcommandの `book-registry.json` は `profile` / `modules` を持つ
   legacy UX registryです。portfolio-level registry version 1との関係は
   [docs/book-registry.md](docs/book-registry.md) を参照してください。

@@ -63,6 +63,12 @@ writeします。相対pathはplan fileのdirectoryを基準に解決します�
 場合は、consumer entryへ`configPath`と`configSha256`を組で指定します。入力は
 regular non-symlink fileでなければならず、読み込み時にSHA-256を照合します。
 
+`rollout-ux-profile`と`rollout-ux-core-profile`は、plan rootへ
+`registryPath`と`registrySha256`を組で必ず記録します。`--registry`は
+planのpathと一致するregular non-symlink fileに限定され、内容は読み込み時に
+SHA-256照合されます。dry-runとwriteの間でregistry内容が変わった場合は
+writeを拒否します。profileを使わないoperationは、未使用のregistry指定を拒否します。
+
 ## dry-runから1 consumer writeまで
 
 1. formatterを監査するcommitへ固定し、tracked差分がないことを確認する。

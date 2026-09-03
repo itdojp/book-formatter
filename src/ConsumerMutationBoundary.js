@@ -16,7 +16,15 @@ const ALLOWED_OPERATIONS = new Set([
   'rollout-ux-profile',
   'rollout-ux-core-profile'
 ]);
-const ROOT_KEYS = new Set(['schemaVersion', 'operation', 'formatterSha', 'consumers']);
+const PROFILE_OPERATIONS = new Set(['rollout-ux-profile', 'rollout-ux-core-profile']);
+const ROOT_KEYS = new Set([
+  'schemaVersion',
+  'operation',
+  'formatterSha',
+  'registryPath',
+  'registrySha256',
+  'consumers'
+]);
 const CONSUMER_KEYS = new Set([
   'id',
   'worktree',
@@ -338,6 +346,38 @@ async function loadConsumerMutationPlan(planPath, { expectedOperation } = {}) {
     );
   }
   assertSha(rawPlan.formatterSha, 'plan.formatterSha');
+  const registryPathPresent = Object.hasOwn(rawPlan, 'registryPath');
+  const registryHashPresent = Object.hasOwn(rawPlan, 'registrySha256');
+  if (registryPathPresent !== registryHashPresent) {
+    throw new ConsumerMutationError(
+      'plan.registryPath and plan.registrySha256 must be specified together'
+    );
+  }
+  if (PROFILE_OPERATIONS.has(rawPlan.operation) && !registryPathPresent) {
+    throw new ConsumerMutationError(
+      `${rawPlan.operation} requires a pinned registryPath and registrySha256`
+    );
+  }
+  if (!PROFILE_OPERATIONS.has(rawPlan.operation) && registryPathPresent) {
+    throw new ConsumerMutationError(
+      `${rawPlan.operation} must not declare an unused profile registry`
+    );
+  }
+  if (
+    registryPathPresent
+    && (typeof rawPlan.registryPath !== 'string' || rawPlan.registryPath.trim() === '')
+  ) {
+    throw new ConsumerMutationError('plan.registryPath must be a non-empty path');
+  }
+  if (
+    registryHashPresent
+    && (typeof rawPlan.registrySha256 !== 'string'
+      || !/^[0-9a-f]{64}$/.test(rawPlan.registrySha256))
+  ) {
+    throw new ConsumerMutationError(
+      'plan.registrySha256 must be a lowercase SHA-256 digest'
+    );
+  }
   if (!Array.isArray(rawPlan.consumers) || rawPlan.consumers.length === 0) {
     throw new ConsumerMutationError('plan.consumers must contain at least one consumer');
   }
@@ -364,6 +404,10 @@ async function loadConsumerMutationPlan(planPath, { expectedOperation } = {}) {
     schemaVersion: PLAN_SCHEMA_VERSION,
     operation: rawPlan.operation,
     formatterSha: rawPlan.formatterSha,
+    registryPath: registryPathPresent
+      ? path.resolve(planDirectory, rawPlan.registryPath)
+      : null,
+    registrySha256: registryHashPresent ? rawPlan.registrySha256 : null,
     consumers,
     path: absolutePlanPath,
     directory: planDirectory
@@ -518,6 +562,36 @@ class ConsumerMutationBoundary {
       }
     }
     return { path: configPath, content };
+  }
+
+  async loadPinnedRegistry(plan, requestedPath) {
+    if (!PROFILE_OPERATIONS.has(plan?.operation)) {
+      throw new ConsumerMutationError('Pinned UX registry is only valid for profile operations');
+    }
+    if (
+      typeof plan.registryPath !== 'string'
+      || !/^[0-9a-f]{64}$/.test(plan.registrySha256 || '')
+    ) {
+      throw new ConsumerMutationError(
+        'UX profile operations require a pinned registryPath and registrySha256'
+      );
+    }
+    if (typeof requestedPath !== 'string' || requestedPath.trim() === '') {
+      throw new ConsumerMutationError('--registry is required for UX profile operations');
+    }
+
+    const resolvedPath = path.resolve(requestedPath);
+    if (resolvedPath !== plan.registryPath) {
+      throw new ConsumerMutationError(
+        `UX registry path mismatch: expected ${plan.registryPath}, received ${resolvedPath}`
+      );
+    }
+    await lstatRegularFile(resolvedPath, 'UX profile registry');
+    const content = await fs.readFile(resolvedPath);
+    if (sha256(content) !== plan.registrySha256) {
+      throw new ConsumerMutationError(`UX registry SHA-256 mismatch: ${resolvedPath}`);
+    }
+    return { path: resolvedPath, content };
   }
 
   async preflight({ plan, consumer, managedPaths, dryRun }) {

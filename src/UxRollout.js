@@ -37,14 +37,26 @@ export class UxRollout {
     }
 
     const content = await fs.readFile(resolvedPath, 'utf8');
+    return this.parseRegistryContent(content, resolvedPath);
+  }
+
+  /**
+   * 固定済みレジストリ内容を拡張子に従って解析する。
+   * @param {string|Buffer} content - レジストリ内容
+   * @param {string} registryPath - レジストリpath
+   * @returns {Object} レジストリオブジェクト
+   */
+  parseRegistryContent(content, registryPath) {
+    const resolvedPath = path.resolve(registryPath);
+    const text = Buffer.isBuffer(content) ? content.toString('utf8') : content;
     const ext = path.extname(resolvedPath).toLowerCase();
 
     if (ext === '.yml' || ext === '.yaml') {
-      return YAML.parse(content);
+      return YAML.parse(text);
     }
 
     if (ext === '.json') {
-      return JSON.parse(content);
+      return JSON.parse(text);
     }
 
     throw new Error(`サポートされていないレジストリ形式: ${ext}`);
@@ -156,7 +168,7 @@ export class UxRollout {
    * @param {Object} options - 実行オプション
    * @returns {Promise<{updated: boolean, skipped: boolean}>} 結果
    */
-  async updateBookConfig(bookPath, entry, options) {
+  async updateBookConfig(bookPath, entry, options = {}) {
     if (options.mutationToken !== PROFILE_MUTATION_TOKEN) {
       throw new ConsumerMutationError(
         'UX profile writes require the audited consumer transaction'
@@ -257,10 +269,13 @@ export class UxRollout {
     }
 
     let registry = null;
-    if (registryPath) {
-      registry = this.normalizeRegistry(await this.loadRegistry(registryPath));
-    } else if (applyUxProfile) {
-      throw new Error('--apply-ux-profile を指定する場合は --registry が必要です');
+    if (applyUxProfile) {
+      const pinnedRegistry = await this.mutationBoundary.loadPinnedRegistry(plan, registryPath);
+      registry = this.normalizeRegistry(
+        this.parseRegistryContent(pinnedRegistry.content, pinnedRegistry.path)
+      );
+    } else if (registryPath) {
+      throw new ConsumerMutationError('--registry is only valid with --apply-ux-profile');
     }
 
     if (applyUxCore) {

@@ -185,6 +185,9 @@ class ComponentSync {
         if (!currentStat.isFile()) {
           throw new Error(`Managed destination must be a regular file: ${relativePath}`);
         }
+        if (currentStat.nlink > 1) {
+          throw new Error(`Managed destination must not be hard-linked: ${relativePath}`);
+        }
       }
     }
 

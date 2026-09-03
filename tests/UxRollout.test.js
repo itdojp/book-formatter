@@ -90,6 +90,10 @@ describe('UxRollout', () => {
       rollout.updateBookConfig(bookPath, entry, { dryRun: false, backup: false }),
       /audited consumer transaction/
     );
+    await assert.rejects(
+      rollout.updateBookConfig(bookPath, entry),
+      /audited consumer transaction/
+    );
     const unchanged = await fs.readJson(configPath);
     assert.strictEqual(unchanged.ux, undefined);
   });

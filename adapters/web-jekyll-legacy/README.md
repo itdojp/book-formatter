@@ -275,7 +275,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 ## `rollout-ux`との境界
 
 - `--apply-ux-core`は`ComponentSync`を介してlayouts / includes / assetsを同期する。
-- `--apply-ux-profile`はlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する。
+- `--apply-ux-profile`はplanにpathとSHA-256を固定したlegacy UX registryの`profile` / `modules`を`book-config.json`へ反映する。
 - portfolio-level [`book-registry.yaml` version 1](../../docs/book-registry.md)は同じ名前でも入力互換ではない。
 - dry-runは有限planの全targetまたは明示targetを検査し、file内容を変更しない。
 - writeは`--target`で1 consumerだけを選び、profile/coreを同じtransactionへ含める。profileをcore writeの境界迂回には利用できない。

@@ -1,5 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import fs from 'fs-extra';
 import path from 'node:path';
@@ -86,15 +87,28 @@ async function createFormatterFixture(tempRoot) {
   return { formatterRoot, formatterSha };
 }
 
-function planFor({ operation, formatterSha, consumers, planPath }) {
+function planFor({
+  operation,
+  formatterSha,
+  consumers,
+  planPath,
+  registryPath = null,
+  registrySha256 = null
+}) {
   return {
     schemaVersion: 1,
     operation,
     formatterSha,
+    registryPath,
+    registrySha256,
     consumers,
     path: planPath,
     directory: path.dirname(planPath)
   };
+}
+
+function sha256(content) {
+  return crypto.createHash('sha256').update(content).digest('hex');
 }
 
 function consumerEntry({ id = 'sample-book', worktree, baseSha, allowedPaths = [] }) {
@@ -174,6 +188,47 @@ describe('ConsumerMutationBoundary plan', () => {
     assert.deepStrictEqual(
       selectConsumers(plan, { dryRun: true }).map(({ id }) => id),
       ['book-a']
+    );
+  });
+
+  test('UX profile planはregistry pathとSHA-256の対を必須にする', async () => {
+    const registrySha256 = 'c'.repeat(64);
+    const { planPath } = await writePlan({
+      operation: 'rollout-ux-profile',
+      registryPath: './legacy-ux-registry.json',
+      registrySha256
+    });
+    const plan = await loadConsumerMutationPlan(planPath, {
+      expectedOperation: 'rollout-ux-profile'
+    });
+    assert.strictEqual(
+      plan.registryPath,
+      path.join(tempDir, 'legacy-ux-registry.json')
+    );
+    assert.strictEqual(plan.registrySha256, registrySha256);
+
+    const missingHash = await writePlan({
+      operation: 'rollout-ux-profile',
+      registryPath: './legacy-ux-registry.json'
+    });
+    await assert.rejects(
+      loadConsumerMutationPlan(missingHash.planPath),
+      /registryPath and plan\.registrySha256 must be specified together/
+    );
+
+    const missingPair = await writePlan({ operation: 'rollout-ux-profile' });
+    await assert.rejects(
+      loadConsumerMutationPlan(missingPair.planPath),
+      /requires a pinned registryPath and registrySha256/
+    );
+
+    const unusedPair = await writePlan({
+      registryPath: './legacy-ux-registry.json',
+      registrySha256
+    });
+    await assert.rejects(
+      loadConsumerMutationPlan(unusedPair.planPath),
+      /must not declare an unused profile registry/
     );
   });
 
@@ -489,6 +544,38 @@ describe('ConsumerMutationBoundary transaction', () => {
     }
   });
 
+  test('managed final fileのhard linkをcallback前に拒否する', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const destination = path.join(fixture.worktree, 'index.md');
+    const outside = path.join(tempDir, 'outside-hard-link.md');
+    const original = await fs.readFile(destination);
+    await fs.writeFile(outside, original);
+    await fs.remove(destination);
+    await fs.link(outside, destination);
+    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
+
+    const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    let called = false;
+    await assert.rejects(
+      createBoundary().run({
+        plan,
+        consumer,
+        managedPaths: ['index.md'],
+        dryRun: false,
+        mutate: async () => { called = true; }
+      }),
+      /must not be hard-linked/
+    );
+    assert.strictEqual(called, false);
+    assert.deepStrictEqual(await fs.readFile(outside), original);
+  });
+
   test('operation failureとallowlist外差分をbase SHAへrollbackし、明示再開できる', async () => {
     const fixture = await createLinkedConsumer(tempDir);
     const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
@@ -708,6 +795,7 @@ describe('audited legacy operations', () => {
         }
       }
     });
+    const registryContent = await fs.readFile(registryPath);
     const { rollout } = dependencies();
     const consumer = consumerEntry({
       ...fixture,
@@ -717,7 +805,9 @@ describe('audited legacy operations', () => {
       operation: 'rollout-ux-profile',
       formatterSha: formatter.formatterSha,
       consumers: [consumer],
-      planPath: path.join(tempDir, 'plan.json')
+      planPath: path.join(tempDir, 'plan.json'),
+      registryPath,
+      registrySha256: sha256(registryContent)
     });
 
     const before = await snapshotFiles(fixture.worktree);
@@ -730,6 +820,48 @@ describe('audited legacy operations', () => {
       dryRun: true
     });
     assert.deepStrictEqual(await snapshotFiles(fixture.worktree), before);
+
+    await assert.rejects(
+      rollout.rollout({
+        plan,
+        consumers: [consumer],
+        registryPath: path.join(tempDir, 'different-registry.json'),
+        applyUxCore: false,
+        applyUxProfile: true,
+        dryRun: true
+      }),
+      /UX registry path mismatch/
+    );
+
+    const registryLink = path.join(tempDir, 'registry-link.json');
+    await fs.symlink(registryPath, registryLink, 'file');
+    await assert.rejects(
+      rollout.rollout({
+        plan: { ...plan, registryPath: registryLink },
+        consumers: [consumer],
+        registryPath: registryLink,
+        applyUxCore: false,
+        applyUxProfile: true,
+        dryRun: true
+      }),
+      /must be a regular non-symlink file/
+    );
+    await fs.remove(registryLink);
+
+    await fs.writeJson(registryPath, { books: {} });
+    await assert.rejects(
+      rollout.rollout({
+        plan,
+        consumers: [consumer],
+        registryPath,
+        applyUxCore: false,
+        applyUxProfile: true,
+        dryRun: false
+      }),
+      /UX registry SHA-256 mismatch/
+    );
+    assert.deepStrictEqual(await snapshotFiles(fixture.worktree), before);
+    await fs.writeFile(registryPath, registryContent);
 
     await rollout.rollout({
       plan,
@@ -755,13 +887,16 @@ describe('audited legacy operations', () => {
         'sample-book': { profile: 'UNSUPPORTED', modules: {} }
       }
     });
+    const registryContent = await fs.readFile(registryPath);
     const { rollout } = dependencies();
     const consumer = consumerEntry({ ...fixture, allowedPaths: ['book-config.json'] });
     const plan = planFor({
       operation: 'rollout-ux-profile',
       formatterSha: formatter.formatterSha,
       consumers: [consumer],
-      planPath: path.join(tempDir, 'plan.json')
+      planPath: path.join(tempDir, 'plan.json'),
+      registryPath,
+      registrySha256: sha256(registryContent)
     });
     const before = await snapshotFiles(fixture.worktree);
     await assert.rejects(
