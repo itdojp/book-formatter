@@ -70,6 +70,14 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
      TRACKED_FORMATTER_FILES=$((TRACKED_FORMATTER_FILES + 1))
    done < <(git ls-files -z)
    test "$TRACKED_FORMATTER_FILES" -gt 0
+   if [ -e ./node_modules ] || [ -L ./node_modules ]; then
+     test -d ./node_modules
+     test ! -L ./node_modules
+   fi
+   NESTED_NODE_MODULES=$(find . \
+     -path ./.git -prune -o -path ./node_modules -prune -o \
+     -name node_modules -print -quit)
+   test -z "$NESTED_NODE_MODULES"
    npm ci --ignore-scripts
    npm run sync-components -- \
      --book ../consumer-book \
@@ -101,6 +109,14 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
      TRACKED_FORMATTER_FILES=$((TRACKED_FORMATTER_FILES + 1))
    done < <(git ls-files -z)
    test "$TRACKED_FORMATTER_FILES" -gt 0
+   if [ -e ./node_modules ] || [ -L ./node_modules ]; then
+     test -d ./node_modules
+     test ! -L ./node_modules
+   fi
+   NESTED_NODE_MODULES=$(find . \
+     -path ./.git -prune -o -path ./node_modules -prune -o \
+     -name node_modules -print -quit)
+   test -z "$NESTED_NODE_MODULES"
    npm ci --ignore-scripts
    CONSUMER_SYNC_WORKTREE=../.worktrees/consumer-sync-pilot
    test ! -e "$CONSUMER_SYNC_WORKTREE"
@@ -178,7 +194,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    )
    ```
 
-   formatter checkoutはtracked fileを1件ずつ監査済みSHAのblobへ照合するため、managed sourceだけでなく同期script、import先、`package.json`、lockfile、metadataもsparse checkout、欠損、symlink、skip-worktreeで隠された変更があれば同期前に拒否する。照合済みlockfileから`npm ci --ignore-scripts`で依存関係を再構築した後だけ同期を実行する。symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表とdestination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。EXIT trapは成功時と途中失敗時の両方で、同期差分を持つ一時worktreeを`--force`付きで登録解除・削除する。同期結果をこの一時worktreeからcommitしない。
+   formatter checkoutはtracked fileを1件ずつ監査済みSHAのblobへ照合するため、managed sourceだけでなく同期script、import先、`package.json`、lockfile、metadataもsparse checkout、欠損、symlink、skip-worktreeで隠された変更があれば同期前に拒否する。rootの`node_modules/`は照合済みlockfileから`npm ci --ignore-scripts`で再構築し、root以外の`node_modules`は未追跡・ignored・symlinkを含めて同期前に拒否する。symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表とdestination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。EXIT trapは成功時と途中失敗時の両方で、同期差分を持つ一時worktreeを`--force`付きで登録解除・削除する。同期結果をこの一時worktreeからcommitしない。
 
 5. managed file以外、書籍本文、書籍固有設定が差分へ入っていないことを確認する。`book-config.json`は`shared.version` / `lastSync`以外の変更を許容しない。
 6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。

@@ -53,6 +53,9 @@ test "$(git -C "$FORMATTER_ROOT" rev-parse --show-toplevel)" = "$FORMATTER_ROOT"
 test "$(git -C "$FORMATTER_ROOT" rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
 test -z "$(git -C "$FORMATTER_ROOT" status --porcelain)"
 test "$(git -C "$CONSUMER_ROOT" rev-parse --show-toplevel)" = "$CONSUMER_ROOT"
+[[ "$AUDITED_CONSUMER_SHA" =~ ^[0-9a-f]{40}$ ]]
+test "$(git -C "$CONSUMER_ROOT" rev-parse --verify "$AUDITED_CONSUMER_SHA^{commit}")" = \
+  "$AUDITED_CONSUMER_SHA"
 test "$(git -C "$CONSUMER_ROOT" rev-parse HEAD)" = "$AUDITED_CONSUMER_SHA"
 test -z "$(git -C "$CONSUMER_ROOT" status --porcelain)"
 
@@ -90,6 +93,16 @@ for INDEX in "${!SOURCE_RELS[@]}"; do
   test ! -L "$FORMATTER_ROOT/$SOURCE_REL"
   test "$(git -C "$FORMATTER_ROOT" hash-object -- "$SOURCE_REL")" = \
     "$(git -C "$FORMATTER_ROOT" rev-parse "$AUDITED_FORMATTER_SHA:$SOURCE_REL")"
+  if git -C "$CONSUMER_ROOT" ls-files --error-unmatch -- "$DEST_REL" >/dev/null 2>&1; then
+    echo "destination must be absent from the consumer index: $DEST_REL" >&2
+    exit 1
+  fi
+  if git -C "$CONSUMER_ROOT" cat-file -e \
+    "$AUDITED_CONSUMER_SHA:$DEST_REL" 2>/dev/null
+  then
+    echo "destination must be absent from the audited consumer commit: $DEST_REL" >&2
+    exit 1
+  fi
   DEST_PARENT=$CONSUMER_ROOT
   DEST_REMAINDER=$DEST_REL
   while [[ "$DEST_REMAINDER" == */* ]]; do
@@ -119,7 +132,7 @@ git -C "$CONSUMER_ROOT" reset -- "${DEST_RELS[@]}"
 )
 ```
 
-`RESTORE_ITEMS`には上の有限集合から、同じ監査単位で復旧する項目を空白区切りで1件以上指定する（例: `RESTORE_ITEMS="config page-navigation navigation index"`）。全sourceをnon-symlinkのregular fileかつ監査済みformatter SHAのblob一致として照合し、全destination / symlink境界もcopy前に検査して、重複項目と既存fileを拒否する。これにより、clean statusに現れないskip-worktree変更もconsumerへcopyしない。変更が必要な既存fileは通常のconsumer task branchで別途差分を作成・レビューする。
+`RESTORE_ITEMS`には上の有限集合から、同じ監査単位で復旧する項目を空白区切りで1件以上指定する（例: `RESTORE_ITEMS="config page-navigation navigation index"`）。全sourceをnon-symlinkのregular fileかつ監査済みformatter SHAのblob一致として照合し、全destination / symlink境界もcopy前に検査して、重複項目、既存file、consumer indexまたは監査済みconsumer commitに存在するpathを拒否する。これにより、clean statusに現れないsparse checkoutやskip-worktreeの欠損を「未作成」と誤認してconsumer固有のtracked fileを置換しない。変更が必要な既存fileは通常のconsumer task branchで別途差分を作成・レビューする。
 
 `navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleを置換し、各pathをconsumerのcanonical route inventoryと照合して、不一致のpathを置換し、不要な行を削除する。`/introduction/`や`/chapters/chapter-01/`等はconsumerのcanonical routeと一致する場合があるため、それ自体をstarter markerとはみなさず、consumerのBook QA / local link checkで全destinationの存在を検証する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、概要・対象読者・到達目標・読書経路を含む全例示本文を書き換える。次の検査で既知のstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
 
