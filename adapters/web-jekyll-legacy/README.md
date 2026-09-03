@@ -103,8 +103,15 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    test "$TRACKED_FORMATTER_FILES" -gt 0
    npm ci --ignore-scripts
    CONSUMER_SYNC_WORKTREE=../.worktrees/consumer-sync-pilot
+   test ! -e "$CONSUMER_SYNC_WORKTREE"
+   test ! -L "$CONSUMER_SYNC_WORKTREE"
    git -C ../consumer-book worktree add --detach \
      "$CONSUMER_SYNC_WORKTREE" "$AUDITED_BASE_SHA"
+   cleanup_consumer_sync_worktree() {
+     git -C ../consumer-book worktree remove --force \
+       "$CONSUMER_SYNC_WORKTREE"
+   }
+   trap cleanup_consumer_sync_worktree EXIT
    test "$(git -C "$CONSUMER_SYNC_WORKTREE" rev-parse HEAD)" = \
      "$AUDITED_BASE_SHA"
    test -z "$(git -C "$CONSUMER_SYNC_WORKTREE" status --porcelain)"
@@ -171,7 +178,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    )
    ```
 
-   formatter checkoutはtracked fileを1件ずつ監査済みSHAのblobへ照合するため、managed sourceだけでなく同期script、import先、`package.json`、lockfile、metadataもsparse checkout、欠損、symlink、skip-worktreeで隠された変更があれば同期前に拒否する。照合済みlockfileから`npm ci --ignore-scripts`で依存関係を再構築した後だけ同期を実行する。symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表とdestination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。同期結果をこの一時worktreeからcommitしない。
+   formatter checkoutはtracked fileを1件ずつ監査済みSHAのblobへ照合するため、managed sourceだけでなく同期script、import先、`package.json`、lockfile、metadataもsparse checkout、欠損、symlink、skip-worktreeで隠された変更があれば同期前に拒否する。照合済みlockfileから`npm ci --ignore-scripts`で依存関係を再構築した後だけ同期を実行する。symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表とdestination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。EXIT trapは成功時と途中失敗時の両方で、同期差分を持つ一時worktreeを`--force`付きで登録解除・削除する。同期結果をこの一時worktreeからcommitしない。
 
 5. managed file以外、書籍本文、書籍固有設定が差分へ入っていないことを確認する。`book-config.json`は`shared.version` / `lastSync`以外の変更を許容しない。
 6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。

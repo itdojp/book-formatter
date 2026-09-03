@@ -121,9 +121,11 @@ git -C "$CONSUMER_ROOT" reset -- "${DEST_RELS[@]}"
 
 `RESTORE_ITEMS`には上の有限集合から、同じ監査単位で復旧する項目を空白区切りで1件以上指定する（例: `RESTORE_ITEMS="config page-navigation navigation index"`）。全sourceをnon-symlinkのregular fileかつ監査済みformatter SHAのblob一致として照合し、全destination / symlink境界もcopy前に検査して、重複項目と既存fileを拒否する。これにより、clean statusに現れないskip-worktree変更もconsumerへcopyしない。変更が必要な既存fileは通常のconsumer task branchで別途差分を作成・レビューする。
 
-`navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleと`/introduction/`、`/chapters/chapter-01/`等のpathをconsumerのcanonical route inventoryへ置換し、不要な行を削除する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、概要・対象読者・到達目標・読書経路を含む全例示本文を書き換える。次の検査で既知のstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
+`navigation`と`index`はconsumer固有値を持たないstarter skeletonであり、copyだけでは復旧完了にならない。`navigation`では例示の章・付録titleを置換し、各pathをconsumerのcanonical route inventoryと照合して、不一致のpathを置換し、不要な行を削除する。`/introduction/`や`/chapters/chapter-01/`等はconsumerのcanonical routeと一致する場合があるため、それ自体をstarter markerとはみなさず、consumerのBook QA / local link checkで全destinationの存在を検証する。`index`ではfront matterと見出しの`<BOOK TITLE>`を実際の書名へ置換し、概要・対象読者・到達目標・読書経路を含む全例示本文を書き換える。次の検査で既知のstarter markerが0件となり、consumerのBook QA / local link checkで全navigation destinationが存在することを確認するまではcommitまたは公開しない。
 
 ```bash
+(
+set -euo pipefail
 : "${CONSUMER_ROOT:?set the absolute path to the isolated consumer worktree}"
 : "${RESTORE_ITEMS:?select the same items used by the restoration step}"
 CHECKED_SKELETON_FILES=0
@@ -146,6 +148,7 @@ for RESTORE_ITEM in "${RESTORE_ITEM_LIST[@]}"; do
 done
 printf 'customized skeleton files checked: %s\n' "$CHECKED_SKELETON_FILES"
 # 続けてconsumer固有のBook QAとlocal link checkを実行する。
+)
 ```
 
 ## スキャフォールドスクリプトの利用
