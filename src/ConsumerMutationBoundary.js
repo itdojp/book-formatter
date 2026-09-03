@@ -131,12 +131,135 @@ function gitNullPaths(repoRoot, args) {
   return output.toString('utf8').split('\0').filter(Boolean);
 }
 
-function collectChangedPaths(repoRoot) {
+function trackedTreeEntries(repoRoot, revision) {
+  return gitNullPaths(repoRoot, ['ls-tree', '-r', '--full-tree', revision]).map((entry) => {
+    const separator = entry.indexOf('\t');
+    if (separator < 0) {
+      throw new ConsumerMutationError(`Unexpected Git tree entry: ${entry}`);
+    }
+    const [mode, type, expectedHash] = entry.slice(0, separator).split(' ');
+    const relativePath = normalizeManagedPath(
+      entry.slice(separator + 1),
+      'consumer tracked path'
+    );
+    if (mode === '160000' && type === 'commit') {
+      return { mode, type, expectedHash, relativePath };
+    }
+    if (type !== 'blob' || !['100644', '100755', '120000'].includes(mode)) {
+      throw new ConsumerMutationError(
+        `Unsupported consumer tree entry (${mode} ${type}): ${relativePath}`
+      );
+    }
+    return { mode, type, expectedHash, relativePath };
+  });
+}
+
+function rawTrackedDifferences(repoRoot, revision) {
+  const algorithm = gitOutput(repoRoot, ['rev-parse', '--show-object-format']).trim();
+  if (!['sha1', 'sha256'].includes(algorithm)) {
+    throw new ConsumerMutationError(`Unsupported Git object format: ${algorithm}`);
+  }
+
+  const differences = [];
+  for (const { mode, type, expectedHash, relativePath } of trackedTreeEntries(repoRoot, revision)) {
+    if (mode === '160000' && type === 'commit') {
+      continue;
+    }
+
+    const absolutePath = path.join(repoRoot, relativePath);
+    let stat;
+    try {
+      stat = fs.lstatSync(absolutePath);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        differences.push(relativePath);
+        continue;
+      }
+      throw error;
+    }
+
+    let content;
+    if (mode === '120000') {
+      if (!stat.isSymbolicLink()) {
+        differences.push(relativePath);
+        continue;
+      }
+      content = fs.readlinkSync(absolutePath, { encoding: 'buffer' });
+    } else {
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        differences.push(relativePath);
+        continue;
+      }
+      const executable = Boolean(stat.mode & 0o111);
+      if (executable !== (mode === '100755')) {
+        differences.push(relativePath);
+        continue;
+      }
+      content = fs.readFileSync(absolutePath);
+    }
+
+    const actualHash = crypto
+      .createHash(algorithm)
+      .update(Buffer.from(`blob ${content.length}\0`))
+      .update(content)
+      .digest('hex');
+    if (actualHash !== expectedHash) {
+      differences.push(relativePath);
+    }
+  }
+  return differences.sort();
+}
+
+function restoreRawTrackedFiles(repoRoot, revision, relativePaths) {
+  if (relativePaths.length === 0) return;
+  const entries = new Map(
+    trackedTreeEntries(repoRoot, revision)
+      .filter(({ type }) => type === 'blob')
+      .map((entry) => [entry.relativePath, entry])
+  );
+
+  for (const relativePath of relativePaths) {
+    const entry = entries.get(relativePath);
+    if (!entry) {
+      throw new ConsumerMutationError(`Rollback path is not a tracked blob: ${relativePath}`);
+    }
+    const absolutePath = path.join(repoRoot, relativePath);
+    const content = gitOutput(
+      repoRoot,
+      ['cat-file', 'blob', entry.expectedHash],
+      { encoding: 'buffer' }
+    );
+
+    let parent = repoRoot;
+    for (const segment of relativePath.split('/').slice(0, -1)) {
+      parent = path.join(parent, segment);
+      const parentStat = fs.lstatSync(parent);
+      if (!parentStat.isDirectory() || parentStat.isSymbolicLink()) {
+        throw new ConsumerMutationError(
+          `Rollback path has an unsafe parent directory: ${relativePath}`
+        );
+      }
+    }
+
+    // Unlink first so a hostile hard link cannot propagate writes outside the
+    // consumer. Materialize the audited blob without checkout/smudge filters.
+    fs.rmSync(absolutePath, { force: true, recursive: true });
+    if (entry.mode === '120000') {
+      fs.symlinkSync(content, absolutePath);
+    } else {
+      fs.writeFileSync(absolutePath, content);
+      fs.chmodSync(absolutePath, entry.mode === '100755' ? 0o755 : 0o644);
+    }
+  }
+}
+
+function collectChangedPaths(repoRoot, revision = 'HEAD') {
   return [...new Set([
     ...gitNullPaths(repoRoot, ['diff', '--name-only']),
     ...gitNullPaths(repoRoot, ['diff', '--cached', '--name-only']),
     ...gitNullPaths(repoRoot, ['ls-files', '--others', '--exclude-standard']),
-    ...gitNullPaths(repoRoot, ['ls-files', '--others', '--ignored', '--exclude-standard'])
+    ...gitNullPaths(repoRoot, ['ls-files', '--others', '--ignored', '--exclude-standard']),
+    ...rawTrackedDifferences(repoRoot, revision)
   ].map((entry) => normalizeManagedPath(entry, 'changed path')))].sort();
 }
 
@@ -540,6 +663,12 @@ class ConsumerMutationBoundary {
         `Consumer worktree must be clean and contain no ignored residue before mutation: ${consumer.id}`
       );
     }
+    const rawDifferences = rawTrackedDifferences(consumerRoot, consumer.baseSha);
+    if (rawDifferences.length > 0) {
+      throw new ConsumerMutationError(
+        `Consumer tracked bytes must match ${consumer.baseSha}: ${rawDifferences.join(', ')}`
+      );
+    }
     return consumerRoot;
   }
 
@@ -667,6 +796,15 @@ class ConsumerMutationBoundary {
   rollback(consumerRoot, baseSha) {
     gitOutput(consumerRoot, ['reset', '--hard', baseSha]);
     gitOutput(consumerRoot, ['clean', '-fdx', '--']);
+    restoreRawTrackedFiles(
+      consumerRoot,
+      baseSha,
+      rawTrackedDifferences(consumerRoot, baseSha)
+    );
+    // Refresh index stat data through the configured clean filters. The
+    // subsequent status/base/raw checks reject any filter that would stage a
+    // value other than the audited tree.
+    gitOutput(consumerRoot, ['add', '-u', '--']);
     assertNoReplacementRefs(consumerRoot, 'Consumer rollback repository');
     assertNoIndexFlags(consumerRoot, 'Consumer rollback repository');
     const head = gitOutput(consumerRoot, ['rev-parse', 'HEAD']).trim();
@@ -675,8 +813,18 @@ class ConsumerMutationBoundary {
       consumerRoot,
       ['ls-files', '--others', '--ignored', '--exclude-standard']
     );
-    if (head !== baseSha || status !== '' || ignored.length > 0) {
-      throw new ConsumerMutationError(`Rollback verification failed for ${consumerRoot}`);
+    const rawDifferences = rawTrackedDifferences(consumerRoot, baseSha);
+    if (
+      head !== baseSha
+      || status !== ''
+      || ignored.length > 0
+      || rawDifferences.length > 0
+    ) {
+      throw new ConsumerMutationError(
+        `Rollback verification failed for ${consumerRoot}`
+        + ` (head=${head}, status=${JSON.stringify(status)},`
+        + ` ignored=${ignored.join(',')}, raw=${rawDifferences.join(',')})`
+      );
     }
   }
 
@@ -699,7 +847,7 @@ class ConsumerMutationBoundary {
       await mutate(context);
       assertNoReplacementRefs(context.consumerRoot, `Consumer ${consumer.id}`);
       assertNoIndexFlags(context.consumerRoot, `Consumer ${consumer.id}`);
-      const changedPaths = collectChangedPaths(context.consumerRoot);
+      const changedPaths = collectChangedPaths(context.consumerRoot, consumer.baseSha);
       const unexpected = changedPaths.filter((entry) => !consumer.allowedPaths.includes(entry));
       if (unexpected.length > 0) {
         throw new ConsumerMutationError(

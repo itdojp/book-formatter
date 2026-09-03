@@ -396,6 +396,50 @@ describe('ConsumerMutationBoundary transaction', () => {
       ''
     );
 
+    const consumerAttributes = path.resolve(
+      fixture.worktree,
+      git(fixture.worktree, 'rev-parse', '--git-path', 'info/attributes')
+    );
+    const normalizedConfigPath = path.join(tempDir, 'normalized-book-config.json');
+    const originalConfig = await fs.readFile(path.join(fixture.worktree, 'book-config.json'));
+    await fs.ensureDir(path.dirname(consumerAttributes));
+    await fs.writeFile(consumerAttributes, 'book-config.json filter=normalize-config\n');
+    await fs.writeFile(normalizedConfigPath, originalConfig);
+    git(
+      fixture.worktree,
+      'config',
+      'filter.normalize-config.clean',
+      `cat >/dev/null; cat ${normalizedConfigPath}`
+    );
+    git(fixture.worktree, 'config', 'filter.normalize-config.required', 'true');
+    await fs.writeFile(
+      path.join(fixture.worktree, 'book-config.json'),
+      '{"title":"working bytes hidden by clean filter"}\n'
+    );
+    git(fixture.worktree, 'add', 'book-config.json');
+    assert.strictEqual(
+      git(fixture.worktree, 'status', '--porcelain', '--untracked-files=no'),
+      ''
+    );
+    await assert.rejects(
+      createBoundary().preflight({
+        plan: basePlan,
+        consumer,
+        managedPaths: ['index.md'],
+        dryRun: false
+      }),
+      /Consumer tracked bytes must match/
+    );
+    git(fixture.worktree, 'config', '--unset', 'filter.normalize-config.required');
+    git(fixture.worktree, 'config', '--unset', 'filter.normalize-config.clean');
+    await fs.remove(consumerAttributes);
+    await fs.writeFile(path.join(fixture.worktree, 'book-config.json'), originalConfig);
+    git(fixture.worktree, 'add', 'book-config.json');
+    assert.strictEqual(
+      git(fixture.worktree, 'status', '--porcelain', '--untracked-files=no'),
+      ''
+    );
+
     await fs.writeFile(path.join(fixture.worktree, 'dirty.txt'), 'dirty\n');
     await assert.rejects(
       createBoundary().preflight({
@@ -620,6 +664,67 @@ describe('ConsumerMutationBoundary transaction', () => {
     );
     assert.strictEqual(called, false);
     assert.deepStrictEqual(await fs.readFile(outside), original);
+  });
+
+  test('consumer clean filterで隠したallowlist外raw差分を検出しrollbackする', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const consumer = consumerEntry({
+      ...fixture,
+      allowedPaths: ['book-config.json']
+    });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    const attributes = path.resolve(
+      fixture.worktree,
+      git(fixture.worktree, 'rev-parse', '--git-path', 'info/attributes')
+    );
+    const normalizedIndexPath = path.join(tempDir, 'normalized-index.md');
+    const indexPath = path.join(fixture.worktree, 'index.md');
+    const original = await fs.readFile(indexPath);
+
+    await fs.ensureDir(path.dirname(attributes));
+    await fs.writeFile(attributes, '/index.md filter=normalize-index\n');
+    await fs.writeFile(normalizedIndexPath, original);
+    git(
+      fixture.worktree,
+      'config',
+      'filter.normalize-index.clean',
+      `cat >/dev/null; cat ${normalizedIndexPath}`
+    );
+    git(fixture.worktree, 'config', 'filter.normalize-index.required', 'true');
+    assert.strictEqual(
+      git(fixture.worktree, 'status', '--porcelain=v1', '--untracked-files=all'),
+      ''
+    );
+    assert.strictEqual(
+      git(fixture.worktree, 'ls-files', '--others', '--ignored', '--exclude-standard'),
+      ''
+    );
+
+    await assert.rejects(
+      createBoundary().run({
+        plan,
+        consumer,
+        managedPaths: ['book-config.json'],
+        dryRun: false,
+        mutate: async ({ consumerRoot }) => {
+          await fs.writeFile(path.join(consumerRoot, 'index.md'), '# Hidden mutation\n');
+          git(consumerRoot, 'add', 'index.md');
+          assert.strictEqual(
+            git(consumerRoot, 'status', '--porcelain', '--untracked-files=no'),
+            ''
+          );
+        }
+      }),
+      /outside allowedPaths: index\.md/
+    );
+
+    assert.deepStrictEqual(await fs.readFile(indexPath), original);
+    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
   });
 
   test('operation failureとallowlist外差分をbase SHAへrollbackし、明示再開できる', async () => {
