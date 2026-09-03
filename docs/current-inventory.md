@@ -81,11 +81,11 @@
 - `fix_root_links.sh`
 - `rollout_codeowners.sh`
 - `rollout_fix_config_yaml.sh`
-- `rollout_unification.sh`
+- `rollout_unification.sh`（consumer write境界をruntimeで強制する#129 / #130完了までdry-runを含め利用停止）
 - `scaffold-new-book.sh`
 - `lib.sh`（上記shell scriptの共通関数）
 
-これらはJekyll consumerまたは一括rolloutに依存する。#96でadapter境界が成立するまで `active`、その後の要否は#102で再監査する。
+これらはJekyll consumerまたは一括rolloutに依存する。fileは参照関係を持つためinventory上は`active`とし、各scriptの利用可否は個別の安全契約に従う。`rollout_unification.sh`は#129 / #130完了まで実行せず、その後の要否は#102で再監査する。
 
 ### archive候補
 
@@ -111,7 +111,15 @@
 - `shared/includes/sidebar-nav.html` とstarter copyは同一。一方 `docs/_includes/sidebar-nav.html` は異なる。
 - `docs/assets/js/safe-main.js` とstarter copyは同一だが、`shared/assets/js/safe-main.js` は異なる。
 
-`docs/includes/page-navigation.html` は `docs/README-unified-setup.md` が手動copy元として明示するためactiveである。ただしshared/starterとの内容差があり、正本とは断定しない。他の `docs/_includes/` と `docs/assets/js/safe-main.js` は現時点で `unknown` copyとして保持する。いずれも#96でJekyll adapterの正本と移行経路を固定してから移動を判断する。
+監査基準点 `main@cff9fcf8bae31140f07b358d314fc64173cb7013` では、`docs/includes/page-navigation.html` は `docs/README-unified-setup.md` が手動copy元として明示していたためactiveである。ただしshared/starterとの内容差があり、正本とは断定しない。他の `docs/_includes/` と `docs/assets/js/safe-main.js` は同基準点では `unknown` copyである。
+
+### Issue #96による基準点後の追補（2026-09-03）
+
+この追補だけがIssue #96適用後の運用分類を示し、上記の数量、test結果、その他の分類は `main@cff9fcf8bae31140f07b358d314fc64173cb7013` の監査記録として変更しない。
+
+- `shared/includes/page-navigation.html` と `shared/includes/sidebar-nav.html` を既存legacy書籍のmanaged復旧元とする。
+- `docs/includes/page-navigation.html` はactiveな復旧元ではなくlegacy snapshotとなる。外部の直接参照は未確認であるため#96では移動・削除せず、#103の参照監査後に#102でarchive可否を判断する。
+- `docs/_includes/` と `docs/assets/js/safe-main.js` は引き続きownership未解決のsnapshotとして保持する。
 
 ## `tests/` と品質gate
 
@@ -149,7 +157,7 @@ Node.js `v22.22.2` / npm `10.9.7` で4ファイルをまとめて3回実行し�
 | `examples/redirect-from-sample.md` | legacy | Jekyll redirectの例。#96へ移管候補 |
 | `README-unified-setup.md`, `TROUBLESHOOTING.md`, `book-creation-guide.md`, `book-format-unification-guide.md`, `guides/mobile-responsive.md`, `prev-next-navigation-guide.md` | legacy | Jekyll v3 / GitHub Pages / rolloutの利用手順。現行consumerには意味があるが、マルチチャネル標準の正本ではない |
 | `JS-ERROR-HANDLING.md`, `PERFORMANCE_GUIDE.md` | legacy | Jekyll shared JS/layoutの運用説明。#96配下でコードとの同期が必要 |
-| `includes/page-navigation.html` | active | `README-unified-setup.md` が新規書籍への手動copy元として明示。内容はshared/starterと異なるため#96で移行先と正本を固定するまで保持 |
+| `includes/page-navigation.html` | active | 監査基準点では`README-unified-setup.md`が手動copy元として明示。Issue #96適用後の分類は前掲の「基準点後の追補」を参照 |
 | `_includes/`, `assets/js/safe-main.js` | unknown | shared/starterと重複・差分があり、現行consumerまたは正本を確定できない。移動禁止 |
 | `IMPROVEMENT_PROPOSALS.md` | legacy | 2025年時点の提案と実装例を混在するが、現行READMEとPerformance Guideから参照される。#103で参照先と代替を更新するまで保持 |
 | `mobile-responsive-implementation-guide.md` | legacy | 現行 `shared/assets/css/mobile-responsive.css` が由来を明記し、統一ガイドからも参照されるJekyll responsive実装資料。#115/#116と#96で更新・移管し、代替成立後にのみarchiveを再判断 |

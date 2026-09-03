@@ -18,11 +18,14 @@ mdBook projectの`src/`配下へstagingするため、mdBookの`{path}`だけで
 正本pathへ決定的に戻せないためである。repository iconは正規化済みroot URLを提供する。
 
 ```bash
+export BOOK_ROOT=examples/standard-book
+export BOOK_EDITION=free
+export BOOK_OUTPUT_ROOT=dist
 npm start build -- \
-  --book examples/standard-book \
+  --book "$BOOK_ROOT" \
   --target web-mdbook \
-  --edition free \
-  --out-dir dist
+  --edition "$BOOK_EDITION" \
+  --out-dir "$BOOK_OUTPUT_ROOT"
 ```
 
 `--out-dir`は#94で定義したoutput rootです。上のcommandは`dist/web-mdbook/`へ次を生成します。
@@ -50,16 +53,109 @@ mdBookの`{{#include ...}}`、`{{#rustdoc_include ...}}`、file-backed `{{#playg
 
 ## Buildとレスポンシブ検証
 
-mdBook `0.5.4`を使用します。CIは公式releaseのLinux x86_64 archiveをSHA-256 `3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7`で検証してから実行します。
+mdBook `0.5.4`を使用します。CIとLinux x86_64のローカル検証では、公式release archiveを次の固定URLから取得し、展開前にSHA-256を検証します。別OS / architectureのarchiveはこのdigestの対象ではないため、同じ値を流用しません。
 
 ```bash
-mdbook build dist/web-mdbook
-npm run check-mdbook-responsive -- --book dist/web-mdbook
+(
+set -euo pipefail
+: "${AUDITED_FORMATTER_SHA:?set the audited 40-character formatter SHA}"
+: "${BOOK_ROOT:?set the same book directory used by adapter build}"
+: "${BOOK_EDITION:?set the same edition ID used by adapter build}"
+: "${BOOK_OUTPUT_ROOT:?set the same output root used by adapter build}"
+[[ "$AUDITED_FORMATTER_SHA" =~ ^[0-9a-f]{40}$ ]]
+test "$(git rev-parse --show-toplevel)" = "$PWD"
+test "$(git rev-parse --verify "$AUDITED_FORMATTER_SHA^{commit}")" = \
+  "$AUDITED_FORMATTER_SHA"
+test "$(git rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
+test -z "$(git status --porcelain)"
+TRACKED_FORMATTER_FILES=0
+while IFS= read -r -d '' FORMATTER_REL; do
+  test -f "$FORMATTER_REL"
+  test ! -L "$FORMATTER_REL"
+  test "$(git hash-object -- "$FORMATTER_REL")" = \
+    "$(git rev-parse "$AUDITED_FORMATTER_SHA:$FORMATTER_REL")"
+  TRACKED_FORMATTER_FILES=$((TRACKED_FORMATTER_FILES + 1))
+done < <(git ls-files -z)
+test "$TRACKED_FORMATTER_FILES" -gt 0
+if [ -e ./node_modules ] || [ -L ./node_modules ]; then
+  test -d ./node_modules
+  test ! -L ./node_modules
+fi
+NESTED_NODE_MODULES=$(find . \
+  -path ./.git -prune -o -path ./node_modules -prune -o \
+  -name node_modules -print -quit)
+test -z "$NESTED_NODE_MODULES"
+npm ci --ignore-scripts
+MDBOOK_PROJECT_DIR="$BOOK_OUTPUT_ROOT/web-mdbook"
+MDBOOK_VERSION=0.5.4
+MDBOOK_TARGET=x86_64-unknown-linux-gnu
+MDBOOK_ARCHIVE="mdbook-v${MDBOOK_VERSION}-${MDBOOK_TARGET}.tar.gz"
+MDBOOK_URL="https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/${MDBOOK_ARCHIVE}"
+MDBOOK_SHA256=3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
+MDBOOK_TOOL_ROOT="$PWD/.work/tools"
+
+test -f "$BOOK_ROOT/book.yaml"
+npm run validate:standard-book -- "$BOOK_ROOT"
+npm start build -- \
+  --book "$BOOK_ROOT" \
+  --target web-mdbook \
+  --edition "$BOOK_EDITION" \
+  --out-dir "$BOOK_OUTPUT_ROOT"
+test -f "$MDBOOK_PROJECT_DIR/book.toml"
+test -f "$MDBOOK_PROJECT_DIR/manifest.json"
+test ! -L "$PWD/.work"
+test ! -L "$MDBOOK_TOOL_ROOT"
+mkdir -p "$MDBOOK_TOOL_ROOT"
+test -d "$MDBOOK_TOOL_ROOT"
+test ! -L "$MDBOOK_TOOL_ROOT"
+MDBOOK_TOOL_DIR=$(mktemp -d \
+  "$MDBOOK_TOOL_ROOT/mdbook-v${MDBOOK_VERSION}-${MDBOOK_TARGET}.XXXXXXXX")
+cleanup_mdbook() {
+  test -n "${MDBOOK_TOOL_DIR:-}" && rm -rf -- "$MDBOOK_TOOL_DIR"
+}
+trap cleanup_mdbook EXIT
+curl --fail --location --proto '=https' --tlsv1.2 \
+  --output "$MDBOOK_TOOL_DIR/$MDBOOK_ARCHIVE" \
+  "$MDBOOK_URL"
+(
+  cd "$MDBOOK_TOOL_DIR"
+  printf '%s  %s\n' "$MDBOOK_SHA256" "$MDBOOK_ARCHIVE" | \
+    sha256sum --check --strict
+  test "$(tar -tzf "$MDBOOK_ARCHIVE")" = mdbook
+  tar -xzf "$MDBOOK_ARCHIVE"
+)
+MDBOOK_BIN="$MDBOOK_TOOL_DIR/mdbook"
+test -x "$MDBOOK_BIN"
+test "$("$MDBOOK_BIN" --version)" = "mdbook v${MDBOOK_VERSION}"
+"$MDBOOK_BIN" build "$MDBOOK_PROJECT_DIR"
+
+# 生成時のsource snapshotからartifact検査時までに入力が変わっていないことを、
+# 同じ入力からの決定的なadapter再生成で確認する。rootのmdBook build出力は
+# 一時退避し、同名のsource subdirectoryを除外せずproject全体を比較する。
+MDBOOK_ARTIFACT_DIR="$MDBOOK_PROJECT_DIR/book"
+MDBOOK_ARTIFACT_HOLD="$MDBOOK_TOOL_DIR/book-artifact"
+test -d "$MDBOOK_ARTIFACT_DIR"
+test ! -e "$MDBOOK_ARTIFACT_HOLD"
+mv "$MDBOOK_ARTIFACT_DIR" "$MDBOOK_ARTIFACT_HOLD"
+RECHECK_OUTPUT_ROOT="$MDBOOK_TOOL_DIR/source-recheck"
+npm start build -- \
+  --book "$BOOK_ROOT" \
+  --target web-mdbook \
+  --edition "$BOOK_EDITION" \
+  --out-dir "$RECHECK_OUTPUT_ROOT"
+diff --recursive --brief -- \
+  "$MDBOOK_PROJECT_DIR" \
+  "$RECHECK_OUTPUT_ROOT/web-mdbook"
+mv "$MDBOOK_ARTIFACT_HOLD" "$MDBOOK_ARTIFACT_DIR"
+npm run check-mdbook-responsive -- --book "$MDBOOK_PROJECT_DIR"
 npm run check-visibility -- \
-  examples/standard-book \
-  --edition free \
-  --artifact dist/web-mdbook/book
+  "$BOOK_ROOT" \
+  --edition "$BOOK_EDITION" \
+  --artifact "$MDBOOK_PROJECT_DIR/book"
+)
 ```
+
+`AUDITED_FORMATTER_SHA`にはreview済みの40桁commit SHAを指定し、blockは最初のnpm commandより前にHEADと全tracked fileをそのcommitのblobへ照合する。root依存は照合済みlockfileから再構築し、root以外の`node_modules`は拒否する。`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`はadapter project生成時に設定した同じ値を維持する。このself-contained blockは既存projectを信用せず同じ入力からadapter projectを再生成し、mdBook build後にはroot直下のbuild出力`book/`だけを一時退避する。別の一時出力へ決定的に再生成したproject/manifestとの全体比較では、source側の同名directoryを除外しない。その後、artifactを戻し、同じsource/editionからprotected fragmentを抽出して検査するため、別のsample書籍や生成後に変更されたsourceでvisibility検査を代用しない。URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理する。各buildはworkspace内の新しい一時directoryへarchiveを取得・検証・展開し、同じfail-fast block内でbuildと公開前検査まで完了してからdirectoryを削除する。展開済みbinaryや既存tool directoryを再利用せず、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。
 
 responsive checkerは生成project/HTML/CSS契約に加え、利用可能なChromeで全generated content pageに対し、次のviewportのsidebar/content非重複とhidden状態のbody overflowを検証します。mdBook 0.5.4のsidebar support pageであるroot `toc.html`だけを有限に除外し、他のHTMLでresponsive DOM IDが欠けた場合はfail closedです。
 

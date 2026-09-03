@@ -4,13 +4,15 @@
 
 ## 概要
 
-Book Formatterは、JSON設定ファイルから書籍プロジェクトを自動生成する設定駆動型のツールです。テンプレート方式ではなく設定駆動型により、柔軟性と保守性を両立し、新しい書籍の作成と既存書籍の管理を効率化します。
+Book Formatterは、標準`book.yaml`を起点とするマルチチャネルadapterと、既存`book-config.json` / Jekyll書籍の互換保守機能を提供します。新規Web書籍は標準formatと`web-mdbook`を使用し、従来のJekyll / GitHub Pages生成・同期経路は`web-jekyll-legacy`として維持します。
+
+出力先の選択、実装済みadapter、legacy境界は[出力target方針](docs/output-targets.md)を参照してください。
 
 ## 特徴
 
-- ⚡ **高速生成**: 新しい書籍を5分以内で作成
+- ⚡ **高速生成**: 標準Web書籍の検証・出力と既存legacy書籍の保守を自動化
 - 🔧 **設定駆動**: JSON/YAML設定ファイルでカスタマイズ
-- 📝 **テンプレート内蔵**: Markdown、Jekyll、GitHub Pages対応
+- 📝 **マルチチャネル基盤**: 標準Markdown / mdBookと既存Jekyll / GitHub Pages互換
 - 🛡️ **バリデーション**: 設定ファイルの自動検証
 - 🔄 **自動更新**: 既存書籍の構造を自動更新
 - 🧪 **テスト対応**: 充実したテストスイート
@@ -32,17 +34,40 @@ chmod +x src/index.js
 
 ## 使用方法
 
-### 1. サンプル設定ファイルの作成
+### 新規標準Web書籍
+
+新規Web書籍は[`examples/standard-book`](examples/standard-book)を基準に`book.yaml`、標準Markdown、editionを定義し、`web-mdbook`へ出力します。
 
 ```bash
-# サンプル設定ファイルを生成
+export BOOK_ROOT=./my-book
+export BOOK_EDITION=free
+export BOOK_OUTPUT_ROOT=dist
+(
+set -euo pipefail
+npm run validate:standard-book -- "$BOOK_ROOT"
+npm start build -- \
+  --book "$BOOK_ROOT" \
+  --target web-mdbook \
+  --edition "$BOOK_EDITION" \
+  --out-dir "$BOOK_OUTPUT_ROOT"
+)
+```
+
+adapter project生成後は、同じ変数を維持して[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained blockを実行します。このblockはprojectを同じsource snapshotから再生成し、公式binaryの固定URL・SHA-256検証、fresh directoryへの展開、mdBook `0.5.4` gate、決定的なsource再照合、responsive検査、生成後artifact visibility検査を1つのfail-fast実行単位で完了します。既存projectやbinaryは再利用しません。
+
+以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。`update-book`、`sync-all-books`、`rollout-ux --apply-ux-profile`の非dry-runは、consumer write境界をruntimeで強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了まで利用しません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
+
+### 1. 既存legacy書籍用サンプル設定ファイルの確認
+
+```bash
+# 既存book-config.jsonの再構築に使うサンプル設定ファイルを生成
 npm start init
 
 # または特定のパスに生成
 npm start init --output ./my-book-config.json
 ```
 
-### 2. 設定ファイルの編集
+### 2. 既存legacy書籍用設定ファイルの編集
 
 生成されたサンプル設定ファイルを編集して、書籍の情報を設定します：
 
@@ -94,27 +119,27 @@ npm start validate-config --verbose
 npm start validate-config --config ./path/to/config.json
 ```
 
-### 4. 新しい書籍の生成
+### 4. 既存Jekyll書籍の再構築・保守（legacy）
 
-**⚡ 実証済み効率的手順**: 7つのフェーズを通じて、新しい書籍を約4.5時間で完成させることができます。
+この手順は既存Jekyll / GitHub Pages形式を生成・保守する場合のlegacy手順です。新規標準Web書籍の推奨経路ではありません。
 
 #### 🎯 7つのフェーズ概要
 
-1. **Phase 1: プロジェクト初期化** (30分)
-   - book-formatter を使用した初期化
-   - 書籍設定ファイルの作成
+1. **Phase 1: 既存consumerの状態確認** (30分)
+   - 現行構成とdefault branch SHAの監査
+   - 既存`book-config.json`の検証または再構築
 
-2. **Phase 2: GitHub リポジトリ設定** (30分)
-   - GitHub リポジトリの作成
-   - GitHub Pages 設定（Deploy from a branch）
+2. **Phase 2: 既存リポジトリ状態の確認** (30分)
+   - 監査済みbase SHAから隔離worktreeを作成
+   - 現在のGitHub Pages方式を読み取り専用で確認
 
-3. **Phase 3: Jekyll テンプレート設定** (60分)
-   - 必須ファイルの確認と設定
-   - ナビゲーションテンプレートの設定
+3. **Phase 3: Jekyll template差分の確認** (60分)
+   - 必須fileの有無とconsumer固有変更を確認
+   - navigation templateの差分を監査
 
-4. **Phase 4: 章ファイルの作成** (章数 × 15分)
-   - 各章ファイルの構造設定
-   - front matter の設定
+4. **Phase 4: 既存章ファイルの確認** (章数 × 15分)
+   - 既存章fileの構造を保持
+   - front matterの差分を監査
 
 5. **Phase 5: リンク設定の統一** (30分)
    - index.md のリンク形式統一
@@ -132,62 +157,42 @@ npm start validate-config --config ./path/to/config.json
 
 #### 📋 詳細な手順書
 
-**全手順の詳細は以下の新規書籍作成手順書を参照してください：**
+**既存Jekyll書籍の再構築・保守手順は次を参照してください：**
 
-📚 **[新規書籍作成手順書](./docs/book-creation-guide.md)**
+📚 **[Legacy Jekyll Setup Guide](./docs/README-unified-setup.md)**
 
-この手順書には、各フェーズの詳細なコマンド、設定例、よくある問題と解決策が含まれています。
-
-#### 🚀 クイックスタート
-
-```bash
-# 基本的な使用方法
-npm start create-book
-
-# オプションを指定
-npm start create-book --config ./book-config.json --output ./my-book
-
-# 既存ディレクトリを上書き
-npm start create-book --force
-```
+新規Web書籍ではこのlegacy手順や`create-book`を使用せず、前述の`book.yaml` + `web-mdbook`手順を使用します。
 
 ### 5. 既存書籍の更新
 
 ```bash
-# 書籍の更新
-npm start update-book
-
-# 特定のパスを指定
-npm start update-book --config ./book-config.json --book ./existing-book
-
-# バックアップを作成しない
-npm start update-book --no-backup
+# interfaceの確認だけを行う
+npm start update-book -- --help
 ```
+
+`update-book`にはdry-runがなく、既存consumerへ直接書き込む。固定SHA、隔離worktree、destination symlink検査、変更allowlistをruntimeで強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了までは実行せず、必要な変更はconsumerごとのtask branchで作成・レビューする。
 
 ### 6. 複数書籍の一括同期
 
 ```bash
-# すべての書籍を同期
-npm start sync-all-books
-
-# 特定のディレクトリを指定
-npm start sync-all-books --directory ./books
-
-# 実行せず予定を表示
-npm start sync-all-books --dry-run
+# 実行せず対象候補だけを表示
+npm start sync-all-books -- --directory ./books --dry-run
 ```
+
+`sync-all-books`の非dry-runは、検出した複数consumerへ`update-book`相当の変更を直接適用する。対象の有限化、隔離、preflight、途中失敗、consumer別reviewをruntimeで強制する#130完了までは実行しない。dry-runの表示も変更差分または適用安全性の証拠には使用しない。
 
 ### 7. UXロールアウト（既存書籍向け）
 
 ```bash
-# レジストリに基づき ux.profile/modules を付与
-npm start rollout-ux --registry ./book-registry.json --apply-ux-profile
+# profile差分の予定だけを確認
+npm start rollout-ux -- --registry ./book-registry.json \
+  --apply-ux-profile --dry-run
 
 # 共通コアのみを適用（layouts/includes/assets）
-npm start rollout-ux --apply-ux-core --dry-run
+npm start rollout-ux -- --apply-ux-core --dry-run
 
-# 併用（レジストリは必須）
-npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-profile
+# 共通コアのwriteはdestination symlink検査をruntimeへ追加する#129完了まで停止
+# 必要な更新はweb-jekyll-legacy contractの隔離・preflight手順で監査
 ```
 
 補足:
@@ -196,6 +201,9 @@ npm start rollout-ux --registry ./book-registry.json --apply-ux-core --apply-ux-
 - このcommandの `book-registry.json` は `profile` / `modules` を持つ
   legacy UX registryです。portfolio-level registry version 1との関係は
   [docs/book-registry.md](docs/book-registry.md) を参照してください。
+- `--apply-ux-profile`の非dry-runは、config write境界を強制する#130完了まで実行しないでください。
+- `--apply-ux-core`の非dry-run、および`Book Sync` workflowのpreview / writeは、
+  [#129](https://github.com/itdojp/book-formatter/issues/129)完了まで実行しないでください。
 
 ## 品質チェック（ローカル）
 
@@ -224,10 +232,11 @@ npm start build -- --book examples/standard-book \
   --target web-mdbook --edition free --dry-run
 
 # mdBook projectをdist/web-mdbookへ生成してbuild/viewportを検証
-npm start build -- --book examples/standard-book \
-  --target web-mdbook --edition free --out-dir dist
-mdbook build dist/web-mdbook
-npm run check-mdbook-responsive -- --book dist/web-mdbook
+export BOOK_ROOT=examples/standard-book
+export BOOK_EDITION=free
+export BOOK_OUTPUT_ROOT=dist
+npm start build -- --book "$BOOK_ROOT" \
+  --target web-mdbook --edition "$BOOK_EDITION" --out-dir "$BOOK_OUTPUT_ROOT"
 
 # 文章校正（textlint + PRH辞書）
 npm run check-textlint -- <book-dir> --output textlint-report.json
@@ -236,7 +245,9 @@ npm run check-textlint -- <book-dir> --output textlint-report.json
 npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 ```
 
-標準書籍metadataは[標準書籍フォーマット](docs/standard-book-format.md)、有償本文と内部本文の分離は[Edition visibilityと有償本文の混入防止](docs/paid-editions.md)を参照してください。
+project生成後のmdBook build / viewport / artifact visibility検査は、[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained fail-fast blockだけを正本として実行します。このblockが同じ`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`からprojectを再生成・再照合するため、既存projectや別の書籍/editionをvisibility検査へ渡しません。
+
+標準書籍metadataは[標準書籍フォーマット](docs/standard-book-format.md)、有償本文と内部本文の分離は[Edition visibilityと有償本文の混入防止](docs/paid-editions.md)、新規出力とlegacy経路の選択は[出力target方針](docs/output-targets.md)を参照してください。
 出力先adapterの責務、有限target、manifest version 1は[Adapter開発契約](adapters/README.md)を参照してください。
 
 ## メンテナンススクリプト（運用者向け）
@@ -248,7 +259,7 @@ npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 主なスクリプト:
 - `scripts/check_pages.sh`: 公開GitHub Pagesのトップ/共通アセット/ナビ由来ページのHTTPステータスを点検
 - `scripts/add_nav_check_workflow.sh`: `Nav + Pages Link Check` ワークフローを各書籍へ追加（ローカルclone前提）
-- `scripts/rollout_unification.sh`: shared components（layouts/includes/assets）を各書籍へ同期（ローカルclone前提）
+- `scripts/rollout_unification.sh`: shared components（layouts/includes/assets）の旧一括同期script。consumer write境界を強制する[#129](https://github.com/itdojp/book-formatter/issues/129) / [#130](https://github.com/itdojp/book-formatter/issues/130)完了まではdry-runを含め利用しない
 - `scripts/rollout_codeowners.sh`: `.book-formatter/**` のCODEOWNERSを各書籍へ追加（ローカルclone前提）
 - `scripts/rollout_fix_config_yaml.sh`: `docs/_config.yml` の `url/baseurl/repository` を監査/正規化（監査がデフォルト）
 - `scripts/fix_review_issues.sh`: PRレビュー本文/インラインコメントをJSONとして収集し退避（API 429耐性あり）
@@ -263,11 +274,11 @@ npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 | コマンド | 説明 | オプション |
 |---------|------|----------|
 | `init` | サンプル設定ファイルを作成 | `--output`, `--force` |
-| `create-book` | 新しい書籍を作成 | `--config`, `--output`, `--force` |
-| `update-book` | 既存の書籍を更新 | `--config`, `--book`, `--no-backup` |
+| `create-book` | legacy `book-config.json`からJekyll構成を生成（既存書籍の再構築用途） | `--config`, `--output`, `--force` |
+| `update-book` | 既存書籍の更新interface。writeは#130完了まで停止 | `--config`, `--book`, `--no-backup` |
 | `validate-config` | 設定ファイルをバリデーション | `--config`, `--verbose` |
-| `sync-all-books` | 複数の書籍を一括同期 | `--directory`, `--pattern`, `--dry-run` |
-| `rollout-ux` | 既存書籍へのUX段階適用 | `--directory`, `--pattern`, `--registry`, `--apply-ux-core`, `--apply-ux-profile`, `--dry-run`, `--no-backup` |
+| `sync-all-books` | 複数書籍の候補列挙。現在は`--dry-run`限定 | `--directory`, `--pattern`, `--dry-run` |
+| `rollout-ux` | UX差分候補の確認。現在は`--dry-run`限定 | `--directory`, `--pattern`, `--registry`, `--apply-ux-core`, `--apply-ux-profile`, `--dry-run`, `--no-backup` |
 | `build` | 標準書籍をadapter向けに検証しmanifestを生成 | `--book`, `--target`, `--edition`, `--out-dir`, `--dry-run` |
 
 ## 設定ファイル仕様
@@ -328,7 +339,9 @@ npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 
 Book Formatterの改善提案については[IMPROVEMENT_PROPOSALS.md](./docs/IMPROVEMENT_PROPOSALS.md)を参照してください。
 
-## 生成されるファイル構造
+## legacy commandで生成されるファイル構造
+
+次は`create-book` / `update-book`互換commandのJekyll構造であり、新規標準Web書籍の構造ではありません。
 
 ```
 my-book/
@@ -378,14 +391,14 @@ npm run lint
 # 開発モードで実行（ファイル監視）
 npm run dev
 
-# デバッグ情報を有効にして実行
+# legacy create-book互換commandのデバッグ情報を有効にして実行
 DEBUG=book-formatter:* npm start create-book
 ```
 
 ## 対応形式
 
-- **入力**: JSON、YAML設定ファイル
-- **出力**: Markdown、HTML（Jekyll）、GitHub Pages
+- **入力**: 標準`book.yaml`とlegacy JSON / YAML設定ファイル
+- **出力**: 標準Markdown / mdBook project、legacy Markdown / Jekyll HTML
 - **将来対応予定**: PDF、EPUB
 
 ## システム要件
@@ -418,7 +431,7 @@ DEBUG=book-formatter:* npm start create-book
 ### ログの確認
 
 ```bash
-# 詳細ログを有効にして実行
+# legacy create-book互換commandの詳細ログを有効にして実行
 DEBUG=* npm start create-book
 ```
 
@@ -451,7 +464,7 @@ GitHub: [@itdojp](https://github.com/itdojp)
 - **Book Publishing Template v3.0** - **使用禁止**
   - このシステムの基盤となった旧テンプレートシステム
   - 現在は廃止されており、使用は禁止されています
-  - 新規書籍作成時は必ずbook-formatterを使用してください
+  - 新規Web書籍は標準`book.yaml`と`web-mdbook`を使用してください
   - 旧テンプレートからの移行については[移行ガイド](./docs/migration-guide.md)を参照してください
 
 ---
