@@ -259,7 +259,7 @@ project生成後のmdBook build / viewport / artifact visibility検査は、[`we
 主なスクリプト:
 - `scripts/check_pages.sh`: 公開GitHub Pagesのトップ/共通アセット/ナビ由来ページのHTTPステータスを点検
 - `scripts/add_nav_check_workflow.sh`: `Nav + Pages Link Check` ワークフローを各書籍へ追加（ローカルclone前提）
-- `scripts/rollout_unification.sh`: shared components（layouts/includes/assets）を各書籍へ同期（ローカルclone前提）
+- `scripts/rollout_unification.sh`: shared components（layouts/includes/assets）の旧一括同期script。consumer write境界を強制する[#129](https://github.com/itdojp/book-formatter/issues/129) / [#130](https://github.com/itdojp/book-formatter/issues/130)完了まではdry-runを含め利用しない
 - `scripts/rollout_codeowners.sh`: `.book-formatter/**` のCODEOWNERSを各書籍へ追加（ローカルclone前提）
 - `scripts/rollout_fix_config_yaml.sh`: `docs/_config.yml` の `url/baseurl/repository` を監査/正規化（監査がデフォルト）
 - `scripts/fix_review_issues.sh`: PRレビュー本文/インラインコメントをJSONとして収集し退避（API 429耐性あり）

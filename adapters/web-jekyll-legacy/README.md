@@ -179,6 +179,8 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 
 `Book Sync` workflowは[#129](https://github.com/itdojp/book-formatter/issues/129)がruntimeの同じsymlink境界を強制するまで利用しない。現行workflowはpreview / writeの両経路で、上のpreflightを通さずcloneへ実同期するためである。既定preview、最大3冊、確認token、対象repositoryへのwrite権限、Open PR 0という既存gateだけでは、clone外を指すtracked symlinkへの書込みを防げない。
 
+旧一括経路`scripts/rollout_unification.sh`も[#129](https://github.com/itdojp/book-formatter/issues/129) / [#130](https://github.com/itdojp/book-formatter/issues/130)が完了するまで、dry-runを含め利用しない。現行の非dry-runはconsumer checkoutへ直接`sync-components`を実行してcommit / pushし、上の固定base SHA、隔離worktree、destination symlink preflightを強制しない。dry-runもformatter全tracked fileの監査済みSHA照合を行わないため、安全なpreview入口にはしない。必要な確認は上の手順3・4へ一本化する。
+
 ## `rollout-ux`との境界
 
 - `--apply-ux-core`は`ComponentSync`を介してlayouts / includes / assetsを同期する。
