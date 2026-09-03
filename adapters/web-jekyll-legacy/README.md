@@ -78,19 +78,73 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    : "${AUDITED_BASE_SHA:?set the audited 40-character consumer base SHA}"
    test "$(git rev-parse HEAD)" = "$AUDITED_FORMATTER_SHA"
    test -z "$(git status --porcelain)"
+   CONSUMER_SYNC_WORKTREE=../.worktrees/consumer-sync-pilot
    git -C ../consumer-book worktree add --detach \
-     ../.worktrees/consumer-sync-pilot "$AUDITED_BASE_SHA"
+     "$CONSUMER_SYNC_WORKTREE" "$AUDITED_BASE_SHA"
+
+   # 現行sync scriptは同期先のsymlink境界を検査しない。通常同期の前に、
+   # 今回更新され得る有限のmanaged destinationと全ancestorをlstatする。
+   node --input-type=module - "$CONSUMER_SYNC_WORKTREE" <<'NODE'
+   import fs from 'node:fs';
+   import path from 'node:path';
+
+   const root = path.resolve(process.argv[2]);
+   const managedDestinations = [
+     'book-config.json',
+     'docs/_layouts/book.html',
+     'docs/_layouts/default.html',
+     'docs/_includes/sidebar-nav.html',
+     'docs/_includes/page-navigation.html',
+     'docs/assets/css/main.css',
+     'docs/assets/css/mobile-responsive.css',
+     'docs/assets/css/syntax-highlighting.css',
+     'docs/assets/js/code-copy-lightweight.js',
+     'docs/assets/js/search.js',
+     'docs/assets/js/theme.js',
+   ];
+
+   const rootStat = fs.lstatSync(root);
+   if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+     throw new Error(`consumer worktree must be a real directory: ${root}`);
+   }
+
+   for (const destination of managedDestinations) {
+     const finalPath = path.join(root, destination);
+     let current = root;
+
+     for (const segment of destination.split('/')) {
+       current = path.join(current, segment);
+       let stat;
+       try {
+         stat = fs.lstatSync(current);
+       } catch (error) {
+         if (error.code === 'ENOENT') break;
+         throw error;
+       }
+       if (stat.isSymbolicLink()) {
+         throw new Error(`refusing symlink destination: ${current}`);
+       }
+       if (current !== finalPath && !stat.isDirectory()) {
+         throw new Error(`destination ancestor is not a directory: ${current}`);
+       }
+       if (current === finalPath && !stat.isFile()) {
+         throw new Error(`destination is not a regular file: ${current}`);
+       }
+     }
+   }
+   NODE
+
    npm run sync-components -- \
-     --book ../.worktrees/consumer-sync-pilot \
+     --book "$CONSUMER_SYNC_WORKTREE" \
      --components layouts includes assets
-   git -C ../.worktrees/consumer-sync-pilot status --short
-   git -C ../.worktrees/consumer-sync-pilot add -N --all
-   git -C ../.worktrees/consumer-sync-pilot diff --
-   git -C ../.worktrees/consumer-sync-pilot reset --
+   git -C "$CONSUMER_SYNC_WORKTREE" status --short
+   git -C "$CONSUMER_SYNC_WORKTREE" add -N --all
+   git -C "$CONSUMER_SYNC_WORKTREE" diff --
+   git -C "$CONSUMER_SYNC_WORKTREE" reset --
    )
    ```
 
-   `git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。同期結果をこの一時worktreeからcommitしない。
+   symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表と検査リストも同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。同期結果をこの一時worktreeからcommitしない。
 
 5. managed file以外、書籍本文、書籍固有設定が差分へ入っていないことを確認する。`book-config.json`は`shared.version` / `lastSync`以外の変更を許容しない。
 6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。
