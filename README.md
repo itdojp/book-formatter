@@ -47,19 +47,10 @@ npm start build -- \
   --target web-mdbook \
   --edition free \
   --out-dir dist
-MDBOOK_BIN="$PWD/.work/tools/mdbook-v0.5.4-x86_64-unknown-linux-gnu/mdbook"
-test -x "$MDBOOK_BIN"
-test "$("$MDBOOK_BIN" --version)" = "mdbook v0.5.4"
-"$MDBOOK_BIN" build dist/web-mdbook
-npm run check-visibility -- \
-  ./my-book \
-  --edition free \
-  --artifact dist/web-mdbook/book
-npm run check-mdbook-responsive -- --book dist/web-mdbook
 )
 ```
 
-command blockは1つのsubshellとして実行し、いずれかのgateが失敗した時点で後続処理を停止します。mdBookは検証済みversion `0.5.4`へ固定し、生成後artifactのvisibilityも公開前に再検査します。公式binaryの固定URL・SHA-256検証手順は[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)を実行し、生成したbinaryの絶対pathを`MDBOOK_BIN`に設定してください。
+adapter project生成後は、[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained blockを実行します。このblockは公式binaryの固定URL・SHA-256検証、fresh directoryへの展開、mdBook `0.5.4` gate、build、responsive検査、生成後artifact visibility検査を1つのfail-fast実行単位で完了し、binaryを再利用しません。
 
 以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。`update-book`、`sync-all-books`、`rollout-ux --apply-ux-profile`の非dry-runは、consumer write境界をruntimeで強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了まで利用しません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
 
@@ -238,18 +229,8 @@ npm start build -- --book examples/standard-book \
   --target web-mdbook --edition free --dry-run
 
 # mdBook projectをdist/web-mdbookへ生成してbuild/viewportを検証
-(
-set -euo pipefail
 npm start build -- --book examples/standard-book \
   --target web-mdbook --edition free --out-dir dist
-MDBOOK_BIN="$PWD/.work/tools/mdbook-v0.5.4-x86_64-unknown-linux-gnu/mdbook"
-test -x "$MDBOOK_BIN"
-test "$("$MDBOOK_BIN" --version)" = "mdbook v0.5.4"
-"$MDBOOK_BIN" build dist/web-mdbook
-npm run check-mdbook-responsive -- --book dist/web-mdbook
-npm run check-visibility -- examples/standard-book --edition free \
-  --artifact dist/web-mdbook/book
-)
 
 # 文章校正（textlint + PRH辞書）
 npm run check-textlint -- <book-dir> --output textlint-report.json
@@ -258,7 +239,7 @@ npm run check-textlint -- <book-dir> --output textlint-report.json
 npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 ```
 
-上の`MDBOOK_BIN`は、先に[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)の公式URL・SHA-256検証手順で作成します。
+project生成後のmdBook build / viewport / artifact visibility検査は、[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のfresh binaryを使うfail-fast blockだけを正本として実行します。
 
 標準書籍metadataは[標準書籍フォーマット](docs/standard-book-format.md)、有償本文と内部本文の分離は[Edition visibilityと有償本文の混入防止](docs/paid-editions.md)、新規出力とlegacy経路の選択は[出力target方針](docs/output-targets.md)を参照してください。
 出力先adapterの責務、有限target、manifest version 1は[Adapter開発契約](adapters/README.md)を参照してください。

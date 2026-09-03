@@ -60,10 +60,19 @@ MDBOOK_TARGET=x86_64-unknown-linux-gnu
 MDBOOK_ARCHIVE="mdbook-v${MDBOOK_VERSION}-${MDBOOK_TARGET}.tar.gz"
 MDBOOK_URL="https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/${MDBOOK_ARCHIVE}"
 MDBOOK_SHA256=3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
-MDBOOK_TOOL_DIR="$PWD/.work/tools/mdbook-v${MDBOOK_VERSION}-${MDBOOK_TARGET}"
+MDBOOK_TOOL_ROOT="$PWD/.work/tools"
 
-test ! -e "$MDBOOK_TOOL_DIR"
-mkdir -p "$MDBOOK_TOOL_DIR"
+test ! -L "$PWD/.work"
+test ! -L "$MDBOOK_TOOL_ROOT"
+mkdir -p "$MDBOOK_TOOL_ROOT"
+test -d "$MDBOOK_TOOL_ROOT"
+test ! -L "$MDBOOK_TOOL_ROOT"
+MDBOOK_TOOL_DIR=$(mktemp -d \
+  "$MDBOOK_TOOL_ROOT/mdbook-v${MDBOOK_VERSION}-${MDBOOK_TARGET}.XXXXXXXX")
+cleanup_mdbook() {
+  test -n "${MDBOOK_TOOL_DIR:-}" && rm -rf -- "$MDBOOK_TOOL_DIR"
+}
+trap cleanup_mdbook EXIT
 curl --fail --location --proto '=https' --tlsv1.2 \
   --output "$MDBOOK_TOOL_DIR/$MDBOOK_ARCHIVE" \
   "$MDBOOK_URL"
@@ -78,18 +87,6 @@ MDBOOK_BIN="$MDBOOK_TOOL_DIR/mdbook"
 test -x "$MDBOOK_BIN"
 test "$("$MDBOOK_BIN" --version)" = "mdbook v${MDBOOK_VERSION}"
 "$MDBOOK_BIN" build dist/web-mdbook
-)
-```
-
-URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理し、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。上の手順は新規directoryだけを受理するため、再実行時は監査済みの既存directoryを再利用するか、別の空directoryを指定する。
-
-```bash
-(
-set -euo pipefail
-MDBOOK_BIN="$PWD/.work/tools/mdbook-v0.5.4-x86_64-unknown-linux-gnu/mdbook"
-test -x "$MDBOOK_BIN"
-test "$("$MDBOOK_BIN" --version)" = "mdbook v0.5.4"
-"$MDBOOK_BIN" build dist/web-mdbook
 npm run check-mdbook-responsive -- --book dist/web-mdbook
 npm run check-visibility -- \
   examples/standard-book \
@@ -97,6 +94,8 @@ npm run check-visibility -- \
   --artifact dist/web-mdbook/book
 )
 ```
+
+URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理する。各buildはworkspace内の新しい一時directoryへarchiveを取得・検証・展開し、同じfail-fast block内でbuildと公開前検査まで完了してからdirectoryを削除する。展開済みbinaryや既存tool directoryを再利用せず、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。
 
 responsive checkerは生成project/HTML/CSS契約に加え、利用可能なChromeで全generated content pageに対し、次のviewportのsidebar/content非重複とhidden状態のbody overflowを検証します。mdBook 0.5.4のsidebar support pageであるroot `toc.html`だけを有限に除外し、他のHTMLでresponsive DOM IDが欠けた場合はfail closedです。
 

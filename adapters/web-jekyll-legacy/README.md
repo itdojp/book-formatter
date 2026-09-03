@@ -83,6 +83,30 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    git -C ../consumer-book worktree add --detach \
      "$CONSUMER_SYNC_WORKTREE" "$AUDITED_BASE_SHA"
 
+   # clean statusだけではsparse checkout / skip-worktreeを検出できない。
+   # 選択componentの全sourceとversion metadataをHEAD blobへ照合する。
+   MANAGED_SOURCES=(
+     shared/version.json
+     shared/layouts/book.html
+     shared/layouts/default.html
+     shared/includes/sidebar-nav.html
+     shared/includes/page-navigation.html
+     shared/assets/css/main.css
+     shared/assets/css/mobile-responsive.css
+     shared/assets/css/syntax-highlighting.css
+     shared/assets/js/code-copy-lightweight.js
+     shared/assets/js/search.js
+     shared/assets/js/theme.js
+   )
+   test "${#MANAGED_SOURCES[@]}" -eq 11
+   for SOURCE_REL in "${MANAGED_SOURCES[@]}"; do
+     git ls-files --error-unmatch "$SOURCE_REL" >/dev/null
+     test -f "$SOURCE_REL"
+     test ! -L "$SOURCE_REL"
+     test "$(git hash-object -- "$SOURCE_REL")" = \
+       "$(git rev-parse "HEAD:$SOURCE_REL")"
+   done
+
    # 現行sync scriptは同期先のsymlink境界を検査しない。通常同期の前に、
    # 今回更新され得る有限のmanaged destinationと全ancestorをlstatする。
    node --input-type=module - "$CONSUMER_SYNC_WORKTREE" <<'NODE'
@@ -145,7 +169,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    )
    ```
 
-   symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表と検査リストも同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。同期結果をこの一時worktreeからcommitしない。
+   source検査の有限リストは`shared/version.json`と、今回選択するlayouts / includes / assetsのmanaged fileに対応する。これにより、sparse checkout、欠損file、skip-worktreeで隠された変更を通常同期前に拒否する。symlink検査の有限リストは上のmanaged mappingと、このコマンドが更新する`book-config.json`に対応する。`shared/version.json`へmanaged fileを追加する場合はmapping表、source検査、destination検査を同じ変更で更新する。`git add -N --all`は一時worktreeの未追跡fileを内容付きdiffへ含めるためだけに使い、直後の`reset`でintent-to-addを解除する。これにより、新規layoutやassetもpath名だけでなく内容を監査できる。同期結果をこの一時worktreeからcommitしない。
 
 5. managed file以外、書籍本文、書籍固有設定が差分へ入っていないことを確認する。`book-config.json`は`shared.version` / `lastSync`以外の変更を許容しない。
 6. 確認済み差分だけをconsumerごとのtask branch / PRで再現する。複数書籍を同じPRへ混在させない。
