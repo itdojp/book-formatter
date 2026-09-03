@@ -385,7 +385,16 @@ describe('ConsumerMutationBoundary transaction', () => {
     );
     git(formatter.formatterRoot, 'config', '--unset', 'filter.normalize-audited.required');
     git(formatter.formatterRoot, 'config', '--unset', 'filter.normalize-audited.clean');
-    git(formatter.formatterRoot, 'checkout', '--', 'audited.txt');
+    await fs.remove(attributesPath);
+    await fs.writeFile(
+      path.join(formatter.formatterRoot, 'audited.txt'),
+      'formatter fixture\n'
+    );
+    git(formatter.formatterRoot, 'add', 'audited.txt');
+    assert.strictEqual(
+      git(formatter.formatterRoot, 'status', '--porcelain', '--untracked-files=no'),
+      ''
+    );
 
     await fs.writeFile(path.join(fixture.worktree, 'dirty.txt'), 'dirty\n');
     await assert.rejects(
