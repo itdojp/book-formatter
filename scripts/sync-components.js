@@ -60,14 +60,143 @@ class ComponentSync {
    * @param {string} bookPath - 書籍のパス
    */
   async loadBookConfig(bookPath) {
-    const configPath = path.join(bookPath, 'book-config.json');
-    
-    if (!(await this.fsUtils.exists(configPath))) {
-      console.log(chalk.yellow(`⚠️  book-config.json が見つかりません: ${bookPath}`));
+    const consumerRoot = await this.assertConsumerRoot(bookPath);
+    const configDestination = await this.assertManagedDestination(
+      consumerRoot,
+      'book-config.json'
+    );
+
+    if (!configDestination.exists) {
+      console.log(chalk.yellow(`⚠️  book-config.json が見つかりません: ${consumerRoot}`));
       return null;
     }
-    
-    return await fs.readJson(configPath);
+
+    return await fs.readJson(configDestination.absolutePath);
+  }
+
+  /**
+   * lstat対象が存在しない場合だけnullを返す。
+   * dangling symlinkはlstatできるため、存在する境界として呼出側で拒否する。
+   * @param {string} targetPath - 検査対象
+   * @returns {Promise<import('node:fs').Stats|null>}
+   */
+  async lstatIfExists(targetPath) {
+    try {
+      return await fs.lstat(targetPath);
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+
+  /**
+   * consumer rootを実在する通常directoryとして確定する。
+   * @param {string} bookPath - consumer root候補
+   * @returns {Promise<string>} 絶対consumer root
+   */
+  async assertConsumerRoot(bookPath) {
+    if (typeof bookPath !== 'string' || bookPath.trim() === '') {
+      throw new Error('Consumer root must be a non-empty path');
+    }
+
+    const consumerRoot = path.resolve(bookPath);
+    const rootStat = await this.lstatIfExists(consumerRoot);
+    if (!rootStat) {
+      throw new Error(`Consumer root does not exist: ${consumerRoot}`);
+    }
+    if (rootStat.isSymbolicLink()) {
+      throw new Error(`Consumer root must not be a symbolic link: ${consumerRoot}`);
+    }
+    if (!rootStat.isDirectory()) {
+      throw new Error(`Consumer root must be a directory: ${consumerRoot}`);
+    }
+
+    return await fs.realpath(consumerRoot);
+  }
+
+  /**
+   * managed relative pathをconsumer root配下の絶対pathへ解決する。
+   * @param {string} consumerRoot - 検証済みconsumer root
+   * @param {string} relativePath - managed relative path
+   * @returns {{ relativePath: string, absolutePath: string }}
+   */
+  resolveManagedDestination(consumerRoot, relativePath) {
+    if (typeof relativePath !== 'string' || relativePath.trim() === '' || relativePath.includes('\0')) {
+      throw new Error('Managed destination must be a non-empty relative path');
+    }
+
+    const portablePath = relativePath.replace(/\\/g, '/');
+    const pathSegments = portablePath.split('/');
+    if (
+      path.isAbsolute(relativePath)
+      || path.win32.isAbsolute(relativePath)
+      || pathSegments.includes('..')
+    ) {
+      throw new Error(`Managed destination must stay below the consumer root: ${relativePath}`);
+    }
+
+    const normalizedRelativePath = path.normalize(relativePath);
+    const absolutePath = path.resolve(consumerRoot, normalizedRelativePath);
+    const relativeFromRoot = path.relative(consumerRoot, absolutePath);
+    if (
+      relativeFromRoot === ''
+      || relativeFromRoot === '..'
+      || relativeFromRoot.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativeFromRoot)
+    ) {
+      throw new Error(`Managed destination escapes the consumer root: ${relativePath}`);
+    }
+
+    return {
+      relativePath: normalizedRelativePath,
+      absolutePath
+    };
+  }
+
+  /**
+   * managed destinationの既存ancestorとfinal pathをlstatし、write境界を検証する。
+   * @param {string} bookPath - consumer root
+   * @param {string} relativePath - managed relative path
+   * @param {{ mustExist?: boolean }} options - final path存在要件
+   * @returns {Promise<{ consumerRoot: string, relativePath: string, absolutePath: string, exists: boolean }>}
+   */
+  async assertManagedDestination(bookPath, relativePath, options = {}) {
+    const consumerRoot = await this.assertConsumerRoot(bookPath);
+    const destination = this.resolveManagedDestination(consumerRoot, relativePath);
+    const relativeFromRoot = path.relative(consumerRoot, destination.absolutePath);
+    const segments = relativeFromRoot.split(path.sep);
+    let currentPath = consumerRoot;
+    let finalStat = null;
+
+    for (const [index, segment] of segments.entries()) {
+      currentPath = path.join(currentPath, segment);
+      const currentStat = await this.lstatIfExists(currentPath);
+      const isFinal = index === segments.length - 1;
+
+      if (!currentStat) continue;
+      if (currentStat.isSymbolicLink()) {
+        throw new Error(`Managed destination must not contain a symbolic link: ${relativePath}`);
+      }
+      if (!isFinal && !currentStat.isDirectory()) {
+        throw new Error(`Managed destination ancestor must be a directory: ${relativePath}`);
+      }
+      if (isFinal) {
+        finalStat = currentStat;
+        if (!currentStat.isFile()) {
+          throw new Error(`Managed destination must be a regular file: ${relativePath}`);
+        }
+      }
+    }
+
+    if (options.mustExist && !finalStat) {
+      throw new Error(`Managed destination does not exist: ${relativePath}`);
+    }
+
+    return {
+      consumerRoot,
+      ...destination,
+      exists: Boolean(finalStat)
+    };
   }
 
   /**
@@ -76,34 +205,142 @@ class ComponentSync {
    * @param {Object} options - オプション
    */
   async syncToBook(bookPath, options = {}) {
-    console.log(chalk.blue(`\n📚 同期中: ${path.basename(bookPath)}`));
+    const consumerRoot = await this.assertConsumerRoot(bookPath);
+    console.log(chalk.blue(`\n📚 同期中: ${path.basename(consumerRoot)}`));
     
     // 書籍の設定を読み込む
-    const bookConfig = await this.loadBookConfig(bookPath);
+    const bookConfig = await this.loadBookConfig(consumerRoot);
     if (!bookConfig) return false;
     
     // 同期する コンポーネントを決定
     const componentsToSync = this.determineComponents(bookConfig, options);
-    
-    // 各コンポーネントを同期
-    let componentsChanged = false;
-    for (const [component, config] of Object.entries(componentsToSync)) {
-      if (config === true || (typeof config === 'object' && Object.values(config).some(v => v))) {
-        componentsChanged = (await this.syncComponent(component, bookPath, config)) || componentsChanged;
-      }
-    }
+    const syncPlan = this.createSyncPlan(consumerRoot, componentsToSync);
+
+    // 1件目を書き込む前に、選択された全destinationとconfigを検査する。
+    await this.preflightSyncPlan(consumerRoot, syncPlan);
+    const componentsChanged = await this.executeSyncPlan(consumerRoot, syncPlan);
 
     // 実ファイルまたは共有component versionが変わった場合だけ同期時刻を更新する。
     // これにより、同一内容への再同期でtimestampだけのPRが作られることを防ぐ。
     const versionChanged = bookConfig.shared?.version !== this.version.version;
     if (componentsChanged || versionChanged) {
-      await this.updateBookVersion(bookPath);
+      await this.updateBookVersion(consumerRoot);
     } else {
       console.log(chalk.green('  ✅ 変更はありません'));
     }
     
-    console.log(chalk.green(`✅ 同期完了: ${path.basename(bookPath)}`));
+    console.log(chalk.green(`✅ 同期完了: ${path.basename(consumerRoot)}`));
     return true;
+  }
+
+  /**
+   * component設定から同期対象fileを一意に選択する。
+   * @param {string} component - component名
+   * @param {boolean|Object} config - component設定
+   * @returns {Array<string>}
+   */
+  selectComponentFiles(component, config) {
+    const componentInfo = this.version.components[component];
+    if (!componentInfo) {
+      console.log(chalk.yellow(`  ⚠️  不明なコンポーネント: ${component}`));
+      return [];
+    }
+
+    return (componentInfo.files || []).filter((file) => {
+      if (typeof config !== 'object') return true;
+      const subComponent = path.basename(path.dirname(file));
+      if (config[subComponent] === false) {
+        console.log(chalk.gray(`    スキップ: ${file}`));
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /**
+   * 同期選択と書込みで共有する有限planを作る。
+   * @param {string} consumerRoot - consumer root
+   * @param {Object} componentsToSync - component設定
+   * @returns {Array<Object>}
+   */
+  createSyncPlan(consumerRoot, componentsToSync) {
+    const syncPlan = [];
+    const destinations = new Set();
+
+    for (const [component, config] of Object.entries(componentsToSync)) {
+      const enabled = config === true
+        || (typeof config === 'object' && Object.values(config).some((value) => value));
+      if (!enabled) continue;
+
+      for (const file of this.selectComponentFiles(component, config)) {
+        const destination = this.resolveManagedDestination(
+          consumerRoot,
+          this.mapDestRelativePath(file)
+        );
+        if (destinations.has(destination.relativePath)) {
+          throw new Error(`Duplicate managed destination: ${destination.relativePath}`);
+        }
+        destinations.add(destination.relativePath);
+        syncPlan.push({
+          component,
+          file,
+          sourcePath: path.join(this.sharedDir, file),
+          destRel: destination.relativePath,
+          destPath: destination.absolutePath
+        });
+      }
+    }
+
+    return syncPlan;
+  }
+
+  /**
+   * 全destinationを最初のwrite前に検査する。
+   * @param {string} consumerRoot - consumer root
+   * @param {Array<Object>} syncPlan - 同期plan
+   */
+  async preflightSyncPlan(consumerRoot, syncPlan) {
+    await this.assertManagedDestination(consumerRoot, 'book-config.json', { mustExist: true });
+    for (const entry of syncPlan) {
+      await this.assertManagedDestination(consumerRoot, entry.destRel);
+    }
+  }
+
+  /**
+   * 検査済みplanを実行する。各write直前にも同じ境界を再検査する。
+   * @param {string} consumerRoot - consumer root
+   * @param {Array<Object>} syncPlan - 同期plan
+   * @returns {Promise<boolean>}
+   */
+  async executeSyncPlan(consumerRoot, syncPlan) {
+    let changed = false;
+    let currentComponent = null;
+
+    for (const entry of syncPlan) {
+      if (entry.component !== currentComponent) {
+        currentComponent = entry.component;
+        console.log(chalk.gray(`  同期中: ${entry.component}...`));
+      }
+
+      if (!(await this.fsUtils.exists(entry.sourcePath))) {
+        console.log(chalk.yellow(`    ⚠️  ソースファイルが見つかりません: ${entry.file}`));
+        continue;
+      }
+
+      await this.assertManagedDestination(consumerRoot, entry.destRel);
+      if (await this.filesAreEqual(entry.sourcePath, entry.destPath)) {
+        console.log(chalk.gray(`    ↔ 変更なし: ${entry.destRel}`));
+        continue;
+      }
+
+      await this.fsUtils.ensureDir(path.dirname(entry.destPath));
+      await this.assertManagedDestination(consumerRoot, entry.destRel);
+      await fs.copy(entry.sourcePath, entry.destPath, { overwrite: true });
+      changed = true;
+      console.log(chalk.gray(`    ✅ ${entry.destRel}`));
+    }
+
+    return changed;
   }
 
   /**
@@ -153,52 +390,10 @@ class ComponentSync {
    * @param {boolean|Object} config - 設定
    */
   async syncComponent(component, bookPath, config) {
-    console.log(chalk.gray(`  同期中: ${component}...`));
-    
-    const componentInfo = this.version.components[component];
-    if (!componentInfo) {
-      console.log(chalk.yellow(`  ⚠️  不明なコンポーネント: ${component}`));
-      return false;
-    }
-    
-    // ファイルリストを取得
-    const files = componentInfo.files || [];
-    
-    let changed = false;
-    for (const file of files) {
-      // サブコンポーネントの設定を確認
-      if (typeof config === 'object') {
-        const subComponent = path.basename(path.dirname(file));
-        if (config[subComponent] === false) {
-          console.log(chalk.gray(`    スキップ: ${file}`));
-          continue;
-        }
-      }
-      
-      const sourcePath = path.join(this.sharedDir, file);
-      const destRel = this.mapDestRelativePath(file);
-      const destPath = path.join(bookPath, destRel);
-      
-      if (!(await this.fsUtils.exists(sourcePath))) {
-        console.log(chalk.yellow(`    ⚠️  ソースファイルが見つかりません: ${file}`));
-        continue;
-      }
-
-      if (await this.filesAreEqual(sourcePath, destPath)) {
-        console.log(chalk.gray(`    ↔ 変更なし: ${destRel}`));
-        continue;
-      }
-      
-      // ディレクトリを作成
-      await this.fsUtils.ensureDir(path.dirname(destPath));
-      
-      // ファイルをコピー
-      await fs.copy(sourcePath, destPath, { overwrite: true });
-      changed = true;
-      console.log(chalk.gray(`    ✅ ${destRel}`));
-    }
-
-    return changed;
+    const consumerRoot = await this.assertConsumerRoot(bookPath);
+    const syncPlan = this.createSyncPlan(consumerRoot, { [component]: config });
+    await this.preflightSyncPlan(consumerRoot, syncPlan);
+    return await this.executeSyncPlan(consumerRoot, syncPlan);
   }
 
   /**
@@ -231,15 +426,21 @@ class ComponentSync {
    * @param {string} bookPath - 書籍パス
    */
   async updateBookVersion(bookPath) {
-    const configPath = path.join(bookPath, 'book-config.json');
-    const config = await fs.readJson(configPath);
+    const consumerRoot = await this.assertConsumerRoot(bookPath);
+    const configDestination = await this.assertManagedDestination(
+      consumerRoot,
+      'book-config.json',
+      { mustExist: true }
+    );
+    const config = await fs.readJson(configDestination.absolutePath);
     
     // shared セクションを更新
     config.shared = config.shared || {};
     config.shared.version = this.version.version;
     config.shared.lastSync = new Date().toISOString();
     
-    await fs.writeJson(configPath, config, { spaces: 2 });
+    await this.assertManagedDestination(consumerRoot, 'book-config.json', { mustExist: true });
+    await fs.writeJson(configDestination.absolutePath, config, { spaces: 2 });
   }
 
   /**
@@ -282,11 +483,16 @@ class ComponentSync {
    * @param {string} bookPath - 書籍パス
    */
   async checkDiff(bookPath, options = {}) {
-    console.log(chalk.blue(`\n🔍 差分確認: ${path.basename(bookPath)}`));
+    const consumerRoot = await this.assertConsumerRoot(bookPath);
+    console.log(chalk.blue(`\n🔍 差分確認: ${path.basename(consumerRoot)}`));
     
-    const bookConfig = await this.loadBookConfig(bookPath);
+    const bookConfig = await this.loadBookConfig(consumerRoot);
     if (!bookConfig) return;
-    
+
+    const componentsToSync = this.determineComponents(bookConfig, options);
+    const syncPlan = this.createSyncPlan(consumerRoot, componentsToSync);
+    await this.preflightSyncPlan(consumerRoot, syncPlan);
+
     const currentVersion = bookConfig.shared?.version || 'なし';
     console.log(chalk.gray(`  現在のバージョン: ${currentVersion}`));
     console.log(chalk.gray(`  最新バージョン: ${this.version.version}`));
@@ -299,21 +505,8 @@ class ComponentSync {
     // 変更されるファイルをリスト
     console.log(chalk.yellow('  📝 変更されるファイル:'));
     
-    const componentsToSync = this.determineComponents(bookConfig, options);
-    
-    for (const [component, config] of Object.entries(componentsToSync)) {
-      if (config === true || (typeof config === 'object' && Object.values(config).some(v => v))) {
-        const componentInfo = this.version.components[component];
-          if (componentInfo) {
-            componentInfo.files.forEach(file => {
-              if (typeof config === 'object') {
-                const subComponent = path.basename(path.dirname(file));
-                if (config[subComponent] === false) return;
-              }
-              console.log(chalk.gray(`    - ${this.mapDestRelativePath(file)}`));
-            });
-          }
-      }
+    for (const entry of syncPlan) {
+      console.log(chalk.gray(`    - ${entry.destRel}`));
     }
   }
 }

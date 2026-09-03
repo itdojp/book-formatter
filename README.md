@@ -191,8 +191,9 @@ npm start rollout-ux -- --registry ./book-registry.json \
 # 共通コアのみを適用（layouts/includes/assets）
 npm start rollout-ux -- --apply-ux-core --dry-run
 
-# 共通コアのwriteはdestination symlink検査をruntimeへ追加する#129完了まで停止
-# 必要な更新はweb-jekyll-legacy contractの隔離・preflight手順で監査
+# writeはweb-jekyll-legacy contractの隔離consumer task branchで実行
+# runtimeが選択destinationとbook-config.jsonを最初のwrite前に検査
+npm start rollout-ux -- --apply-ux-core
 ```
 
 補足:
@@ -202,8 +203,8 @@ npm start rollout-ux -- --apply-ux-core --dry-run
   legacy UX registryです。portfolio-level registry version 1との関係は
   [docs/book-registry.md](docs/book-registry.md) を参照してください。
 - `--apply-ux-profile`の非dry-runは、config write境界を強制する#130完了まで実行しないでください。
-- `--apply-ux-core`の非dry-run、および`Book Sync` workflowのpreview / writeは、
-  [#129](https://github.com/itdojp/book-formatter/issues/129)完了まで実行しないでください。
+- `--apply-ux-core`の非dry-runはruntimeのdestination境界を通るが、任意の既存checkoutへ直接適用せず、[`web-jekyll-legacy` contract](adapters/web-jekyll-legacy/README.md#安全な同期手順)の固定formatter SHA・隔離consumer task branch・有限差分reviewを併用してください。
+- `Book Sync` workflowのpreview / writeも同じruntime境界を通る。既定preview、最大3冊、明示allowlist、権限・Open PR preflight、consumer別PRというworkflow gateを省略しないでください。
 
 ## 品質チェック（ローカル）
 
@@ -259,7 +260,7 @@ project生成後のmdBook build / viewport / artifact visibility検査は、[`we
 主なスクリプト:
 - `scripts/check_pages.sh`: 公開GitHub Pagesのトップ/共通アセット/ナビ由来ページのHTTPステータスを点検
 - `scripts/add_nav_check_workflow.sh`: `Nav + Pages Link Check` ワークフローを各書籍へ追加（ローカルclone前提）
-- `scripts/rollout_unification.sh`: shared components（layouts/includes/assets）の旧一括同期script。consumer write境界を強制する[#129](https://github.com/itdojp/book-formatter/issues/129) / [#130](https://github.com/itdojp/book-formatter/issues/130)完了まではdry-runを含め利用しない
+- `scripts/rollout_unification.sh`: shared components（layouts/includes/assets）の旧一括同期script。`ComponentSync`のdestination境界は利用するが、固定base SHA・隔離worktree・有限batch・consumer別reviewを強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了まではdry-runを含め利用しない
 - `scripts/rollout_codeowners.sh`: `.book-formatter/**` のCODEOWNERSを各書籍へ追加（ローカルclone前提）
 - `scripts/rollout_fix_config_yaml.sh`: `docs/_config.yml` の `url/baseurl/repository` を監査/正規化（監査がデフォルト）
 - `scripts/fix_review_issues.sh`: PRレビュー本文/インラインコメントをJSONとして収集し退避（API 429耐性あり）
