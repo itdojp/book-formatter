@@ -66,7 +66,22 @@ esac
 
 git -C "$FORMATTER_ROOT" ls-files --error-unmatch "$SOURCE_REL" >/dev/null
 test -f "$FORMATTER_ROOT/$SOURCE_REL"
+DEST_PARENT=$CONSUMER_ROOT
+DEST_REMAINDER=$DEST_REL
+while [[ "$DEST_REMAINDER" == */* ]]; do
+  DEST_COMPONENT=${DEST_REMAINDER%%/*}
+  DEST_REMAINDER=${DEST_REMAINDER#*/}
+  DEST_PARENT="$DEST_PARENT/$DEST_COMPONENT"
+  if [ -L "$DEST_PARENT" ]; then
+    echo "destination ancestor must not be a symbolic link: $DEST_PARENT" >&2
+    exit 1
+  fi
+  if [ -e "$DEST_PARENT" ]; then
+    test -d "$DEST_PARENT"
+  fi
+done
 test ! -e "$CONSUMER_ROOT/$DEST_REL"
+test ! -L "$CONSUMER_ROOT/$DEST_REL"
 install -D -m 0644 "$FORMATTER_ROOT/$SOURCE_REL" "$CONSUMER_ROOT/$DEST_REL"
 git -C "$CONSUMER_ROOT" add -N -- "$DEST_REL"
 git -C "$CONSUMER_ROOT" diff -- "$DEST_REL"
