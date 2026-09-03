@@ -50,10 +50,44 @@ mdBookの`{{#include ...}}`、`{{#rustdoc_include ...}}`、file-backed `{{#playg
 
 ## Buildとレスポンシブ検証
 
-mdBook `0.5.4`を使用します。CIは公式releaseのLinux x86_64 archiveをSHA-256 `3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7`で検証してから実行します。
+mdBook `0.5.4`を使用します。CIとLinux x86_64のローカル検証では、公式release archiveを次の固定URLから取得し、展開前にSHA-256を検証します。別OS / architectureのarchiveはこのdigestの対象ではないため、同じ値を流用しません。
 
 ```bash
-mdbook build dist/web-mdbook
+(
+set -euo pipefail
+MDBOOK_VERSION=0.5.4
+MDBOOK_TARGET=x86_64-unknown-linux-gnu
+MDBOOK_ARCHIVE="mdbook-v${MDBOOK_VERSION}-${MDBOOK_TARGET}.tar.gz"
+MDBOOK_URL="https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/${MDBOOK_ARCHIVE}"
+MDBOOK_SHA256=3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
+MDBOOK_TOOL_DIR="$PWD/.work/tools/mdbook-v${MDBOOK_VERSION}-${MDBOOK_TARGET}"
+
+test ! -e "$MDBOOK_TOOL_DIR"
+mkdir -p "$MDBOOK_TOOL_DIR"
+curl --fail --location --proto '=https' --tlsv1.2 \
+  --output "$MDBOOK_TOOL_DIR/$MDBOOK_ARCHIVE" \
+  "$MDBOOK_URL"
+(
+  cd "$MDBOOK_TOOL_DIR"
+  printf '%s  %s\n' "$MDBOOK_SHA256" "$MDBOOK_ARCHIVE" | \
+    sha256sum --check --strict
+  test "$(tar -tzf "$MDBOOK_ARCHIVE")" = mdbook
+  tar -xzf "$MDBOOK_ARCHIVE"
+)
+MDBOOK_BIN="$MDBOOK_TOOL_DIR/mdbook"
+test -x "$MDBOOK_BIN"
+test "$("$MDBOOK_BIN" --version)" = "mdbook v${MDBOOK_VERSION}"
+"$MDBOOK_BIN" build dist/web-mdbook
+)
+```
+
+URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理し、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。上の手順は新規directoryだけを受理するため、再実行時は監査済みの既存directoryを再利用するか、別の空directoryを指定する。
+
+```bash
+MDBOOK_BIN="$PWD/.work/tools/mdbook-v0.5.4-x86_64-unknown-linux-gnu/mdbook"
+test -x "$MDBOOK_BIN"
+test "$("$MDBOOK_BIN" --version)" = "mdbook v0.5.4"
+"$MDBOOK_BIN" build dist/web-mdbook
 npm run check-mdbook-responsive -- --book dist/web-mdbook
 npm run check-visibility -- \
   examples/standard-book \

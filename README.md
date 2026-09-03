@@ -47,8 +47,10 @@ npm start build -- \
   --target web-mdbook \
   --edition free \
   --out-dir dist
-test "$(mdbook --version)" = "mdbook v0.5.4"
-mdbook build dist/web-mdbook
+MDBOOK_BIN="$PWD/.work/tools/mdbook-v0.5.4-x86_64-unknown-linux-gnu/mdbook"
+test -x "$MDBOOK_BIN"
+test "$("$MDBOOK_BIN" --version)" = "mdbook v0.5.4"
+"$MDBOOK_BIN" build dist/web-mdbook
 npm run check-visibility -- \
   ./my-book \
   --edition free \
@@ -57,7 +59,7 @@ npm run check-mdbook-responsive -- --book dist/web-mdbook
 )
 ```
 
-command blockは1つのsubshellとして実行し、いずれかのgateが失敗した時点で後続処理を停止します。mdBookは検証済みversion `0.5.4`へ固定し、生成後artifactのvisibilityも公開前に再検査します。公式binaryの検証方法は[`web-mdbook` adapter contract](adapters/web-mdbook/README.md)を参照してください。
+command blockは1つのsubshellとして実行し、いずれかのgateが失敗した時点で後続処理を停止します。mdBookは検証済みversion `0.5.4`へ固定し、生成後artifactのvisibilityも公開前に再検査します。公式binaryの固定URL・SHA-256検証手順は[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)を実行し、生成したbinaryの絶対pathを`MDBOOK_BIN`に設定してください。
 
 以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
 

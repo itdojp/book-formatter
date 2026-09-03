@@ -37,8 +37,10 @@ npm start build -- \
   --target web-mdbook \
   --edition free \
   --out-dir dist
-test "$(mdbook --version)" = "mdbook v0.5.4"
-mdbook build dist/web-mdbook
+MDBOOK_BIN="$PWD/.work/tools/mdbook-v0.5.4-x86_64-unknown-linux-gnu/mdbook"
+test -x "$MDBOOK_BIN"
+test "$("$MDBOOK_BIN" --version)" = "mdbook v0.5.4"
+"$MDBOOK_BIN" build dist/web-mdbook
 npm run check-visibility -- \
   ./my-book \
   --edition free \
@@ -47,7 +49,7 @@ npm run check-mdbook-responsive -- --book dist/web-mdbook
 )
 ```
 
-command blockは1つのsubshellとして実行し、いずれかのgateが失敗した時点で後続処理を停止する。`mdbook`は検証済みversion `0.5.4`へ固定する。CIで使用する公式archive URLとSHA-256は[`web-mdbook` adapter contract](../adapters/web-mdbook/README.md)を正本とし、上のversion gateを通らないbinaryで公開成果物を生成しない。`check-visibility --artifact`は生成後の漏えい検査であり、変換前にadapterが行うsource visibility検査やresponsive検査では代替できない。
+command blockは1つのsubshellとして実行し、いずれかのgateが失敗した時点で後続処理を停止する。先に[`web-mdbook` adapter contract](../adapters/web-mdbook/README.md#buildとレスポンシブ検証)の公式URL・SHA-256検証手順を実行し、そこで生成したbinaryの絶対pathを`MDBOOK_BIN`に設定する。`mdbook`は検証済みversion `0.5.4`へ固定し、version文字列だけが一致する任意の`PATH`上binaryでは公開成果物を生成しない。`check-visibility --artifact`は生成後の漏えい検査であり、変換前にadapterが行うsource visibility検査やresponsive検査では代替できない。
 
 ### 既存Jekyll / GitHub Pages書籍
 
