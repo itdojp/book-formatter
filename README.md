@@ -53,7 +53,7 @@ npm start build -- \
 )
 ```
 
-adapter project生成後は、[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained blockを実行します。このblockは公式binaryの固定URL・SHA-256検証、fresh directoryへの展開、mdBook `0.5.4` gate、build、responsive検査、生成後artifact visibility検査を1つのfail-fast実行単位で完了し、binaryを再利用しません。
+adapter project生成後は、同じ変数を維持して[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained blockを実行します。このblockはprojectを同じsource snapshotから再生成し、公式binaryの固定URL・SHA-256検証、fresh directoryへの展開、mdBook `0.5.4` gate、決定的なsource再照合、responsive検査、生成後artifact visibility検査を1つのfail-fast実行単位で完了します。既存projectやbinaryは再利用しません。
 
 以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。`update-book`、`sync-all-books`、`rollout-ux --apply-ux-profile`の非dry-runは、consumer write境界をruntimeで強制する[#130](https://github.com/itdojp/book-formatter/issues/130)完了まで利用しません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
 
@@ -245,7 +245,7 @@ npm run check-textlint -- <book-dir> --output textlint-report.json
 npm run check-textlint -- <book-dir> --with-preset --output textlint-report.json
 ```
 
-project生成後のmdBook build / viewport / artifact visibility検査は、[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のfresh binaryを使うfail-fast blockだけを正本として実行します。adapter生成時と同じ`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`を維持し、別の書籍やeditionをvisibility検査へ渡しません。
+project生成後のmdBook build / viewport / artifact visibility検査は、[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained fail-fast blockだけを正本として実行します。このblockが同じ`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`からprojectを再生成・再照合するため、既存projectや別の書籍/editionをvisibility検査へ渡しません。
 
 標準書籍metadataは[標準書籍フォーマット](docs/standard-book-format.md)、有償本文と内部本文の分離は[Edition visibilityと有償本文の混入防止](docs/paid-editions.md)、新規出力とlegacy経路の選択は[出力target方針](docs/output-targets.md)を参照してください。
 出力先adapterの責務、有限target、manifest version 1は[Adapter開発契約](adapters/README.md)を参照してください。

@@ -70,6 +70,12 @@ MDBOOK_SHA256=3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
 MDBOOK_TOOL_ROOT="$PWD/.work/tools"
 
 test -f "$BOOK_ROOT/book.yaml"
+npm run validate:standard-book -- "$BOOK_ROOT"
+npm start build -- \
+  --book "$BOOK_ROOT" \
+  --target web-mdbook \
+  --edition "$BOOK_EDITION" \
+  --out-dir "$BOOK_OUTPUT_ROOT"
 test -f "$MDBOOK_PROJECT_DIR/book.toml"
 test -f "$MDBOOK_PROJECT_DIR/manifest.json"
 test ! -L "$PWD/.work"
@@ -97,6 +103,18 @@ MDBOOK_BIN="$MDBOOK_TOOL_DIR/mdbook"
 test -x "$MDBOOK_BIN"
 test "$("$MDBOOK_BIN" --version)" = "mdbook v${MDBOOK_VERSION}"
 "$MDBOOK_BIN" build "$MDBOOK_PROJECT_DIR"
+
+# 生成時のsource snapshotからartifact検査時までに入力が変わっていないことを、
+# 同じ入力からの決定的なadapter再生成で確認する。mdBookのbuild出力だけは比較から除く。
+RECHECK_OUTPUT_ROOT="$MDBOOK_TOOL_DIR/source-recheck"
+npm start build -- \
+  --book "$BOOK_ROOT" \
+  --target web-mdbook \
+  --edition "$BOOK_EDITION" \
+  --out-dir "$RECHECK_OUTPUT_ROOT"
+diff --recursive --brief --exclude=book -- \
+  "$MDBOOK_PROJECT_DIR" \
+  "$RECHECK_OUTPUT_ROOT/web-mdbook"
 npm run check-mdbook-responsive -- --book "$MDBOOK_PROJECT_DIR"
 npm run check-visibility -- \
   "$BOOK_ROOT" \
@@ -105,7 +123,7 @@ npm run check-visibility -- \
 )
 ```
 
-`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`はadapter project生成時に設定した同じ値を維持する。これにより、生成artifactを別のsample書籍から抽出したprotected fragmentで検査しない。URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理する。各buildはworkspace内の新しい一時directoryへarchiveを取得・検証・展開し、同じfail-fast block内でbuildと公開前検査まで完了してからdirectoryを削除する。展開済みbinaryや既存tool directoryを再利用せず、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。
+`BOOK_ROOT`、`BOOK_EDITION`、`BOOK_OUTPUT_ROOT`はadapter project生成時に設定した同じ値を維持する。このself-contained blockは既存projectを信用せず同じ入力からadapter projectを再生成し、mdBook build後にも別の一時出力へ決定的に再生成して、`book/`以外のproject/manifestが一致することを確認する。その後、同じsource/editionからprotected fragmentを抽出してartifactを検査するため、別のsample書籍や生成後に変更されたsourceでvisibility検査を代用しない。URLは[mdBook v0.5.4の公式GitHub release](https://github.com/rust-lang/mdBook/releases/tag/v0.5.4)に属するassetである。digestの正本はこのadapter contractとCIの一致で管理する。各buildはworkspace内の新しい一時directoryへarchiveを取得・検証・展開し、同じfail-fast block内でbuildと公開前検査まで完了してからdirectoryを削除する。展開済みbinaryや既存tool directoryを再利用せず、version文字列だけを根拠に既存`PATH`上のbinaryを信用しない。
 
 responsive checkerは生成project/HTML/CSS契約に加え、利用可能なChromeで全generated content pageに対し、次のviewportのsidebar/content非重複とhidden状態のbody overflowを検証します。mdBook 0.5.4のsidebar support pageであるroot `toc.html`だけを有限に除外し、他のHTMLでresponsive DOM IDが欠けた場合はfail closedです。
 
