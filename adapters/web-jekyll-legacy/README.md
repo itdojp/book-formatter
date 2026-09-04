@@ -301,4 +301,4 @@ Issue #96では次のpathを移動・削除しない。
 - `web-jekyll-legacy`を実装済みadapterへ変更すること
 - standard-book visibilityをlegacy consumerへ未検証で適用すること
 
-Web出力の選択基準は[出力target方針](../../docs/output-targets.md)、共通adapter CLIは[Adapter開発契約](../README.md)を参照する。
+Web出力の選択基準は[出力target方針](../../docs/output-targets.md)、共通adapter CLIは[Adapter開発契約](../README.md)を参照する。既存consumerのPages方式を維持または標準mdBookへ移行するときのprovider境界は[Web出力のデプロイ契約](../../docs/web-deployment.md)に従う。

@@ -70,7 +70,9 @@ adapter buildは変換と成果物検証を担当し、repository設定や外部
 | consumer repository変更 | 対象外 | 1冊1PR |
 | 投稿、販売登録、upload | 対象外 | channel別運用 |
 
-GitHub PagesとCloudflare Pagesの標準deploy方式は[#97](https://github.com/itdojp/book-formatter/issues/97)で扱う。target adapterへcredential、repository設定変更、公開操作を混在させない。
+GitHub Pages、Cloudflare Pages、その他static hostへの標準deploy境界は
+[Web出力のデプロイ契約](web-deployment.md)に従う。target adapterへcredential、
+repository設定変更、公開操作を混在させない。
 
 ## Edition visibility
 

@@ -115,6 +115,10 @@ version 1が扱うchannel keyは次の8種類である。
 各channelはstatusを必須とし、確認済みの場合だけHTTPS URLを持つ。token、secret、
 credential、非公開原稿のpathはregistryへ記録しない。
 
+channelの`url`と`status`はlive公開状態の観測値とする。build command、output
+directory、base path、provider credentialを設定するdeploy profileではない。
+Web公開の設定値と責務境界は[Web出力のデプロイ契約](web-deployment.md)を参照する。
+
 ## edition
 
 editionは「どのchannelへ出力する単位か」を記録する。version 1のregistryは、

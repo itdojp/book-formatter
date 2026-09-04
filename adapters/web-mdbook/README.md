@@ -2,7 +2,7 @@
 
 実装状態: implemented (`web-mdbook-v1`)
 
-標準書籍フォーマットから、mdBook 0.5.4で検証する静的Web projectを生成します。GitHub PagesやCloudflare Pagesへの実デプロイは、このadapterの責務外です。
+標準書籍フォーマットから、mdBook 0.5.4で検証する静的Web projectを生成します。GitHub PagesやCloudflare Pagesへの実デプロイは、このadapterの責務外です。build済み`book/`をproviderへ渡す境界は[Web出力のデプロイ契約](../../docs/web-deployment.md)を参照してください。
 
 ## 生成契約
 
