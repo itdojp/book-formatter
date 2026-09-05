@@ -442,6 +442,21 @@ describe('ZennAdapter', () => {
   });
 
   test('source Front Matter、不正h1、protocol-relative linkをfail closedで拒否する', async () => {
+    const indentedH1Book = await copySampleBook();
+    await fs.writeFile(
+      path.join(indentedH1Book, 'manuscript/02-workflow.md'),
+      '   # Indented canonical heading\n\nBody.\n',
+      'utf8'
+    );
+    const indentedH1Result = await build(
+      indentedH1Book,
+      await temporaryDirectory('tmp-zenn-indented-h1-')
+    );
+    assert.doesNotMatch(
+      await fs.readFile(path.join(bookOutput(indentedH1Result), 'workflow.md'), 'utf8'),
+      /^\s{0,3}# Indented canonical heading$/mu
+    );
+
     const frontMatterBook = await copySampleBook();
     await fs.writeFile(
       path.join(frontMatterBook, 'manuscript/02-workflow.md'),

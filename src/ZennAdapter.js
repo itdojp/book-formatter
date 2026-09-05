@@ -85,7 +85,7 @@ function removeCanonicalH1(source, sourcePath) {
   if (
     lines.slice(0, startLine).some((line) => line.trim()) ||
     endLine !== startLine + 1 ||
-    !/^#[\t ]+\S/u.test(lines[startLine] || '')
+    !/^\s{0,3}#[\t ]+\S/u.test(lines[startLine] || '')
   ) {
     throw new ZennAdapterError(`Zenn source h1 must be the first content block: ${sourcePath}`);
   }
