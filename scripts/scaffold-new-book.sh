@@ -232,6 +232,11 @@ sed_inplace \
   "s#<owner>#$OWNER#g; s#<repo>#$REPO#g; s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<SHORT DESCRIPTION>#Book description#g; s#<AUTHOR>#ITDO Inc.#g" \
   "$OUTPUT/docs/_config.yml"
 sed_inplace "s#<BOOK TITLE>#$TITLE_DEFAULT#g" "$OUTPUT/docs/index.md"
+if [ -f "$OUTPUT/.github/PULL_REQUEST_TEMPLATE.md" ]; then
+  sed_inplace \
+    "s#<owner>#$OWNER#g; s#<repo>#$REPO#g" \
+    "$OUTPUT/.github/PULL_REQUEST_TEMPLATE.md"
+fi
 
 LICENSE_FILES=()
 for candidate in "$OUTPUT/LICENSE.md" "$OUTPUT/LICENSE-SCOPE.md"; do

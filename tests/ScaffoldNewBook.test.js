@@ -62,10 +62,16 @@ function relativeFiles(root) {
   return files.sort();
 }
 
-function assertTreeMatches(source, destination) {
+function assertTreeMatches(
+  source,
+  destination,
+  { contentExceptions = [] } = {},
+) {
   const files = relativeFiles(source);
+  const exceptions = new Set(contentExceptions);
   assert.deepEqual(relativeFiles(destination), files);
   for (const relative of files) {
+    if (exceptions.has(relative)) continue;
     assert.deepEqual(
       readFileSync(path.join(destination, relative)),
       readFileSync(path.join(source, relative)),
@@ -268,6 +274,7 @@ test('local scaffold persists and preserves the finite starter/shared mapping', 
   assertTreeMatches(
     path.join(REPOSITORY_ROOT, 'templates/.github'),
     path.join(output, '.github'),
+    { contentExceptions: ['PULL_REQUEST_TEMPLATE.md'] },
   );
 
   const config = readFileSync(path.join(output, 'docs/_config.yml'), 'utf8');
@@ -295,6 +302,15 @@ test('local scaffold persists and preserves the finite starter/shared mapping', 
   );
   assert.match(navWorkflow, /GITHUB_REPOSITORY_OWNER/);
   assert.doesNotMatch(navWorkflow, /itdojp\.github\.io/);
+  const pullRequestTemplate = readFileSync(
+    path.join(output, '.github/PULL_REQUEST_TEMPLATE.md'),
+    'utf8',
+  );
+  assert.match(
+    pullRequestTemplate,
+    /https:\/\/itdojp\.github\.io\/sample-book\//,
+  );
+  assert.doesNotMatch(pullRequestTemplate, /<(?:owner|repo|REPO)>/);
 });
 
 test('option-like relative output names remain literal paths', () => {
@@ -333,6 +349,28 @@ test('CDPATH cannot redirect or corrupt a relative output parent', () => {
     true,
   );
   assert.equal(existsSync(path.join(alternateOutputs, 'sample-book')), false);
+});
+
+test('copied PR template uses the requested Pages owner and repository', () => {
+  const root = makeTemporaryRoot('pr-template-owner');
+  const output = path.join(root, 'outputs', 'sample-book');
+  const result = runScaffold(root, [
+    'sample-owner',
+    'sample-book',
+    '--output',
+    output,
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  const pullRequestTemplate = readFileSync(
+    path.join(output, '.github/PULL_REQUEST_TEMPLATE.md'),
+    'utf8',
+  );
+  assert.match(
+    pullRequestTemplate,
+    /https:\/\/sample-owner\.github\.io\/sample-book\//,
+  );
+  assert.doesNotMatch(pullRequestTemplate, /itdojp\.github\.io|<[^>]+>/);
 });
 
 test('existing output objects are rejected without mutation', async (t) => {
