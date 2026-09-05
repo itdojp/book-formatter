@@ -196,11 +196,39 @@ printf 'customized skeleton files checked: %s\n' "$CHECKED_SKELETON_FILES"
 
 ## スキャフォールドスクリプトの利用
 
-`scripts/scaffold-new-book.sh`は[#128](https://github.com/itdojp/book-formatter/issues/128)が完了するまで利用しないでください。
+`scripts/scaffold-new-book.sh`は、既存Jekyll互換の雛形を**新しい明示出力先**へ展開する補助scriptです。新規Web書籍の標準経路は引き続き`book.yaml`と`web-mdbook`であり、このscriptは標準mdBook書籍を生成しません。
 
-- `--create`なしでは、表示される一時出力先がscript終了時に削除されます。
-- `--create`では、`gh repo create --source`の前にlocal Git repositoryを初期化・commitしないため、GitHub repositoryを作成できません。
-- 既存legacy書籍の再構築が必要な場合は、前節の手動copyを隔離worktreeで行い、consumer固有値と全差分を監査します。新規Web書籍はこのscriptやstarterではなく標準`web-mdbook`経路で作成します。
+localだけに永続的な雛形を作る場合:
+
+```bash
+mkdir -p ../generated-books
+./scripts/scaffold-new-book.sh itdojp sample-book \
+  --output ../generated-books/sample-book
+```
+
+- `--output`は必須です。親directoryは事前に存在し、指定先自体はfile、directory、symlinkのいずれも存在してはいけません。
+- scriptはcallerのcurrent directoryではなく、自身のformatter checkoutにある`templates/starter/`、`templates/.github/`、`shared/`を参照します。
+- 成功したlocal-only出力はprocess終了後も残ります。既存pathの暗黙上書きやmergeは行いません。
+
+GitHub repositoryの作成と初回pushまで行う場合:
+
+```bash
+./scripts/scaffold-new-book.sh itdojp sample-book \
+  --output ../generated-books/sample-book \
+  --create
+```
+
+`--create`は出力を作る前に、Git author name/email、`gh auth status`、対象remoteの不存在を確認します。その後、localで`main` branch、initial commit、clean status、remote未設定を成立させてから、`gh repo create --source ... --remote origin --push`を1回だけ実行します。remote作成は冪等ではないため、自動retryしません。
+
+作成またはpushが途中失敗した場合、cleanなlocal repositoryは`--output`に保持されます。次を確認するまで同じ処理を再実行したり、local出力を削除したりしないでください。
+
+```bash
+gh repo view itdojp/sample-book
+git -C ../generated-books/sample-book remote -v
+git -C ../generated-books/sample-book status --short --branch
+```
+
+remoteが既に存在する場合はその状態と権限を確認し、必要なpushだけを明示的に行います。remoteが存在せず`origin`もない場合は、保持されたlocal repositoryを`--source`として手動で作成できます。既存legacy書籍の再構築では、前節の隔離worktree・consumer固有値・差分監査も引き続き必要です。
 
 - 章/付録のURLはディレクトリ形式（末尾 /）で統一してください。
 

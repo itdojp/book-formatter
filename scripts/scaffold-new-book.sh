@@ -5,18 +5,140 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
-# Usage: ./scripts/scaffold-new-book.sh <owner> <repo> [--create]
-OWNER=${1:-}
-REPO=${2:-}
-CREATE=${3:-}
-if [ -z "$OWNER" ] || [ -z "$REPO" ]; then
-  die "Usage: $0 <owner> <repo> [--create]"
+usage() {
+  cat <<EOF
+Usage: $0 <owner> <repo> --output <path> [--create]
+
+Options:
+  --output <path>  Required persistent destination. The path must not exist.
+  --create         Initialize, commit, and publish the scaffold with gh.
+  --help           Show this help.
+EOF
+}
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  usage
+  exit 0
 fi
 
-WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
-DST="$WORK/$REPO"
-mkdir -p "$DST"
+OWNER=${1:-}
+REPO=${2:-}
+if [ -z "$OWNER" ] || [ -z "$REPO" ]; then
+  usage >&2
+  die "owner and repository are required"
+fi
+shift 2
+
+OUTPUT_INPUT=""
+CREATE=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output)
+      if [ -n "$OUTPUT_INPUT" ]; then
+        die "--output may be specified only once"
+      fi
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ] || [ "${2#--}" != "$2" ]; then
+        die "--output requires a non-empty path"
+      fi
+      OUTPUT_INPUT=$2
+      shift 2
+      ;;
+    --create)
+      if [ "$CREATE" -eq 1 ]; then
+        die "--create may be specified only once"
+      fi
+      CREATE=1
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      die "Unknown option: $1"
+      ;;
+  esac
+done
+
+if [ -z "$OUTPUT_INPUT" ]; then
+  die "--output <path> is required"
+fi
+
+# These finite names cover GitHub owner/repository names while keeping
+# placeholder substitution data separate from sed syntax.
+if ! [[ "$OWNER" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]; then
+  die "Invalid GitHub owner name: $OWNER"
+fi
+if [ "$REPO" = "." ] || [ "$REPO" = ".." ] || \
+   ! [[ "$REPO" =~ ^[A-Za-z0-9._-]{1,100}$ ]]; then
+  die "Invalid GitHub repository name: $REPO"
+fi
+
+OUTPUT_PARENT_INPUT="$(dirname "$OUTPUT_INPUT")"
+OUTPUT_NAME="$(basename "$OUTPUT_INPUT")"
+if [ -z "$OUTPUT_NAME" ] || [ "$OUTPUT_NAME" = "." ] || \
+   [ "$OUTPUT_NAME" = ".." ] || [ "$OUTPUT_NAME" = "/" ]; then
+  die "--output must name a new directory"
+fi
+if [ ! -d "$OUTPUT_PARENT_INPUT" ]; then
+  die "Output parent must already be a directory: $OUTPUT_PARENT_INPUT"
+fi
+OUTPUT_PARENT="$(cd "$OUTPUT_PARENT_INPUT" && pwd -P)"
+OUTPUT="$OUTPUT_PARENT/$OUTPUT_NAME"
+
+if [ -e "$OUTPUT" ] || [ -L "$OUTPUT" ]; then
+  die "Output path already exists; refusing to overwrite: $OUTPUT"
+fi
+
+require_cmd cp mkdir sed
+
+GIT_IDENTITY_NAME=""
+GIT_IDENTITY_EMAIL=""
+
+if [ "$CREATE" -eq 1 ]; then
+  require_cmd gh git grep
+
+  GIT_IDENTITY_NAME="${GIT_AUTHOR_NAME:-}"
+  GIT_IDENTITY_EMAIL="${GIT_AUTHOR_EMAIL:-}"
+  if [ -z "$GIT_IDENTITY_NAME" ]; then
+    GIT_IDENTITY_NAME="$(git -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.name 2>/dev/null || true)"
+  fi
+  if [ -z "$GIT_IDENTITY_EMAIL" ]; then
+    GIT_IDENTITY_EMAIL="$(git -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.email 2>/dev/null || true)"
+  fi
+  if [ -z "$GIT_IDENTITY_NAME" ] || [ -z "$GIT_IDENTITY_EMAIL" ]; then
+    die "--create requires a configured Git author name and email"
+  fi
+
+  if ! gh auth status --hostname github.com >/dev/null 2>&1; then
+    die "GitHub CLI authentication for github.com is required"
+  fi
+
+  REMOTE_LOOKUP_ERROR=""
+  if REMOTE_LOOKUP_ERROR="$(gh api --silent "repos/$OWNER/$REPO" 2>&1 >/dev/null)"; then
+    die "GitHub repository already exists: $OWNER/$REPO"
+  fi
+  if ! printf '%s' "$REMOTE_LOOKUP_ERROR" | grep -Eqi '(HTTP[[:space:]]+404|status code[[:space:]]+404)'; then
+    die "Unable to prove that GitHub repository $OWNER/$REPO is absent; no local output was created"
+  fi
+fi
+
+OUTPUT_OWNED=0
+LOCAL_SCAFFOLD_COMPLETE=0
+cleanup_incomplete_output() {
+  local rc=$?
+  if [ "$rc" -ne 0 ] && [ "$OUTPUT_OWNED" -eq 1 ] && \
+     [ "$LOCAL_SCAFFOLD_COMPLETE" -eq 0 ]; then
+    rm -rf -- "$OUTPUT"
+  fi
+  return "$rc"
+}
+trap cleanup_incomplete_output EXIT
+
+# mkdir is the no-clobber ownership boundary: it fails if another process
+# creates any object at the destination after the preflight check.
+mkdir -- "$OUTPUT"
+OUTPUT_OWNED=1
 
 sed_inplace() {
   local expr=${1:-}
@@ -29,45 +151,102 @@ sed_inplace() {
   # Use -i.bak for portability across GNU/BSD sed.
   local rc=0
   sed -i.bak -e "$expr" "$@" || rc=$?
-  for f in "$@"; do
-    rm -f "$f.bak" 2>/dev/null || true
+  local file
+  for file in "$@"; do
+    rm -f "$file.bak" 2>/dev/null || true
   done
   return "$rc"
 }
 
-# Copy starter (docs/ + root files)
-cp -R templates/starter/. "$DST/"
+# Preserve the finite legacy-Jekyll scaffold mapping.
+cp -R "$BOOK_FORMATTER_REPO_ROOT/templates/starter/." "$OUTPUT/"
 
-# Copy GitHub workflows/templates (optional)
-if [ -d templates/.github ]; then
-  mkdir -p "$DST/.github"
-  cp -R templates/.github/. "$DST/.github/"
+if [ -d "$BOOK_FORMATTER_REPO_ROOT/templates/.github" ]; then
+  mkdir -p "$OUTPUT/.github"
+  cp -R "$BOOK_FORMATTER_REPO_ROOT/templates/.github/." "$OUTPUT/.github/"
 fi
 
-# Sync canonical shared components into docs/ (Jekyll conventions)
-mkdir -p "$DST/docs/_layouts" "$DST/docs/_includes" "$DST/docs/assets"
-cp -R shared/layouts/. "$DST/docs/_layouts/"
-cp -R shared/includes/. "$DST/docs/_includes/"
-cp -R shared/assets/. "$DST/docs/assets/"
+mkdir -p "$OUTPUT/docs/_layouts" "$OUTPUT/docs/_includes" "$OUTPUT/docs/assets"
+cp -R "$BOOK_FORMATTER_REPO_ROOT/shared/layouts/." "$OUTPUT/docs/_layouts/"
+cp -R "$BOOK_FORMATTER_REPO_ROOT/shared/includes/." "$OUTPUT/docs/_includes/"
+cp -R "$BOOK_FORMATTER_REPO_ROOT/shared/assets/." "$OUTPUT/docs/assets/"
 
-# Fill placeholders
 TITLE_DEFAULT="${REPO//-/ }"
-sed_inplace "s#<owner>#$OWNER#g; s#<repo>#$REPO#g; s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<SHORT DESCRIPTION>#Book description#g; s#<AUTHOR>#ITDO Inc.#g" "$DST/docs/_config.yml"
-sed_inplace "s#<BOOK TITLE>#$TITLE_DEFAULT#g" "$DST/docs/index.md"
-sed_inplace "s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<owner>#$OWNER#g; s#<repo>#$REPO#g" "$DST/LICENSE.md" "$DST/LICENSE-SCOPE.md" 2>/dev/null || true
+sed_inplace \
+  "s#<owner>#$OWNER#g; s#<repo>#$REPO#g; s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<SHORT DESCRIPTION>#Book description#g; s#<AUTHOR>#ITDO Inc.#g" \
+  "$OUTPUT/docs/_config.yml"
+sed_inplace "s#<BOOK TITLE>#$TITLE_DEFAULT#g" "$OUTPUT/docs/index.md"
 
-# Show next steps
-cat <<EON
-Scaffolded at: $DST
+LICENSE_FILES=()
+for candidate in "$OUTPUT/LICENSE.md" "$OUTPUT/LICENSE-SCOPE.md"; do
+  if [ -f "$candidate" ]; then
+    LICENSE_FILES+=("$candidate")
+  fi
+done
+if [ "${#LICENSE_FILES[@]}" -gt 0 ]; then
+  sed_inplace \
+    "s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<owner>#$OWNER#g; s#<repo>#$REPO#g" \
+    "${LICENSE_FILES[@]}"
+fi
+
+LOCAL_SCAFFOLD_COMPLETE=1
+
+if [ "$CREATE" -eq 1 ]; then
+  git init --initial-branch=main "$OUTPUT" >/dev/null
+  git -C "$OUTPUT" add --all
+  GIT_AUTHOR_NAME="$GIT_IDENTITY_NAME" \
+  GIT_AUTHOR_EMAIL="$GIT_IDENTITY_EMAIL" \
+  GIT_COMMITTER_NAME="$GIT_IDENTITY_NAME" \
+  GIT_COMMITTER_EMAIL="$GIT_IDENTITY_EMAIL" \
+    git -C "$OUTPUT" \
+      -c core.hooksPath=/dev/null \
+      -c commit.gpgSign=false \
+      commit -m "chore: initialize book scaffold" >/dev/null
+
+  if [ "$(git -C "$OUTPUT" branch --show-current)" != "main" ] || \
+     ! git -C "$OUTPUT" rev-parse --verify HEAD >/dev/null 2>&1 || \
+     [ -n "$(git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all)" ] || \
+     git -C "$OUTPUT" remote get-url origin >/dev/null 2>&1; then
+    die "Local repository preflight failed; retained for inspection: $OUTPUT"
+  fi
+
+  # Repository creation is non-idempotent. Do not retry automatically: a
+  # network failure can occur after the remote has already been created.
+  if ! gh repo create "$OWNER/$REPO" \
+      --public \
+      --source "$OUTPUT" \
+      --remote origin \
+      --push; then
+    log ERROR "GitHub repository creation or initial push failed"
+    if [ "$(git -C "$OUTPUT" branch --show-current 2>/dev/null || true)" = "main" ] && \
+       [ -z "$(git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all 2>/dev/null || true)" ]; then
+      log ERROR "The clean local repository is retained at: $OUTPUT"
+    else
+      log ERROR "The local repository is retained but its state requires inspection: $OUTPUT"
+    fi
+    log ERROR "Before retrying, inspect: gh repo view $OWNER/$REPO"
+    log ERROR "Also inspect: git -C '$OUTPUT' remote -v"
+    exit 1
+  fi
+
+  REMOTE_OWNER_REPO="$(git_owner_repo_from_remote "$OUTPUT" 2>/dev/null || true)"
+  if [ "$REMOTE_OWNER_REPO" != "$OWNER/$REPO" ] || \
+     [ "$(git -C "$OUTPUT" branch --show-current)" != "main" ] || \
+     [ -n "$(git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all)" ]; then
+    die "Remote command returned success but the local repository contract is incomplete: $OUTPUT"
+  fi
+fi
+
+cat <<EOF
+Scaffolded at: $OUTPUT
 Next steps:
 1) Review docs/_config.yml (title/description/author/baseurl/repository)
 2) Update docs/_data/navigation.yml (ToC order)
 3) Add chapters under docs/chapters/, appendices under docs/appendices/
 4) Review .github/workflows/ (CI/QA)
-5) Commit and push to GitHub
-EON
-
-if [ "$CREATE" = "--create" ]; then
-  require_cmd gh
-  gh_retry repo create "$OWNER/$REPO" --public --source "$DST" --remote origin --push >/dev/null
+EOF
+if [ "$CREATE" -eq 1 ]; then
+  echo "5) Verify the created GitHub repository and branch protection"
+else
+  echo "5) Commit and push to GitHub when the scaffold is ready"
 fi

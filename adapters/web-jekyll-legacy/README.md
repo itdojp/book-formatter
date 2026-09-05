@@ -15,7 +15,7 @@
 | --- | --- | --- | --- |
 | `create-book` / `update-book` | legacy `book-config.json` | 組み込みJekyll templateと`shared/`を使う既存生成処理 | `update-book`は有限planから1 consumerのmanaged metadata/templateだけを更新 |
 | `sync-all-books` | 最大6件の有限consumer plan | dry-run全件検査、または明示した1 consumerの更新 | fixed SHA / linked worktree / allowlist / rollbackをruntimeで強制 |
-| `scripts/scaffold-new-book.sh` | owner / repository名 | template展開処理は保持されているが、現在は利用不可 | EXIT時に一時出力を削除し、`--create`もlocal Git repositoryを作らない。[#128](https://github.com/itdojp/book-formatter/issues/128) |
+| `scripts/scaffold-new-book.sh` | owner / repository名 / 明示`--output` | legacy Jekyll starterとshared componentを新規pathへ展開 | local-onlyは永続出力。`--create`はmain / initial commit / clean statusを成立させてから1回だけremote作成・push |
 | `sync-components` | legacy `book-config.json`と`shared/version.json` | layouts / includes / assetsの選択同期 | consumerの`docs/`配下 |
 | `rollout-ux` | finite consumer plan / legacy UX registry | UX profile更新と、明示指定時の共通component同期 | fixed SHA / linked worktree / allowlist / rollback / 単一targetをruntimeで強制 |
 | `Book Sync` workflow | 最大3冊の明示対象 | consumer clone、preview、allowlist付きPR作成 | preview / writeともruntime destination検査とworkflow gateを要求 |
@@ -23,7 +23,7 @@
 
 legacy `book-config.json`と標準`book.yaml`は別契約である。`create-book`、`update-book`、`sync-components`、`rollout-ux`へ`book.yaml`を暗黙変換して渡さない。反対に、既存書籍に`book.yaml`がないことを理由にlegacy経路を停止しない。
 
-`scripts/scaffold-new-book.sh`は互換pathとして削除しないが、[#128](https://github.com/itdojp/book-formatter/issues/128)が完了するまで新規作成手順には使用しない。現行scriptは`--create`なしでもEXIT trapで一時出力を削除し、`--create`では`gh repo create --source`が要求する初期化済みlocal Git repositoryを用意しないため、永続的なlocal scaffoldもGitHub repositoryも作成できない。
+`scripts/scaffold-new-book.sh`は互換pathとして、存在しない明示`--output`だけへ展開する。local-only出力は保持される。`--create`は認証・remote不存在・Git identityを先に検査し、local `main`のinitial commitとclean statusを確認してから`gh repo create`を1回だけ呼ぶ。途中失敗ではlocal repositoryを保持し、remoteの有無と`origin`をoperatorが確認する。既存pathの上書き、remote作成の自動retry、consumer一括rolloutは行わない。詳細は[`docs/README-unified-setup.md`](../../docs/README-unified-setup.md)を参照する。
 
 ## Jekyll componentの正本と同期先
 
