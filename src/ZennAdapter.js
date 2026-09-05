@@ -398,6 +398,11 @@ async function convertImagesAndAudit(source, {
       : token.type === 'image'
         ? token.attrGet('src')
         : null;
+    if (token.type === 'image' && !destination) {
+      throw new ZennAdapterError(
+        `Zenn source image must have a non-empty destination: ${sourcePath}:${line}`
+      );
+    }
     if (!destination) continue;
     const scheme = destinationScheme(destination);
     if (scheme && scheme !== 'https') {

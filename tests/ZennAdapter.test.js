@@ -191,6 +191,7 @@ describe('ZennAdapter', () => {
 
   test('外部・root外・未対応・過大・symlink画像をfail closedで拒否する', async (context) => {
     const cases = [
+      ['![empty]()', /must have a non-empty destination/],
       ['![external](https://assets.example/image.png)', /External images are not supported/],
       ['![root](/images/existing.png)', /must be relative/],
       ['![outside](../../../outside.png)', /resolves outside the book root/],
