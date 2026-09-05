@@ -529,27 +529,39 @@ function selectParsedInlineImages(segment, sourcePath) {
       key: tokens.length === 1 ? imageTokenKey(tokens[0]) : null
     };
   });
-  const solutions = [];
-
-  function visit(parsedIndex, candidateIndex, selected) {
-    if (solutions.length > 1) return;
-    if (parsedIndex === parsedKeys.length) {
-      solutions.push(selected);
-      return;
+  const earliest = [];
+  let candidateIndex = 0;
+  for (const parsedKey of parsedKeys) {
+    while (
+      candidateIndex < candidates.length &&
+      candidates[candidateIndex].key !== parsedKey
+    ) candidateIndex += 1;
+    if (candidateIndex === candidates.length) {
+      throw new ZennAdapterError(`Parsed image syntax could not be mapped in ${sourcePath}`);
     }
-    for (let index = candidateIndex; index < candidates.length; index += 1) {
-      if (candidates[index].key !== parsedKeys[parsedIndex]) continue;
-      visit(parsedIndex + 1, index + 1, [...selected, candidates[index]]);
-    }
+    earliest.push(candidateIndex);
+    candidateIndex += 1;
   }
 
-  visit(0, 0, []);
-  if (solutions.length !== 1) {
+  const latest = Array(parsedKeys.length);
+  candidateIndex = candidates.length - 1;
+  for (let parsedIndex = parsedKeys.length - 1; parsedIndex >= 0; parsedIndex -= 1) {
+    while (candidateIndex >= 0 && candidates[candidateIndex].key !== parsedKeys[parsedIndex]) {
+      candidateIndex -= 1;
+    }
+    if (candidateIndex < 0) {
+      throw new ZennAdapterError(`Parsed image syntax could not be mapped in ${sourcePath}`);
+    }
+    latest[parsedIndex] = candidateIndex;
+    candidateIndex -= 1;
+  }
+
+  if (earliest.some((index, parsedIndex) => index !== latest[parsedIndex])) {
     throw new ZennAdapterError(
       `Parsed image syntax could not be mapped unambiguously in ${sourcePath}`
     );
   }
-  return solutions[0];
+  return earliest.map((index) => candidates[index]);
 }
 
 async function convertImagesAndAudit(source, {

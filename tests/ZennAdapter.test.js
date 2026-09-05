@@ -152,6 +152,10 @@ describe('ZennAdapter', () => {
         '`![inline example](../assets/missing.png)`\n' +
         '\\![escaped example](../assets/missing.png)\n' +
         '[docs](https://example.test "literal ![icon](../assets/missing.png)")\n' +
+        `${Array.from(
+          { length: 50 },
+          () => '![repeated](../assets/figures/flow.png)'
+        ).join(' ')}\n` +
         '```markdown\n![fenced example](../assets/missing.png)\n```\n'
     );
 
@@ -181,6 +185,12 @@ describe('ZennAdapter', () => {
     assert.match(
       workflow,
       /\[docs\]\(https:\/\/example\.test "literal !\[icon\]\(\.\.\/assets\/missing\.png\)"\)/u
+    );
+    assert.strictEqual(
+      [...workflow.matchAll(
+        /!\[repeated\]\(\/images\/standard-book-example\/figures\/flow\.png\)/gu
+      )].length,
+      50
     );
     assert.match(workflow, /```markdown\n!\[fenced example\]\(\.\.\/assets\/missing\.png\)\n```/u);
     assert.deepStrictEqual(
