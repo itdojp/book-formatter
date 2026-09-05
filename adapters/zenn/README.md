@@ -79,7 +79,7 @@ Issue #98の初期記述には「有償版の場合のみ`price`を出力」と�
 
 標準正本の先頭h1はZennのchapter Front Matterと表示titleが重複しないように除きます。正本には標準Markdown契約どおり、先頭content blockとしてATX h1がちょうど1件必要です。manifest warningの`line`はvisibility projectionと先頭h1除去後のchapter body行を示します。
 
-初版で保証しないtarget固有変換は、本文を含まない`code` / `file` / `line`だけのwarningとしてmanifestへ記録します。現在はrelative link passthroughとraw HTML passthroughが対象です。warningは公開可能性の証明ではなく、人間がZenn CLI preview前に確認する作業項目です。全Zenn Markdown構文の変換は対象外です。
+初版で保証しないtarget固有変換は、本文を含まない`code` / `file` / `line`だけのwarningとしてmanifestへ記録します。現在はrelative link passthroughが対象です。reader-visible raw HTMLは、内部のURLや実行可能属性をwarningだけで安全と判定できないためfail closedで拒否します。inline/fenced code内のliteralは対象外です。warningは公開可能性の証明ではなく、人間がZenn CLI preview前に確認する作業項目です。全Zenn Markdown構文の変換は対象外です。
 
 ## Build
 

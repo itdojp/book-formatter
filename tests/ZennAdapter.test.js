@@ -279,16 +279,17 @@ describe('ZennAdapter', () => {
 
   test('unsupported warningはredactedで、unknown ownerをdry-run含め置換しない', async () => {
     const bookDirectory = await copySampleBook();
-    await appendWorkflow(bookDirectory, '\n<div>target-specific HTML</div>\n');
     const dryOutput = await temporaryDirectory('tmp-zenn-dry-output-');
     const dry = await build(bookDirectory, dryOutput, 'free', true);
     assert.strictEqual(dry.written, false);
     assert.strictEqual(await fs.pathExists(dry.outputDirectory), false);
-    assert.ok(dry.manifest.adapter.warnings.some((warning) => warning.code === 'raw_html_passthrough'));
+    assert.ok(dry.manifest.adapter.warnings.some(
+      (warning) => warning.code === 'relative_link_passthrough'
+    ));
     assert.ok(dry.manifest.adapter.warnings.every(
       (warning) => Object.keys(warning).sort().join(',') === 'code,file,line'
     ));
-    assert.ok(!JSON.stringify(dry.manifest.adapter.warnings).includes('target-specific HTML'));
+    assert.ok(!JSON.stringify(dry.manifest.adapter.warnings).includes('book.yaml'));
 
     const outputRoot = await temporaryDirectory('tmp-zenn-owner-output-');
     const outputDirectory = path.join(outputRoot, 'zenn');
@@ -327,6 +328,23 @@ describe('ZennAdapter', () => {
     await assert.rejects(
       build(protocolRelativeBook, await temporaryDirectory('tmp-zenn-protocol-relative-')),
       /Protocol-relative links are not supported/
+    );
+
+    const rawHtmlBook = await copySampleBook();
+    await appendWorkflow(rawHtmlBook, '\n<img src="https://tracker.example/x.png">\n');
+    await assert.rejects(
+      build(rawHtmlBook, await temporaryDirectory('tmp-zenn-raw-html-')),
+      /Reader-visible raw HTML is not supported/
+    );
+
+    const rawHtmlLiteralBook = await copySampleBook();
+    await appendWorkflow(
+      rawHtmlLiteralBook,
+      '\n`<a href="http://outside.example">literal</a>`\n' +
+        '```html\n<img src="https://tracker.example/x.png">\n```\n'
+    );
+    await assert.doesNotReject(
+      build(rawHtmlLiteralBook, await temporaryDirectory('tmp-zenn-raw-html-literal-'), 'free', true)
     );
   });
 

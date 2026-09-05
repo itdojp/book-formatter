@@ -389,8 +389,9 @@ async function convertImagesAndAudit(source, {
   const tokens = collectTokens(SOURCE_AUDIT_MARKDOWN.parse(result, {}));
   for (const { token, line } of tokens) {
     if (token.type === 'html_block' || token.type === 'html_inline') {
-      addWarning(warnings, 'raw_html_passthrough', sourcePath, line);
-      continue;
+      throw new ZennAdapterError(
+        `Reader-visible raw HTML is not supported by the Zenn adapter: ${sourcePath}:${line}`
+      );
     }
     const destination = token.type === 'link_open'
       ? token.attrGet('href')
