@@ -14,7 +14,7 @@
 
 ## Pages確認（原則必須）
 
-- 確認URL: https://itdojp.github.io/<REPO>/
+- 確認URL: https://<owner>.github.io/<repo>/
 - [ ] トップページ HTTP 200
 - [ ] 主要導線（navigation.yml 相当）で 404 が無い
 - [ ] 表示崩れが無い（図表/表/コード中心）

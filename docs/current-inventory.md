@@ -98,7 +98,7 @@
 現在確認できる同期契約は次のとおり。
 
 1. `shared/layouts/`、`shared/includes/`、`shared/assets/` が `sync-components.js` の入力である。
-2. `scaffold-new-book.sh` は `templates/starter/` と `templates/.github/` をコピーした後、`shared/` を生成先の `docs/_layouts`、`docs/_includes`、`docs/assets` へ上書き同期する。
+2. `scaffold-new-book.sh` は存在しない明示`--output`だけを生成先とし、`templates/starter/` と `templates/.github/` をコピーした後、`shared/` を生成先の `docs/_layouts`、`docs/_includes`、`docs/assets` へ同期する。local-only出力は保持し、`--create`はlocal main / initial commit / clean statusをremote操作前に強制する。
 3. `templates/ux/` は `UxRollout` がprofile/module名から動的に参照するため、ファイル名の直接参照がなくてもactiveである。
 4. `templates/.github/PULL_REQUEST_TEMPLATE.md` はscaffold時にdirectory単位でコピーされるためactiveである。
 
