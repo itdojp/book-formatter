@@ -147,6 +147,7 @@ describe('ZennAdapter', () => {
       '\n![処理フロー](../assets/figures/flow.png)\n' +
         '![記号付き](../assets/figures/flow%29.png)\n' +
         '![空白付き](../assets/figures/flow%20name.png)\n' +
+        '![a\\]b](../assets/figures/flow.png)\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
         '`![inline example](../assets/missing.png)`\n' +
         '\\![escaped example](../assets/missing.png)\n' +
@@ -166,6 +167,9 @@ describe('ZennAdapter', () => {
     assert.match(
       workflow,
       /!\[空白付き\]\(\/images\/standard-book-example\/figures\/flow%20name\.png\)/u
+    );
+    assert.ok(
+      workflow.includes('![a\\]b](/images/standard-book-example/figures/flow.png)')
     );
     assert.match(
       workflow,

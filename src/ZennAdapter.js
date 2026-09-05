@@ -443,6 +443,66 @@ async function addRelativeLinkWarnings(source, blockTokens, environment, sourceP
   return detectedLinks;
 }
 
+function collectInlineImages(segment) {
+  const images = [];
+  let index = 0;
+
+  while (index < segment.length - 1) {
+    if (
+      segment[index] !== '!' ||
+      segment[index + 1] !== '[' ||
+      isBackslashEscaped(segment, index)
+    ) {
+      index += 1;
+      continue;
+    }
+
+    let cursor = index + 2;
+    let bracketDepth = 1;
+    while (cursor < segment.length && bracketDepth > 0) {
+      if (segment[cursor] === '\\') {
+        cursor += Math.min(2, segment.length - cursor);
+        continue;
+      }
+      if (segment[cursor] === '[') bracketDepth += 1;
+      if (segment[cursor] === ']') bracketDepth -= 1;
+      cursor += 1;
+    }
+    if (bracketDepth !== 0 || segment[cursor] !== '(') {
+      index += 2;
+      continue;
+    }
+
+    const altEnd = cursor - 1;
+    const destinationStart = cursor + 1;
+    let parenthesisDepth = 1;
+    cursor = destinationStart;
+    while (cursor < segment.length && parenthesisDepth > 0) {
+      if (segment[cursor] === '\\') {
+        cursor += Math.min(2, segment.length - cursor);
+        continue;
+      }
+      if (segment[cursor] === '(') parenthesisDepth += 1;
+      if (segment[cursor] === ')') parenthesisDepth -= 1;
+      cursor += 1;
+    }
+    if (parenthesisDepth !== 0) {
+      index += 2;
+      continue;
+    }
+
+    images.push({
+      start: index,
+      end: cursor,
+      alt: segment.slice(index + 2, altEnd),
+      destination: segment.slice(destinationStart, cursor - 1)
+    });
+    index = cursor;
+  }
+
+  return images;
+}
+
 async function convertImagesAndAudit(source, {
   bookRoot,
   metadata,
@@ -462,11 +522,14 @@ async function convertImagesAndAudit(source, {
   async function rewriteImagesInSegment(segment) {
     let rebuilt = '';
     let cursor = 0;
-    const imagePattern = /!\[([^\]\r\n]*)\]\(([^)\r\n]+)\)/gu;
-    for (const match of segment.matchAll(imagePattern)) {
-      if (isBackslashEscaped(segment, match.index)) continue;
-      rebuilt += segment.slice(cursor, match.index);
-      const destination = match[2].trim();
+    for (const imageSyntax of collectInlineImages(segment)) {
+      rebuilt += segment.slice(cursor, imageSyntax.start);
+      const destination = imageSyntax.destination.trim();
+      if (!destination) {
+        throw new ZennAdapterError(
+          `Zenn source image must have a non-empty destination: ${sourcePath}`
+        );
+      }
       if (/\s/u.test(destination)) {
         throw new ZennAdapterError(`Image titles or whitespace paths are not supported in ${sourcePath}`);
       }
@@ -483,8 +546,8 @@ async function convertImagesAndAudit(source, {
       ].map(encodeZennPathComponent).join('/');
       copiedAssets.set(outputRelative, image.source);
       convertedImageDestinations.add(`/${outputUrl}`);
-      rebuilt += `![${match[1]}](/${outputUrl})`;
-      cursor = match.index + match[0].length;
+      rebuilt += `![${imageSyntax.alt}](/${outputUrl})`;
+      cursor = imageSyntax.end;
     }
     return rebuilt + segment.slice(cursor);
   }
