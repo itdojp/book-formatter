@@ -103,8 +103,8 @@ for source_file in "${REQUIRED_GITHUB_TEMPLATE_FILES[@]}"; do
   fi
 done
 
-# Do not let caller-owned repository routing variables redirect local Git or
-# the Git subprocesses started by `gh repo create` outside the new output.
+# Do not let caller-owned repository or executable routing variables redirect
+# local Git or the Git subprocesses started by `gh repo create`.
 run_without_git_routing() (
   unset \
     GIT_DIR \
@@ -114,6 +114,7 @@ run_without_git_routing() (
     GIT_ALTERNATE_OBJECT_DIRECTORIES \
     GIT_COMMON_DIR \
     GIT_NAMESPACE \
+    GIT_EXEC_PATH \
     GIT_TEMPLATE_DIR \
     GIT_CONFIG_COUNT \
     GIT_CONFIG_PARAMETERS \

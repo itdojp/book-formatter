@@ -101,6 +101,9 @@ function installMockGh(root) {
     '  echo "git template injection remains" >&2',
     '  exit 93',
     'fi',
+    'if ! { [ "${1:-}" = auth ] && [ "${2:-}" = git-credential ]; }; then',
+    '  test -z "${GIT_EXEC_PATH:-}"',
+    'fi',
     'test "${GIT_SSH:-}" = false',
     'test "${GIT_SSH_COMMAND:-}" = false',
     'test "${GIT_CONFIG_COUNT:-}" = 2',
@@ -660,7 +663,7 @@ test('--create presents one clean main commit to one mocked gh create call', () 
   assert.match(calls[3], / --remote origin --push$/);
 });
 
-test('--create ignores caller-owned Git repository routing variables', () => {
+test('--create ignores caller-owned Git repository and executable routing variables', () => {
   const root = makeTemporaryRoot('git-routing');
   const output = path.join(root, 'outputs', 'sample-book');
   const templateDirectory = path.join(root, 'malicious-template');
@@ -679,6 +682,7 @@ test('--create ignores caller-owned Git repository routing variables', () => {
         GIT_WORK_TREE: path.join(root, 'decoy-worktree'),
         GIT_INDEX_FILE: path.join(root, 'decoy-index'),
         GIT_OBJECT_DIRECTORY: path.join(root, 'decoy-objects'),
+        GIT_EXEC_PATH: path.join(root, 'malicious-git-exec-path'),
         GIT_TEMPLATE_DIR: templateDirectory,
         GIT_CONFIG_COUNT: '1',
         GIT_CONFIG_KEY_0: 'remote.origin.pushurl',
