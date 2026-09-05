@@ -12,6 +12,7 @@ import {
 
 const PLAN_SCHEMA_VERSION = 1;
 const MAX_CONSUMERS = 6;
+const MAX_GIT_OUTPUT = 64 * 1024 * 1024;
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const ALLOWED_OPERATIONS = new Set([
@@ -118,6 +119,7 @@ function gitOutput(repoRoot, args, options = {}) {
     return execFileSync('git', [...AUDITED_GIT_OPTIONS, '-C', repoRoot, ...args], {
       encoding: options.encoding || 'utf8',
       input: options.input,
+      maxBuffer: MAX_GIT_OUTPUT,
       stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       env: bootstrapSafeEnvironment({
         GIT_NO_REPLACE_OBJECTS: '1',
@@ -302,8 +304,18 @@ function restoreRawTrackedFiles(repoRoot, revision, relativePaths) {
     let parent = repoRoot;
     for (const segment of relativePath.split('/').slice(0, -1)) {
       parent = path.join(parent, segment);
-      const parentStat = fs.lstatSync(parent);
-      if (!parentStat.isDirectory() || parentStat.isSymbolicLink()) {
+      let parentStat = fs.lstatSync(parent, { throwIfNoEntry: false });
+      if (!parentStat) {
+        try {
+          // Create one level at a time so every existing or concurrently
+          // created ancestor is still checked before restoring audited bytes.
+          fs.mkdirSync(parent, { mode: 0o755 });
+        } catch (error) {
+          if (error.code !== 'EEXIST') throw error;
+        }
+        parentStat = fs.lstatSync(parent, { throwIfNoEntry: false });
+      }
+      if (!parentStat || !parentStat.isDirectory() || parentStat.isSymbolicLink()) {
         throw new ConsumerMutationError(
           `Rollback path has an unsafe parent directory: ${relativePath}`
         );

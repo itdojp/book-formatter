@@ -1048,6 +1048,44 @@ describe('ConsumerMutationBoundary transaction', () => {
     assert.strictEqual(git(fixture.worktree, 'rev-parse', 'HEAD'), fixture.baseSha);
   });
 
+  test('rollbackは欠落した親directoryを再作成し大きなtracked blobを復元する', async () => {
+    const largeContent = Buffer.alloc(2 * 1024 * 1024, 0x61);
+    const relativePath = 'managed/nested/large.bin';
+    const fixture = await createLinkedConsumer(tempDir, {
+      files: { [relativePath]: largeContent }
+    });
+    const consumer = consumerEntry({
+      ...fixture,
+      allowedPaths: [relativePath]
+    });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+
+    await assert.rejects(
+      createBoundary().run({
+        plan,
+        consumer,
+        managedPaths: [relativePath],
+        dryRun: false,
+        mutate: async ({ consumerRoot }) => {
+          await fs.remove(path.join(consumerRoot, 'managed'));
+          throw new Error('synthetic interruption after deleting tracked parents');
+        }
+      }),
+      /Mutation failed and was rolled back/
+    );
+
+    assert.strictEqual(git(fixture.worktree, 'status', '--porcelain'), '');
+    assert.deepStrictEqual(
+      await fs.readFile(path.join(fixture.worktree, relativePath)),
+      largeContent
+    );
+  });
+
   test('operation failureとallowlist外差分をbase SHAへrollbackし、明示再開できる', async () => {
     const fixture = await createLinkedConsumer(tempDir);
     const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
