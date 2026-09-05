@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import fs from 'fs-extra';
 import MarkdownIt from 'markdown-it';
+import markdownItFootnote from 'markdown-it-footnote';
 import { parseFragment } from 'parse5';
 import YAML from 'yaml';
 
@@ -25,7 +26,7 @@ const SOURCE_AUDIT_MARKDOWN = new MarkdownIt({
   linkify: false,
   typographer: false,
   maxNesting: 128
-});
+}).use(markdownItFootnote);
 SOURCE_AUDIT_MARKDOWN.validateLink = () => true;
 SOURCE_AUDIT_MARKDOWN.normalizeLink = (destination) => destination;
 
@@ -291,7 +292,12 @@ function encodeZennPathComponent(component) {
   );
 }
 
-async function transformOutsideInlineCode(line, state, transform) {
+async function transformOutsideInlineCode(
+  line,
+  state,
+  transform,
+  { maskInlineCode = false } = {}
+) {
   let output = '';
   let cursor = 0;
   while (cursor < line.length) {
@@ -303,8 +309,12 @@ async function transformOutsideInlineCode(line, state, transform) {
         if (length === state.inlineTicks) break;
         close = line.indexOf('`', close + length);
       }
-      if (close === -1) return output + line.slice(cursor);
-      output += line.slice(cursor, close + state.inlineTicks);
+      if (close === -1) {
+        return output + (maskInlineCode ? ' '.repeat(line.length - cursor) : line.slice(cursor));
+      }
+      output += maskInlineCode
+        ? ' '.repeat(close + state.inlineTicks - cursor)
+        : line.slice(cursor, close + state.inlineTicks);
       cursor = close + state.inlineTicks;
       state.inlineTicks = 0;
       continue;
@@ -318,7 +328,7 @@ async function transformOutsideInlineCode(line, state, transform) {
     output += await transform(line.slice(cursor, opening));
     let length = 1;
     while (line[opening + length] === '`') length += 1;
-    output += '`'.repeat(length);
+    output += maskInlineCode ? ' '.repeat(length) : '`'.repeat(length);
     cursor = opening + length;
     state.inlineTicks = length;
   }
@@ -327,6 +337,58 @@ async function transformOutsideInlineCode(line, state, transform) {
 
 function addWarning(warnings, code, file, line) {
   warnings.push({ code, file, line });
+}
+
+async function addRelativeLinkWarnings(source, blockTokens, environment, sourcePath, warnings) {
+  // markdown-it does not expose source offsets for inline children. Reparse each
+  // reader-visible physical line after masking code spans, and require its link
+  // count to agree with the complete-document parse rather than inventing a line.
+  const codeLines = new Set();
+  const readerVisibleLines = new Set();
+  for (const token of blockTokens) {
+    if ((token.type === 'fence' || token.type === 'code_block') && token.map) {
+      for (let line = token.map[0]; line < token.map[1]; line += 1) codeLines.add(line);
+    }
+    if ((token.type === 'inline' || token.type === 'tr_open') && token.map) {
+      for (let line = token.map[0]; line < token.map[1]; line += 1) {
+        readerVisibleLines.add(line);
+      }
+    }
+  }
+
+  const state = { inlineTicks: 0 };
+  let detectedLinks = 0;
+  const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    if (codeLines.has(index) || !readerVisibleLines.has(index)) {
+      state.inlineTicks = 0;
+      continue;
+    }
+    const visibleLine = await transformOutsideInlineCode(
+      lines[index],
+      state,
+      async (segment) => segment,
+      { maskInlineCode: true }
+    );
+    const inlineTokens = collectTokens(
+      SOURCE_AUDIT_MARKDOWN.parseInline(visibleLine, environment),
+      index + 1
+    );
+    for (const { token } of inlineTokens) {
+      if (token.type !== 'link_open') continue;
+      const destination = token.attrGet('href');
+      if (
+        destination &&
+        !destinationScheme(destination) &&
+        !destination.startsWith('#') &&
+        !destination.startsWith('//')
+      ) {
+        detectedLinks += 1;
+        addWarning(warnings, 'relative_link_passthrough', sourcePath, index + 1);
+      }
+    }
+  }
+  return detectedLinks;
 }
 
 async function convertImagesAndAudit(source, {
@@ -391,7 +453,10 @@ async function convertImagesAndAudit(source, {
   }
 
   const result = converted.join('\n');
-  const tokens = collectTokens(SOURCE_AUDIT_MARKDOWN.parse(result, {}));
+  const environment = {};
+  const blockTokens = SOURCE_AUDIT_MARKDOWN.parse(result, environment);
+  const tokens = collectTokens(blockTokens);
+  let relativeLinks = 0;
   for (const { token, line } of tokens) {
     if (token.type === 'html_block' || token.type === 'html_inline') {
       throw new ZennAdapterError(
@@ -419,9 +484,26 @@ async function convertImagesAndAudit(source, {
     if (token.type === 'link_open' && destination.startsWith('//')) {
       throw new ZennAdapterError(`Protocol-relative links are not supported by the Zenn adapter: ${sourcePath}`);
     }
-    if (token.type === 'link_open' && !scheme && !destination.startsWith('#')) {
-      addWarning(warnings, 'relative_link_passthrough', sourcePath, line);
+    if (
+      token.type === 'link_open' &&
+      !scheme &&
+      !destination.startsWith('#') &&
+      !destination.startsWith('//')
+    ) {
+      relativeLinks += 1;
     }
+  }
+  const locatedRelativeLinks = await addRelativeLinkWarnings(
+    result,
+    blockTokens,
+    environment,
+    sourcePath,
+    warnings
+  );
+  if (locatedRelativeLinks !== relativeLinks) {
+    throw new ZennAdapterError(
+      `Relative link syntax could not be mapped to a physical warning line: ${sourcePath}`
+    );
   }
   return result;
 }

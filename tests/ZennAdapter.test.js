@@ -321,6 +321,42 @@ describe('ZennAdapter', () => {
     assert.deepStrictEqual(warnings.map((warning) => warning.line), [14, 47, 48]);
   });
 
+  test('複数行inline codeをまたぐrelative link warningも物理行を保持する', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-inline-code-warning-');
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# Warning positions\n' +
+        '[first](../first.md) `code\n' +
+        'more` [second](../second.md)\n' +
+        '`code\n' +
+        '[hidden](../hidden.md)\n' +
+        'more` [visible](../visible.md)\n',
+      'utf8'
+    );
+
+    const result = await build(bookDirectory, outputRoot);
+    const warnings = result.manifest.adapter.warnings.filter(
+      (warning) => warning.file === 'manuscript/02-workflow.md'
+    );
+    assert.deepStrictEqual(warnings.map((warning) => warning.line), [1, 2, 5]);
+  });
+
+  test('複数行に分割されたrelative linkは不正なwarning位置を出さずfail closedにする', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-multiline-link-');
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# Warning positions\n[multiline\nlink](../target.md)\n',
+      'utf8'
+    );
+
+    await assert.rejects(
+      build(bookDirectory, outputRoot),
+      /Relative link syntax could not be mapped to a physical warning line/
+    );
+  });
+
   test('source Front Matter、不正h1、protocol-relative linkをfail closedで拒否する', async () => {
     const frontMatterBook = await copySampleBook();
     await fs.writeFile(
