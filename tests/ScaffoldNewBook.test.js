@@ -254,6 +254,33 @@ function runScaffold(
   return { ...result, log, evidence };
 }
 
+function copyScaffoldSourceFixture(root, { githubTemplates = false } = {}) {
+  const formatter = path.join(root, 'formatter');
+  mkdirSync(path.join(formatter, 'scripts'), { recursive: true });
+  mkdirSync(path.join(formatter, 'templates'), { recursive: true });
+  cpSync(SCRIPT, path.join(formatter, 'scripts/scaffold-new-book.sh'));
+  cpSync(
+    path.join(REPOSITORY_ROOT, 'scripts/lib.sh'),
+    path.join(formatter, 'scripts/lib.sh'),
+  );
+  cpSync(
+    path.join(REPOSITORY_ROOT, 'templates/starter'),
+    path.join(formatter, 'templates/starter'),
+    { recursive: true },
+  );
+  if (githubTemplates) {
+    cpSync(
+      path.join(REPOSITORY_ROOT, 'templates/.github'),
+      path.join(formatter, 'templates/.github'),
+      { recursive: true },
+    );
+  }
+  cpSync(path.join(REPOSITORY_ROOT, 'shared'), path.join(formatter, 'shared'), {
+    recursive: true,
+  });
+  return formatter;
+}
+
 test.after(() => {
   for (const root of TEMP_ROOTS) {
     rmSync(root, { recursive: true, force: true });
@@ -342,22 +369,7 @@ test('local scaffold persists and preserves the finite starter/shared mapping', 
 
 test('missing canonical GitHub templates fail before output creation', () => {
   const root = makeTemporaryRoot('missing-github-templates');
-  const formatter = path.join(root, 'formatter');
-  mkdirSync(path.join(formatter, 'scripts'), { recursive: true });
-  mkdirSync(path.join(formatter, 'templates'), { recursive: true });
-  cpSync(SCRIPT, path.join(formatter, 'scripts/scaffold-new-book.sh'));
-  cpSync(
-    path.join(REPOSITORY_ROOT, 'scripts/lib.sh'),
-    path.join(formatter, 'scripts/lib.sh'),
-  );
-  cpSync(
-    path.join(REPOSITORY_ROOT, 'templates/starter'),
-    path.join(formatter, 'templates/starter'),
-    { recursive: true },
-  );
-  cpSync(path.join(REPOSITORY_ROOT, 'shared'), path.join(formatter, 'shared'), {
-    recursive: true,
-  });
+  const formatter = copyScaffoldSourceFixture(root);
 
   const output = path.join(root, 'outputs', 'sample-book');
   const result = runScaffold(
@@ -367,7 +379,34 @@ test('missing canonical GitHub templates fail before output creation', () => {
   );
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Required scaffold source file is missing/);
+  assert.match(result.stderr, /must be a regular non-symlink file/);
+  assert.equal(existsSync(output), false);
+  assert.equal(readFileSync(result.log, 'utf8'), '');
+});
+
+test('symlinked canonical GitHub templates fail before output creation', () => {
+  const root = makeTemporaryRoot('symlinked-github-template');
+  const formatter = copyScaffoldSourceFixture(root, {
+    githubTemplates: true,
+  });
+  const externalWorkflow = path.join(root, 'external-book-qa.yml');
+  writeFileSync(externalWorkflow, 'name: External workflow\n');
+  const bookQa = path.join(
+    formatter,
+    'templates/.github/workflows/book-qa.yml',
+  );
+  rmSync(bookQa);
+  symlinkSync(externalWorkflow, bookQa);
+
+  const output = path.join(root, 'outputs', 'sample-book');
+  const result = runScaffold(
+    root,
+    ['itdojp', 'sample-book', '--output', output],
+    { script: path.join(formatter, 'scripts/scaffold-new-book.sh') },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /must be a regular non-symlink file/);
   assert.equal(existsSync(output), false);
   assert.equal(readFileSync(result.log, 'utf8'), '');
 });

@@ -98,8 +98,8 @@ REQUIRED_GITHUB_TEMPLATE_FILES=(
   "$BOOK_FORMATTER_REPO_ROOT/templates/.github/workflows/nav-link-check.yml"
 )
 for source_file in "${REQUIRED_GITHUB_TEMPLATE_FILES[@]}"; do
-  if [ ! -f "$source_file" ]; then
-    die "Required scaffold source file is missing: $source_file"
+  if [ ! -f "$source_file" ] || [ -L "$source_file" ]; then
+    die "Required scaffold source must be a regular non-symlink file: $source_file"
   fi
 done
 
