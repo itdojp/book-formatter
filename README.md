@@ -55,7 +55,7 @@ npm start build -- \
 
 adapter project生成後は、同じ変数を維持して[`web-mdbook` adapter contract](adapters/web-mdbook/README.md#buildとレスポンシブ検証)のself-contained blockを実行します。このblockはprojectを同じsource snapshotから再生成し、公式binaryの固定URL・SHA-256検証、fresh directoryへの展開、mdBook `0.5.4` gate、決定的なsource再照合、responsive検査、生成後artifact visibility検査を1つのfail-fast実行単位で完了します。既存projectやbinaryは再利用しません。
 
-以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。consumer writeを行う互換commandは[legacy consumer mutation contract](docs/legacy-consumer-mutation.md)の固定SHA、clean linked worktree、有限allowlist、単一target、rollbackを要求します。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
+以下の`init`、`create-book`、`update-book`、`sync-all-books`、`rollout-ux`は、既存`book-config.json` / Jekyll書籍との互換commandです。新規標準formatへ暗黙変換するcommandではありません。consumer writeを行う互換commandは[legacy consumer mutation contract](docs/legacy-consumer-mutation.md)のfresh dependency bootstrap、固定SHA、clean linked worktree、有限allowlist、単一target、rollbackを要求します。mutation commandは既存`node_modules/.bin`を先行利用する`npm start`ではなく、監査済みNode.js executableから`node src/index.js`を直接実行します。`npm start` / `npm run dev`のcompatibility entrypointはmutation commandを受け付けません。詳細は[`web-jekyll-legacy`互換契約](adapters/web-jekyll-legacy/README.md)を参照してください。
 
 ### 1. 既存legacy書籍用サンプル設定ファイルの確認
 
@@ -167,16 +167,16 @@ npm start validate-config --config ./path/to/config.json
 
 ```bash
 # interfaceの確認だけを行う
-npm start update-book -- --help
+node src/index.js update-book --help
 ```
 
-`update-book`は[legacy consumer mutation contract](docs/legacy-consumer-mutation.md)の有限plan、固定formatter/base SHA、clean linked worktree、完全一致allowlistを要求します。dry-runは`--target`省略時にplanの全consumerを検査します。managed pathを確定した後、writeは`--target`で1 consumerだけを変更します。本文の自動生成は行いません。
+`update-book`は[legacy consumer mutation contract](docs/legacy-consumer-mutation.md)のfresh dependency bootstrap、有限plan、固定formatter/base SHA、clean linked worktree、完全一致allowlistを要求します。dry-runを含む各実行で既存`node_modules`を再利用せず、`npm ci --ignore-scripts`完了後だけconsumer runtimeを起動します。dry-runは`--target`省略時にplanの全consumerを検査します。managed pathを確定した後、writeは`--target`で1 consumerだけを変更します。本文の自動生成は行いません。
 
 ### 6. 複数書籍の一括同期
 
 ```bash
 # 有限plan全件を検査する（書込みなし）
-npm start sync-all-books -- --plan .codex-local/tmp/sync-plan.json --dry-run
+node src/index.js sync-all-books --plan .codex-local/tmp/sync-plan.json --dry-run
 ```
 
 `sync-all-books`はdirectory globを使用しません。planは最大6件ですが、writeには`--target`が必須で1 consumerだけを処理します。失敗時は対象をrollbackしてnon-zeroで終了し、後続へ継続しません。次consumerまたは失敗後の再開は、consumer別review gate後の別実行で明示します。
@@ -185,16 +185,16 @@ npm start sync-all-books -- --plan .codex-local/tmp/sync-plan.json --dry-run
 
 ```bash
 # profile差分の予定だけを確認
-npm start rollout-ux -- --registry ./book-registry.json \
+node src/index.js rollout-ux --registry ./book-registry.json \
   --plan .codex-local/tmp/profile-plan.json --apply-ux-profile --dry-run
 
 # 共通コアのみを適用（layouts/includes/assets）
-npm start rollout-ux -- --plan .codex-local/tmp/core-plan.json \
+node src/index.js rollout-ux --plan .codex-local/tmp/core-plan.json \
   --apply-ux-core --dry-run
 
 # writeはweb-jekyll-legacy contractの隔離consumer task branchで実行
 # runtimeが選択destinationとbook-config.jsonを最初のwrite前に検査
-npm start rollout-ux -- --plan .codex-local/tmp/core-plan.json \
+node src/index.js rollout-ux --plan .codex-local/tmp/core-plan.json \
   --target sample-book --apply-ux-core
 ```
 

@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ComponentSync } from '../scripts/sync-components.js';
+import {
+  assertFreshDependencyRuntime as assertDependencyRuntime,
+  safeEnvironment as bootstrapSafeEnvironment
+} from './ConsumerDependencyBootstrap.js';
 
 const PLAN_SCHEMA_VERSION = 1;
 const MAX_CONSUMERS = 6;
@@ -115,11 +119,10 @@ function gitOutput(repoRoot, args, options = {}) {
       encoding: options.encoding || 'utf8',
       input: options.input,
       stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
+      env: bootstrapSafeEnvironment({
         GIT_NO_REPLACE_OBJECTS: '1',
         GIT_OPTIONAL_LOCKS: '0'
-      }
+      })
     });
   } catch (error) {
     const detail = Buffer.isBuffer(error.stderr)
@@ -389,6 +392,7 @@ function assertConsumerBelongsToPlan(plan, consumer) {
       `Consumer target must exactly match an entry in the audited plan: ${consumer?.id || '(missing)'}`
     );
   }
+  return planned;
 }
 
 function assertNoUntrackedMutationInputs(repoRoot) {
@@ -628,6 +632,23 @@ class ConsumerMutationBoundary {
     this.formatterRoot = path.resolve(options.formatterRoot || MODULE_ROOT);
     this.componentSync = options.componentSync || new ComponentSync();
     this.enforceFormatterCwd = options.enforceFormatterCwd !== false;
+    this.freshDependencyAttestation = options.freshDependencyAttestation || null;
+  }
+
+  assertFreshDependencyRuntime(plan) {
+    try {
+      return assertDependencyRuntime({
+        repositoryRoot: this.formatterRoot,
+        plan,
+        explicitAttestation: this.freshDependencyAttestation
+      });
+    } catch (error) {
+      throw new ConsumerMutationError(error.message, { cause: error });
+    }
+  }
+
+  resolveAttestedConsumer(plan, consumer) {
+    return assertConsumerBelongsToPlan(plan, consumer);
   }
 
   async assertFormatterRevision(plan) {
@@ -743,6 +764,9 @@ class ConsumerMutationBoundary {
   }
 
   async loadPinnedConfig(plan, consumer) {
+    const attestedPlan = this.assertFreshDependencyRuntime(plan);
+    const attestedConsumer = this.resolveAttestedConsumer(attestedPlan, consumer);
+    consumer = attestedConsumer;
     const configPath = consumer.configPath || path.join(consumer.worktree, 'book-config.json');
     if (consumer.configPath && !/^[0-9a-f]{64}$/.test(consumer.configSha256 || '')) {
       throw new ConsumerMutationError('External consumer config requires a lowercase SHA-256 digest');
@@ -767,6 +791,7 @@ class ConsumerMutationBoundary {
   }
 
   async loadPinnedRegistry(plan, requestedPath) {
+    plan = this.assertFreshDependencyRuntime(plan);
     if (!PROFILE_OPERATIONS.has(plan?.operation)) {
       throw new ConsumerMutationError('Pinned UX registry is only valid for profile operations');
     }
@@ -797,7 +822,8 @@ class ConsumerMutationBoundary {
   }
 
   async preflight({ plan, consumer, managedPaths, dryRun }) {
-    assertConsumerBelongsToPlan(plan, consumer);
+    plan = this.assertFreshDependencyRuntime(plan);
+    consumer = this.resolveAttestedConsumer(plan, consumer);
     await this.assertFormatterRevision(plan);
     const consumerRoot = await this.assertConsumerWorktree(consumer);
     const normalizedManagedPaths = normalizedUniquePaths(managedPaths, 'managedPaths');
@@ -831,11 +857,10 @@ class ConsumerMutationBoundary {
         ],
         {
           encoding: 'utf8',
-          env: {
-            ...process.env,
+          env: bootstrapSafeEnvironment({
             GIT_NO_REPLACE_OBJECTS: '1',
             GIT_OPTIONAL_LOCKS: '0'
-          }
+          })
         }
       );
       if (ignoreCheck.error || ![0, 1].includes(ignoreCheck.status)) {
@@ -868,7 +893,12 @@ class ConsumerMutationBoundary {
       await this.componentSync.assertManagedDestination(consumerRoot, managedPath);
     }
 
-    return { consumerRoot, managedPaths: normalizedManagedPaths };
+    return {
+      plan,
+      consumer,
+      consumerRoot,
+      managedPaths: normalizedManagedPaths
+    };
   }
 
   rollback(consumerRoot, baseSha) {
@@ -918,6 +948,7 @@ class ConsumerMutationBoundary {
       throw new ConsumerMutationError('mutate callback is required');
     }
     const context = await this.preflight({ plan, consumer, managedPaths, dryRun });
+    consumer = context.consumer;
     if (dryRun) {
       return {
         consumerId: consumer.id,

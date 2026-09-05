@@ -4,10 +4,66 @@
 `scripts/rollout_unification.sh`で既存Jekyll consumerを変更する場合の
 runtime契約を定義します。この契約は新規標準書籍のadapter buildには使用しません。
 
+## Fresh dependency bootstrap
+
+`node src/index.js update-book`、`node src/index.js sync-all-books`、
+`node src/index.js rollout-ux`と
+`scripts/rollout_unification.sh`は、consumerや外部dependencyを読み込む前に
+built-in-only launcherを通ります。launcherはplanから固定formatter SHAを読み、
+formatterのHEADと全tracked fileのraw bytes、`package.json`、`package-lock.json`を
+固定commitと照合し、lockfile SHA-256を実行証跡として導出します。
+
+照合後は既存のignored `node_modules/`を再利用せず、real directoryであることを確認して
+削除し、次の有限commandで再構成します。
+
+```text
+npm ci --ignore-scripts --no-audit --no-fund
+```
+
+repository rootの`.npmrc`と、監査対象`package-lock.json`を置き換え得る
+`npm-shrinkwrap.json`はtracked/untracked/symlinkにかかわらず拒否します。user/globalの
+npm設定によってinstall script境界が変わらないよう、launcherは
+`--ignore-scripts`をcommand lineとsanitized environmentの両方で固定し、空の
+user/global configを指定します。installが成功し、tracked bytesを再照合した後だけ、
+module-private brandを持つin-process capabilityを発行してlegacy implementationをdynamic
+importします。environment variable、plain object、serialized dataだけの自己申告や
+`src/cli-implementation.js`の直接起動ではmutationを開始できません。programmatic mutation
+boundaryも、実bootstrapが返した同じprocess capabilityがなければfail closedになります。
+capabilityはplanのraw bytesと正規化した意味内容に拘束され、transactionはcaller-owned objectを
+継続利用せず、attested bytesから作ったimmutable snapshotだけを使用します。
+
+mutation commandに`npm start`を使用してはいけません。npm lifecycleはlauncherより前に
+既存`node_modules/.bin`を`PATH`へ追加し、project npm設定を読むためです。監査済みNode.js
+executableで`node src/index.js ...`を直接実行します。`npm start` / `npm run dev`は専用の
+非mutation compatibility entrypointへ接続し、mutation commandをdispatchしません。これらは
+非mutationのlegacy compatibility commandに限る便宜的なscriptであり、fresh dependency境界では
+ありません。npmがlauncherより前に読むproject設定や起動shellを安全化する保証はないため、
+mutation手順でnpm自体を起動してはいけません。
+
+programmatic利用では、built-in-onlyの`ConsumerDependencyBootstrap.js`から
+`loadFreshLegacyMutationApi(args)`を呼び、その返却値に含まれるmoduleと
+`loadConsumerMutationPlan()`でattested bytesから読み直したplan、および
+`freshDependencyAttestation`だけを使用します。`BookGenerator.js`、`UxRollout.js`、
+`ConsumerMutationBoundary.js`の直接importはbootstrap entrypointではなく、fresh dependency
+保証を提供しません。plain objectをcapabilityとして渡してもmutation boundaryは拒否します。
+
+dependency再構成にはregistry accessが必要です。offline、DNS、proxy、registry rate limit、
+integrity mismatchなどで`npm ci`が失敗した場合、launcherはpartial `node_modules/`を削除し、
+legacy implementationをimportせずnon-zeroで終了します。consumerへのwriteはまだ始まっていません。
+network/registryが復旧した後、同じformatter SHA、変更されていないplan、同じconsumer base SHAで
+command全体を明示的に再実行してください。既存treeを手動で「検証済み」として再利用する
+environment switchは提供しません。
+
+この境界は、監査済みNode.js/npm/Git executableと単独実行processを前提にします。OS-level
+process injection、実行中の同時filesystem改変、registry/toolchain自体の侵害を完全に防ぐ
+sandboxではありません。
+
 ## 保証する境界
 
 writeを開始する前に、runtimeは次を検証します。
 
+- supported launcherがfresh dependency treeを再構成し、module-private in-process
+  capabilityを発行している
 - formatterの現在のcommitがplanで固定した40文字SHAと一致し、tracked内容・modeが
   commitと同一で、managed sourceにuntracked/ignored入力がない
 - formatter/consumerにGit replacement refがない
@@ -96,13 +152,13 @@ AUDITED_BASE_SHA=89abcdef0123456789abcdef0123456789abcdef
 git -C ../sample-book worktree add --detach \
   ../worktrees/sample-book/book-formatter-sync "$AUDITED_BASE_SHA"
 
-npm start rollout-ux -- \
+node src/index.js rollout-ux \
   --plan .codex-local/tmp/rollout-plan.json \
   --apply-ux-core \
   --dry-run
 
 # allowedPathsを固定した後、1冊だけ変更する
-npm start rollout-ux -- \
+node src/index.js rollout-ux \
   --plan .codex-local/tmp/rollout-plan.json \
   --target sample-book \
   --apply-ux-core

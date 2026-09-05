@@ -133,6 +133,9 @@ export class BookGenerator {
         );
       }
 
+      plan = this.mutationBoundary.assertFreshDependencyRuntime(plan);
+      consumer = this.mutationBoundary.resolveAttestedConsumer(plan, consumer);
+
       const pinnedConfig = await this.mutationBoundary.loadPinnedConfig(plan, consumer);
       const config = this.parseConfigContent(pinnedConfig.content, pinnedConfig.path);
       this.validator.validate(config);
