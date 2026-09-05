@@ -331,7 +331,8 @@ describe('ZennAdapter', () => {
         'more` [second](../second.md)\n' +
         '`code\n' +
         '[hidden](../hidden.md)\n' +
-        'more` [visible](../visible.md)\n',
+        'more` [visible](../visible.md)\n' +
+        'text ` literal [unmatched](../unmatched.md)\n',
       'utf8'
     );
 
@@ -339,7 +340,7 @@ describe('ZennAdapter', () => {
     const warnings = result.manifest.adapter.warnings.filter(
       (warning) => warning.file === 'manuscript/02-workflow.md'
     );
-    assert.deepStrictEqual(warnings.map((warning) => warning.line), [1, 2, 5]);
+    assert.deepStrictEqual(warnings.map((warning) => warning.line), [1, 2, 5, 6]);
   });
 
   test('複数行に分割されたrelative linkは不正なwarning位置を出さずfail closedにする', async () => {

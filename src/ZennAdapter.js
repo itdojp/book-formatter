@@ -296,7 +296,10 @@ async function transformOutsideInlineCode(
   line,
   state,
   transform,
-  { maskInlineCode = false } = {}
+  {
+    maskInlineCode = false,
+    isInlineCodeOpening = () => true
+  } = {}
 ) {
   let output = '';
   let cursor = 0;
@@ -328,6 +331,11 @@ async function transformOutsideInlineCode(
     output += await transform(line.slice(cursor, opening));
     let length = 1;
     while (line[opening + length] === '`') length += 1;
+    if (!isInlineCodeOpening(opening, length)) {
+      output += await transform('`'.repeat(length));
+      cursor = opening + length;
+      continue;
+    }
     output += maskInlineCode ? ' '.repeat(length) : '`'.repeat(length);
     cursor = opening + length;
     state.inlineTicks = length;
@@ -339,19 +347,38 @@ function addWarning(warnings, code, file, line) {
   warnings.push({ code, file, line });
 }
 
+function hasInlineCodeClose(lines, lineIndex, openingEnd, tickLength, scopeEnd) {
+  for (let index = lineIndex; index < scopeEnd; index += 1) {
+    let cursor = index === lineIndex ? openingEnd : 0;
+    while (cursor < lines[index].length) {
+      const close = lines[index].indexOf('`', cursor);
+      if (close === -1) break;
+      let length = 1;
+      while (lines[index][close + length] === '`') length += 1;
+      if (length === tickLength) return true;
+      cursor = close + length;
+    }
+  }
+  return false;
+}
+
 async function addRelativeLinkWarnings(source, blockTokens, environment, sourcePath, warnings) {
   // markdown-it does not expose source offsets for inline children. Reparse each
   // reader-visible physical line after masking code spans, and require its link
   // count to agree with the complete-document parse rather than inventing a line.
   const codeLines = new Set();
-  const readerVisibleLines = new Set();
+  const readerVisibleScopes = new Map();
   for (const token of blockTokens) {
     if ((token.type === 'fence' || token.type === 'code_block') && token.map) {
       for (let line = token.map[0]; line < token.map[1]; line += 1) codeLines.add(line);
     }
     if ((token.type === 'inline' || token.type === 'tr_open') && token.map) {
       for (let line = token.map[0]; line < token.map[1]; line += 1) {
-        readerVisibleLines.add(line);
+        const existing = readerVisibleScopes.get(line);
+        const candidate = { start: token.map[0], end: token.map[1] };
+        if (!existing || candidate.end - candidate.start < existing.end - existing.start) {
+          readerVisibleScopes.set(line, candidate);
+        }
       }
     }
   }
@@ -360,15 +387,25 @@ async function addRelativeLinkWarnings(source, blockTokens, environment, sourceP
   let detectedLinks = 0;
   const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
   for (let index = 0; index < lines.length; index += 1) {
-    if (codeLines.has(index) || !readerVisibleLines.has(index)) {
+    if (codeLines.has(index) || !readerVisibleScopes.has(index)) {
       state.inlineTicks = 0;
       continue;
     }
+    const scope = readerVisibleScopes.get(index);
     const visibleLine = await transformOutsideInlineCode(
       lines[index],
       state,
       async (segment) => segment,
-      { maskInlineCode: true }
+      {
+        maskInlineCode: true,
+        isInlineCodeOpening: (opening, length) => hasInlineCodeClose(
+          lines,
+          index,
+          opening + length,
+          length,
+          scope.end
+        )
+      }
     );
     const inlineTokens = collectTokens(
       SOURCE_AUDIT_MARKDOWN.parseInline(visibleLine, environment),
