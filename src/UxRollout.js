@@ -285,9 +285,17 @@ export class UxRollout {
       );
     }
 
+    const attestedPlan = this.mutationBoundary.assertFreshDependencyRuntime(plan);
+    const attestedConsumers = consumers.map((consumer) => (
+      this.mutationBoundary.resolveAttestedConsumer(attestedPlan, consumer)
+    ));
+
     let registry = null;
     if (applyUxProfile) {
-      const pinnedRegistry = await this.mutationBoundary.loadPinnedRegistry(plan, registryPath);
+      const pinnedRegistry = await this.mutationBoundary.loadPinnedRegistry(
+        attestedPlan,
+        registryPath
+      );
       registry = this.normalizeRegistry(
         this.parseRegistryContent(pinnedRegistry.content, pinnedRegistry.path)
       );
@@ -302,7 +310,7 @@ export class UxRollout {
     let updatedCount = 0;
     let skippedCount = 0;
 
-    for (const consumer of consumers) {
+    for (const consumer of attestedConsumers) {
       const bookPath = consumer.worktree;
       const bookName = path.basename(bookPath);
       console.log(chalk.blue(`\n📚 処理中: ${bookName}`));
@@ -356,7 +364,7 @@ export class UxRollout {
       }
 
       const mutationResult = await this.mutationBoundary.run({
-        plan,
+        plan: attestedPlan,
         consumer,
         managedPaths: [...managedPaths],
         dryRun,

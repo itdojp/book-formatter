@@ -1,7 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'fs-extra';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,7 @@ import {
   selectConsumers
 } from '../src/ConsumerMutationBoundary.js';
 import { UxRollout } from '../src/UxRollout.js';
+import { runFreshDependencyBootstrap } from '../src/ConsumerDependencyBootstrap.js';
 
 const TEST_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
@@ -77,13 +78,35 @@ async function createLinkedConsumer(tempRoot, options = {}) {
 
 async function createFormatterFixture(tempRoot) {
   const formatterRoot = path.join(tempRoot, 'formatter-fixture');
-  const formatterSha = await initRepository(formatterRoot, {
-    '.gitignore': 'shared/assets/ignored.js\n',
+  await initRepository(formatterRoot, {
+    '.gitignore': 'shared/assets/ignored.js\nnode_modules/\nbootstrap-plan.json\n',
+    'package.json': `${JSON.stringify({
+      name: 'consumer-boundary-formatter-fixture',
+      version: '1.0.0',
+      type: 'module',
+      dependencies: {
+        'bootstrap-fixture-dependency': 'file:vendor/bootstrap-fixture-dependency'
+      }
+    }, null, 2)}\n`,
+    'vendor/bootstrap-fixture-dependency/package.json': `${JSON.stringify({
+      name: 'bootstrap-fixture-dependency',
+      version: '1.0.0'
+    }, null, 2)}\n`,
+    'vendor/bootstrap-fixture-dependency/index.js': 'module.exports = {};\n',
     'audited.txt': 'formatter fixture\n',
     'shared/layouts/default.html': '<main>{{ content }}</main>\n',
     'shared/includes/navigation.html': '<nav>fixture</nav>\n',
     'shared/assets/main.css': 'main { display: block; }\n'
   });
+  const lockResult = spawnSync(
+    process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'],
+    { cwd: formatterRoot, encoding: 'utf8' }
+  );
+  assert.strictEqual(lockResult.status, 0, lockResult.stderr);
+  git(formatterRoot, 'add', 'package-lock.json');
+  git(formatterRoot, 'commit', '--amend', '--no-edit');
+  const formatterSha = git(formatterRoot, 'rev-parse', 'HEAD');
   return { formatterRoot, formatterSha };
 }
 
@@ -104,6 +127,94 @@ function planFor({
     consumers,
     path: planPath,
     directory: path.dirname(planPath)
+  };
+}
+
+function rawPlanFromNormalized(plan) {
+  const raw = {
+    schemaVersion: plan.schemaVersion,
+    operation: plan.operation,
+    formatterSha: plan.formatterSha,
+    consumers: plan.consumers.map((consumer) => {
+      const entry = {
+        id: consumer.id,
+        worktree: consumer.worktree,
+        baseSha: consumer.baseSha,
+        allowedPaths: consumer.allowedPaths
+      };
+      if (consumer.configPath !== null) {
+        entry.configPath = consumer.configPath;
+        entry.configSha256 = consumer.configSha256;
+      }
+      return entry;
+    })
+  };
+  if (plan.registryPath !== null) {
+    raw.registryPath = plan.registryPath;
+    raw.registrySha256 = plan.registrySha256;
+  }
+  return raw;
+}
+
+function bootstrapArgsForPlan(plan) {
+  if (plan.operation === 'update-book' || plan.operation === 'sync-all-books') {
+    return [plan.operation, '--plan', plan.path];
+  }
+  const args = ['rollout-ux', '--plan', plan.path];
+  if (plan.operation.includes('core')) args.push('--apply-ux-core');
+  if (plan.operation.includes('profile')) args.push('--apply-ux-profile');
+  return args;
+}
+
+function freshCapabilityForPlan(formatter, plan) {
+  fs.writeJsonSync(plan.path, rawPlanFromNormalized(plan), { spaces: 2 });
+  return runFreshDependencyBootstrap(
+    bootstrapArgsForPlan(plan),
+    {
+      repositoryRoot: formatter.formatterRoot,
+      cwd: formatter.formatterRoot,
+      installStdio: 'pipe'
+    }
+  );
+}
+
+function freshBoundaryFacade(formatter) {
+  let activePlan = null;
+  let activeAttestedPlan = null;
+  let boundary = null;
+  const forPlan = (plan) => {
+    if (activePlan !== plan && activeAttestedPlan !== plan) {
+      boundary = new ConsumerMutationBoundary({
+        formatterRoot: formatter.formatterRoot,
+        enforceFormatterCwd: false,
+        freshDependencyAttestation: freshCapabilityForPlan(formatter, plan)
+      });
+      activePlan = plan;
+      activeAttestedPlan = null;
+    }
+    return boundary;
+  };
+  return {
+    formatterRoot: formatter.formatterRoot,
+    assertFreshDependencyRuntime(plan) {
+      activeAttestedPlan = forPlan(plan).assertFreshDependencyRuntime(plan);
+      return activeAttestedPlan;
+    },
+    resolveAttestedConsumer(plan, consumer) {
+      return forPlan(plan).resolveAttestedConsumer(plan, consumer);
+    },
+    loadPinnedConfig(plan, consumer) {
+      return forPlan(plan).loadPinnedConfig(plan, consumer);
+    },
+    loadPinnedRegistry(plan, registryPath) {
+      return forPlan(plan).loadPinnedRegistry(plan, registryPath);
+    },
+    async preflight(options) {
+      return forPlan(options.plan).preflight(options);
+    },
+    async run(options) {
+      return forPlan(options.plan).run(options);
+    }
   };
 }
 
@@ -306,11 +417,84 @@ describe('ConsumerMutationBoundary transaction', () => {
   });
 
   function createBoundary() {
-    return new ConsumerMutationBoundary({
-      formatterRoot: formatter.formatterRoot,
-      enforceFormatterCwd: false
-    });
+    return freshBoundaryFacade(formatter);
   }
+
+  test('caller-controlled capabilityによるprogrammatic mutationを拒否する', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    const boundary = new ConsumerMutationBoundary({
+      formatterRoot: formatter.formatterRoot,
+      enforceFormatterCwd: false,
+      freshDependencyAttestation: {
+        repositoryRoot: formatter.formatterRoot,
+        formatterSha: formatter.formatterSha
+      }
+    });
+
+    await assert.rejects(
+      boundary.preflight({
+        plan,
+        consumer,
+        managedPaths: ['index.md'],
+        dryRun: true
+      }),
+      /runtime capability is missing or invalid/
+    );
+  });
+
+  test('attestation後のcaller-owned plan/consumer変更をtransactionへ反映しない', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const plannedConsumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
+    const callerConsumer = {
+      ...plannedConsumer,
+      allowedPaths: [...plannedConsumer.allowedPaths]
+    };
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [plannedConsumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    const trapRoot = path.join(tempDir, 'caller-controlled-target');
+    await fs.ensureDir(trapRoot);
+    await fs.writeFile(path.join(trapRoot, 'index.md'), 'must remain unchanged\n');
+
+    const transaction = createBoundary().run({
+      plan,
+      consumer: callerConsumer,
+      managedPaths: ['index.md'],
+      dryRun: false,
+      mutate: async ({ consumerRoot }) => {
+        await fs.writeFile(path.join(consumerRoot, 'index.md'), '# Updated safely\n');
+      }
+    });
+
+    plan.formatterSha = 'f'.repeat(40);
+    plannedConsumer.worktree = trapRoot;
+    plannedConsumer.baseSha = 'f'.repeat(40);
+    plannedConsumer.allowedPaths.push('outside.md');
+    callerConsumer.worktree = trapRoot;
+    callerConsumer.baseSha = 'f'.repeat(40);
+    callerConsumer.allowedPaths.push('outside.md');
+
+    const result = await transaction;
+    assert.strictEqual(result.consumerRoot, fixture.worktree);
+    assert.strictEqual(
+      await fs.readFile(path.join(fixture.worktree, 'index.md'), 'utf8'),
+      '# Updated safely\n'
+    );
+    assert.strictEqual(
+      await fs.readFile(path.join(trapRoot, 'index.md'), 'utf8'),
+      'must remain unchanged\n'
+    );
+  });
 
   test('fixed formatter SHA、clean linked worktree、base SHAを要求する', async () => {
     const fixture = await createLinkedConsumer(tempDir);
@@ -329,7 +513,7 @@ describe('ConsumerMutationBoundary transaction', () => {
         managedPaths: ['index.md'],
         dryRun: false
       }),
-      /Formatter HEAD mismatch/
+      /Bootstrap formatter HEAD mismatch/
     );
 
     git(formatter.formatterRoot, 'update-index', '--skip-worktree', 'audited.txt');
@@ -345,7 +529,7 @@ describe('ConsumerMutationBoundary transaction', () => {
         managedPaths: ['index.md'],
         dryRun: false
       }),
-      /tracked file differs/
+      /Tracked formatter bytes differ/
     );
     git(formatter.formatterRoot, 'update-index', '--no-skip-worktree', 'audited.txt');
     git(formatter.formatterRoot, 'checkout', '--', 'audited.txt');
@@ -527,9 +711,38 @@ describe('ConsumerMutationBoundary transaction', () => {
         managedPaths: ['index.md'],
         dryRun: false
       }),
-      /Formatter repository must not contain Git replacement refs/
+      /Formatter replacement refs are not allowed/
     );
     git(formatter.formatterRoot, 'replace', '-d', formatter.formatterSha);
+  });
+
+  test('mutation監査のGit subprocessへcallerのGIT_*環境を継承しない', async () => {
+    const fixture = await createLinkedConsumer(tempDir);
+    const consumer = consumerEntry({ ...fixture, allowedPaths: ['index.md'] });
+    const plan = planFor({
+      operation: 'update-book',
+      formatterSha: formatter.formatterSha,
+      consumers: [consumer],
+      planPath: path.join(tempDir, 'plan.json')
+    });
+    const previousGitDir = process.env.GIT_DIR;
+    const previousGitWorkTree = process.env.GIT_WORK_TREE;
+    process.env.GIT_DIR = path.join(tempDir, 'caller-controlled-git-dir');
+    process.env.GIT_WORK_TREE = path.join(tempDir, 'caller-controlled-worktree');
+    try {
+      const result = await createBoundary().preflight({
+        plan,
+        consumer,
+        managedPaths: ['index.md'],
+        dryRun: true
+      });
+      assert.strictEqual(result.consumerRoot, fixture.worktree);
+    } finally {
+      if (previousGitDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = previousGitDir;
+      if (previousGitWorkTree === undefined) delete process.env.GIT_WORK_TREE;
+      else process.env.GIT_WORK_TREE = previousGitWorkTree;
+    }
   });
 
   test('formatter mutation inputのuntracked/ignored fileを拒否する', async () => {
@@ -1009,10 +1222,7 @@ describe('audited legacy operations', () => {
   });
 
   function dependencies() {
-    const boundary = new ConsumerMutationBoundary({
-      formatterRoot: formatter.formatterRoot,
-      enforceFormatterCwd: false
-    });
+    const boundary = freshBoundaryFacade(formatter);
     return {
       boundary,
       generator: new BookGenerator({ mutationBoundary: boundary }),
@@ -1361,7 +1571,10 @@ test('rollout_unificationは安全な単一target wrapperでremote Git操作を�
 });
 
 test('update-book CLIはdry-runの有限plan全件検査とwriteの単一targetを保持する', async () => {
-  const source = await fs.readFile(path.resolve('src/index.js'), 'utf8');
+  const launcherSource = await fs.readFile(path.resolve('src/index.js'), 'utf8');
+  const source = await fs.readFile(path.resolve('src/cli-implementation.js'), 'utf8');
+  assert.match(launcherSource, /runFreshDependencyBootstrap/);
+  assert.match(launcherSource, /isLegacyMutationInvocation/);
   const updateBlock = source.slice(
     source.indexOf('.command(\'update-book\')'),
     source.indexOf('// validate-config コマンド')
