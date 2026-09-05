@@ -270,6 +270,21 @@ test('local scaffold persists and preserves the finite starter/shared mapping', 
   assert.equal(readFileSync(result.log, 'utf8'), '');
 });
 
+test('option-like relative output names remain literal paths', () => {
+  const root = makeTemporaryRoot('option-like-output');
+  const output = path.join(root, 'caller', '-sample-book');
+  const result = runScaffold(root, [
+    'itdojp',
+    'sample-book',
+    '--output',
+    '-sample-book',
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(output), true);
+  assert.equal(existsSync(path.join(output, 'docs/_config.yml')), true);
+});
+
 test('existing output objects are rejected without mutation', async (t) => {
   for (const type of ['directory', 'file', 'symlink']) {
     await t.test(type, () => {

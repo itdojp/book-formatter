@@ -74,8 +74,8 @@ if [ "$REPO" = "." ] || [ "$REPO" = ".." ] || \
   die "Invalid GitHub repository name: $REPO"
 fi
 
-OUTPUT_PARENT_INPUT="$(dirname "$OUTPUT_INPUT")"
-OUTPUT_NAME="$(basename "$OUTPUT_INPUT")"
+OUTPUT_PARENT_INPUT="$(dirname -- "$OUTPUT_INPUT")"
+OUTPUT_NAME="$(basename -- "$OUTPUT_INPUT")"
 if [ -z "$OUTPUT_NAME" ] || [ "$OUTPUT_NAME" = "." ] || \
    [ "$OUTPUT_NAME" = ".." ] || [ "$OUTPUT_NAME" = "/" ]; then
   die "--output must name a new directory"
