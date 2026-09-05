@@ -181,6 +181,9 @@ function installMockGh(root) {
     '',
     '    remote_name="$full_name"',
     '    if [ "$mode" = wrong-origin ]; then remote_name=other/repository; fi',
+    '    if [ "$mode" = canonical-origin ]; then',
+    '      remote_name="$(printf \'%s\' "$full_name" | LC_ALL=C tr \'[:upper:]\' \'[:lower:]\')"',
+    '    fi',
     '    git -C "$source_path" remote add origin "https://github.com/$remote_name.git"',
     '    effective_push_url="$(git -C "$source_path" remote get-url --push origin)"',
     '    test "$effective_push_url" = "https://github.com/$remote_name.git"',
@@ -559,6 +562,22 @@ test('--create pins every gh operation to github.com despite caller GH_HOST', ()
   assert.equal(calls.length, 3);
   assert.match(calls[1], /^api --hostname github\.com --silent /);
   assert.match(calls[2], /^repo create itdojp\/sample-book /);
+});
+
+test('--create accepts canonical casing in the returned GitHub origin', () => {
+  const root = makeTemporaryRoot('canonical-origin');
+  const output = path.join(root, 'outputs', 'sample-book');
+  const result = runScaffold(
+    root,
+    ['ITDOJP', 'Sample-Book', '--output', output, '--create'],
+    { ghMode: 'canonical-origin' },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    git(output, 'remote', 'get-url', 'origin'),
+    'https://github.com/itdojp/sample-book.git',
+  );
 });
 
 test('--create reads user identity before isolating ordinary Git config', () => {

@@ -152,7 +152,7 @@ GIT_IDENTITY_NAME=""
 GIT_IDENTITY_EMAIL=""
 
 if [ "$CREATE" -eq 1 ]; then
-  require_cmd gh git grep
+  require_cmd gh git grep tr
 
   GIT_IDENTITY_NAME="${GIT_AUTHOR_NAME:-}"
   GIT_IDENTITY_EMAIL="${GIT_AUTHOR_EMAIL:-}"
@@ -294,7 +294,9 @@ if [ "$CREATE" -eq 1 ]; then
   fi
 
   REMOTE_OWNER_REPO="$(git_owner_repo_without_routing "$OUTPUT" 2>/dev/null || true)"
-  if [ "$REMOTE_OWNER_REPO" != "$OWNER/$REPO" ] || \
+  EXPECTED_OWNER_REPO_LOWER="$(printf '%s' "$OWNER/$REPO" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  REMOTE_OWNER_REPO_LOWER="$(printf '%s' "$REMOTE_OWNER_REPO" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  if [ "$REMOTE_OWNER_REPO_LOWER" != "$EXPECTED_OWNER_REPO_LOWER" ] || \
      [ "$(run_git -C "$OUTPUT" branch --show-current)" != "main" ] || \
      [ -n "$(run_git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all)" ]; then
     die "Remote command returned success but the local repository contract is incomplete: $OUTPUT"
