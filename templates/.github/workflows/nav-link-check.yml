@@ -22,6 +22,10 @@ jobs:
           import os, sys, yaml
           from pathlib import Path
           repo = os.environ.get('GITHUB_REPOSITORY','').split('/')[-1]
+          owner = os.environ.get('GITHUB_REPOSITORY_OWNER','').strip()
+          if not owner:
+              print('::error::GITHUB_REPOSITORY_OWNER is required')
+              sys.exit(1)
           base_dir = Path('docs') if Path('docs').is_dir() else Path('.')
           cfg = base_dir / '_config.yml'
           baseurl = f'/{repo}'
@@ -111,7 +115,7 @@ jobs:
               uniq.append(p)
           paths=uniq
 
-          base = f'https://itdojp.github.io{baseurl}'
+          base = f'https://{owner}.github.io{baseurl}'
           urls = [ (p, f"{base}{p}") for p in paths ]
           Path('urls.txt').write_text('\n'.join([f"{p}\t{u}" for p,u in urls]), encoding='utf-8')
           PY

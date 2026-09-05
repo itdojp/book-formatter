@@ -94,17 +94,30 @@ require_cmd cp env mkdir sed
 
 # Do not let caller-owned repository routing variables redirect local Git or
 # the Git subprocesses started by `gh repo create` outside the new output.
-run_without_git_routing() {
-  env \
-    -u GIT_DIR \
-    -u GIT_WORK_TREE \
-    -u GIT_INDEX_FILE \
-    -u GIT_OBJECT_DIRECTORY \
-    -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
-    -u GIT_COMMON_DIR \
-    -u GIT_NAMESPACE \
-    "$@"
-}
+run_without_git_routing() (
+  unset \
+    GIT_DIR \
+    GIT_WORK_TREE \
+    GIT_INDEX_FILE \
+    GIT_OBJECT_DIRECTORY \
+    GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    GIT_COMMON_DIR \
+    GIT_NAMESPACE \
+    GIT_CONFIG_COUNT \
+    GIT_CONFIG_PARAMETERS \
+    GIT_CONFIG_GLOBAL \
+    GIT_CONFIG_SYSTEM \
+    GIT_CONFIG_NOSYSTEM
+
+  local variable
+  while IFS= read -r variable; do
+    case "$variable" in
+      GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*) unset "$variable" ;;
+    esac
+  done < <(compgen -e)
+
+  "$@"
+)
 
 run_git() {
   run_without_git_routing git "$@"
@@ -265,7 +278,8 @@ if [ "$CREATE" -eq 1 ]; then
       log ERROR "The local repository is retained but its state requires inspection: $OUTPUT"
     fi
     log ERROR "Before retrying, inspect: GH_HOST=github.com gh repo view $OWNER/$REPO"
-    log ERROR "Also inspect: git -C '$OUTPUT' remote -v"
+    printf -v OUTPUT_SHELL '%q' "$OUTPUT"
+    log ERROR "Also inspect: git -C $OUTPUT_SHELL remote -v"
     exit 1
   fi
 

@@ -90,6 +90,12 @@ function installMockGh(root) {
     '  echo "gh host is not pinned to github.com" >&2',
     '  exit 92',
     'fi',
+    'for name in GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do',
+    '  if [ -n "${!name:-}" ]; then echo "git config injection remains: $name" >&2; exit 93; fi',
+    'done',
+    'while IFS= read -r name; do',
+    '  case "$name" in GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*) echo "git config injection remains: $name" >&2; exit 93 ;; esac',
+    'done < <(compgen -e)',
     '',
     'printf \'%q \' "$@" >> "$GH_MOCK_LOG"',
     'printf \'\\n\' >> "$GH_MOCK_LOG"',
@@ -268,6 +274,21 @@ test('local scaffold persists and preserves the finite starter/shared mapping', 
   );
   assert.doesNotMatch(relativeFiles(output).join('\n'), /\.bak$/);
   assert.equal(readFileSync(result.log, 'utf8'), '');
+
+  const navigation = readFileSync(
+    path.join(output, 'docs/_data/navigation.yml'),
+    'utf8',
+  );
+  assert.doesNotMatch(
+    navigation,
+    /\/(?:introduction|chapters|appendices)\//,
+  );
+  const navWorkflow = readFileSync(
+    path.join(output, '.github/workflows/nav-link-check.yml'),
+    'utf8',
+  );
+  assert.match(navWorkflow, /GITHUB_REPOSITORY_OWNER/);
+  assert.doesNotMatch(navWorkflow, /itdojp\.github\.io/);
 });
 
 test('option-like relative output names remain literal paths', () => {
@@ -433,6 +454,9 @@ test('--create ignores caller-owned Git repository routing variables', () => {
         GIT_WORK_TREE: path.join(root, 'decoy-worktree'),
         GIT_INDEX_FILE: path.join(root, 'decoy-index'),
         GIT_OBJECT_DIRECTORY: path.join(root, 'decoy-objects'),
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'remote.origin.pushurl',
+        GIT_CONFIG_VALUE_0: 'https://enterprise.example.invalid/redirect.git',
       },
     },
   );
@@ -474,14 +498,16 @@ test('--create tracks the complete scaffold despite caller global ignores', () =
   const root = makeTemporaryRoot('global-ignore');
   const output = path.join(root, 'outputs', 'sample-book');
   const excludes = path.join(root, 'global-excludes');
-  const globalConfig = path.join(root, 'global-gitconfig');
+  const customHome = path.join(root, 'home');
+  mkdirSync(customHome);
+  const globalConfig = path.join(customHome, '.gitconfig');
   writeFileSync(excludes, '*\n');
   writeFileSync(globalConfig, `[core]\n\texcludesFile = ${excludes}\n`);
 
   const result = runScaffold(
     root,
     ['itdojp', 'sample-book', '--output', output, '--create'],
-    { extraEnv: { GIT_CONFIG_GLOBAL: globalConfig } },
+    { extraEnv: { HOME: customHome } },
   );
 
   assert.equal(result.status, 0, result.stderr);
@@ -542,7 +568,7 @@ test('--create preflight failures do not create a local destination', async (t) 
 
 test('a partial gh create failure retains the clean committed local repository', () => {
   const root = makeTemporaryRoot('create-failure');
-  const output = path.join(root, 'outputs', 'sample-book');
+  const output = path.join(root, 'outputs', 'sample\' book');
   const result = runScaffold(
     root,
     ['itdojp', 'sample-book', '--output', output, '--create'],
@@ -567,6 +593,16 @@ test('a partial gh create failure retains the clean committed local repository',
     /GH_HOST=github\.com gh repo view itdojp\/sample-book/,
   );
   assert.match(result.stderr, /git -C .* remote -v/);
+  const recoveryLine = result.stderr
+    .split('\n')
+    .find((line) => line.includes('Also inspect: git -C '));
+  assert.ok(recoveryLine);
+  const recoveryCommand = recoveryLine.slice(recoveryLine.indexOf('git -C '));
+  const recovery = spawnSync('bash', ['-c', recoveryCommand], {
+    encoding: 'utf8',
+  });
+  assert.equal(recovery.status, 0, recovery.stderr);
+  assert.match(recovery.stdout, /origin\s+https:\/\/github\.com\/itdojp\/sample-book\.git/);
   const calls = readFileSync(result.log, 'utf8').trim().split('\n');
   assert.equal(
     calls.filter((call) => call.startsWith('repo create ')).length,
