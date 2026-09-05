@@ -299,6 +299,7 @@ test('local scaffold persists and preserves the finite starter/shared mapping', 
     path.join(output, 'docs/_data/navigation.yml'),
     'utf8',
   );
+  assert.equal(navigation, '{}\n');
   assert.doesNotMatch(
     navigation,
     /\/(?:introduction|chapters|appendices)\//,
