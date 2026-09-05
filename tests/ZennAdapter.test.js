@@ -152,6 +152,7 @@ describe('ZennAdapter', () => {
         '`![inline example](../assets/missing.png)`\n' +
         '\\![escaped example](../assets/missing.png)\n' +
         '[docs](https://example.test "literal ![icon](../assets/missing.png)")\n' +
+        '[multiline](https://example.test\n "literal ![icon](../assets/missing.png)")\n' +
         `${Array.from(
           { length: 50 },
           () => '![repeated](../assets/figures/flow.png)'
@@ -185,6 +186,10 @@ describe('ZennAdapter', () => {
     assert.match(
       workflow,
       /\[docs\]\(https:\/\/example\.test "literal !\[icon\]\(\.\.\/assets\/missing\.png\)"\)/u
+    );
+    assert.match(
+      workflow,
+      /\[multiline\]\(https:\/\/example\.test\n "literal !\[icon\]\(\.\.\/assets\/missing\.png\)"\)/u
     );
     assert.strictEqual(
       [...workflow.matchAll(
@@ -410,6 +415,13 @@ describe('ZennAdapter', () => {
     await assert.rejects(
       build(protocolRelativeBook, await temporaryDirectory('tmp-zenn-protocol-relative-')),
       /Protocol-relative links are not supported/
+    );
+
+    const emptyLinkBook = await copySampleBook();
+    await appendWorkflow(emptyLinkBook, '\n[empty]()\n');
+    await assert.rejects(
+      build(emptyLinkBook, await temporaryDirectory('tmp-zenn-empty-link-')),
+      /link must have a non-empty destination/
     );
 
     const rawHtmlBook = await copySampleBook();

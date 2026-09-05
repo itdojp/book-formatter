@@ -382,6 +382,20 @@ function collectReaderVisibleScopes(blockTokens) {
   return { codeLines, readerVisibleScopes };
 }
 
+function sortedReaderVisibleScopes(readerVisibleScopes) {
+  const unique = new Map();
+  for (const scope of readerVisibleScopes.values()) {
+    unique.set(`${scope.start}:${scope.end}`, scope);
+  }
+  const scopes = [...unique.values()].sort((left, right) =>
+    left.start - right.start || left.end - right.end
+  );
+  if (scopes.some((scope, index) => index > 0 && scope.start < scopes[index - 1].end)) {
+    throw new ZennAdapterError('Reader-visible Markdown scopes overlap unexpectedly');
+  }
+  return scopes;
+}
+
 function isBlockScopedInlineCodeOpening(lines, lineIndex, scope, opening, length) {
   return hasInlineCodeClose(
     lines,
@@ -494,8 +508,10 @@ function collectInlineImages(segment) {
     images.push({
       start: index,
       end: cursor,
-      alt: segment.slice(index + 2, altEnd),
-      destination: segment.slice(destinationStart, cursor - 1),
+      altStart: index + 2,
+      altEnd,
+      destinationStart,
+      destinationEnd: cursor - 1,
       source: segment.slice(index, cursor)
     });
     index = cursor;
@@ -576,16 +592,18 @@ async function convertImagesAndAudit(source, {
   const convertedImageDestinations = new Set();
   const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
   const sourceBlockTokens = SOURCE_AUDIT_MARKDOWN.parse(lines.join('\n'), {});
-  const { codeLines, readerVisibleScopes } = collectReaderVisibleScopes(sourceBlockTokens);
-  const state = { fence: null, inlineTicks: 0 };
+  const { readerVisibleScopes } = collectReaderVisibleScopes(sourceBlockTokens);
+  const state = { inlineTicks: 0 };
   const converted = [];
 
-  async function rewriteImagesInSegment(segment) {
+  async function rewriteImagesInSegment(segment, parsedSegment = segment) {
     let rebuilt = '';
     let cursor = 0;
-    for (const imageSyntax of selectParsedInlineImages(segment, sourcePath)) {
+    for (const imageSyntax of selectParsedInlineImages(parsedSegment, sourcePath)) {
       rebuilt += segment.slice(cursor, imageSyntax.start);
-      const destination = imageSyntax.destination.trim();
+      const destination = segment
+        .slice(imageSyntax.destinationStart, imageSyntax.destinationEnd)
+        .trim();
       if (!destination) {
         throw new ZennAdapterError(
           `Zenn source image must have a non-empty destination: ${sourcePath}`
@@ -607,46 +625,44 @@ async function convertImagesAndAudit(source, {
       ].map(encodeZennPathComponent).join('/');
       copiedAssets.set(outputRelative, image.source);
       convertedImageDestinations.add(`/${outputUrl}`);
-      rebuilt += `![${imageSyntax.alt}](/${outputUrl})`;
+      const alt = segment.slice(imageSyntax.altStart, imageSyntax.altEnd);
+      rebuilt += `![${alt}](/${outputUrl})`;
       cursor = imageSyntax.end;
     }
     return rebuilt + segment.slice(cursor);
   }
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (state.fence) {
-      converted.push(line);
-      if (isStandardFenceClose(line, state.fence)) state.fence = null;
-      continue;
+  converted.push(...lines);
+  for (const scope of sortedReaderVisibleScopes(readerVisibleScopes)) {
+    const sourceLines = lines.slice(scope.start, scope.end);
+    const maskedLines = [];
+    state.inlineTicks = 0;
+    for (let index = scope.start; index < scope.end; index += 1) {
+      maskedLines.push(await transformOutsideInlineCode(
+        lines[index],
+        state,
+        async (segment) => segment,
+        {
+          maskInlineCode: true,
+          isInlineCodeOpening: (opening, length) => isBlockScopedInlineCodeOpening(
+            lines,
+            index,
+            scope,
+            opening,
+            length
+          )
+        }
+      ));
     }
-    const openedFence = detectStandardFenceOpen(line);
-    if (openedFence) {
-      state.fence = openedFence;
-      converted.push(line);
-      continue;
+    const rewritten = await rewriteImagesInSegment(
+      sourceLines.join('\n'),
+      maskedLines.join('\n')
+    );
+    const rewrittenLines = rewritten.split('\n');
+    if (rewrittenLines.length !== sourceLines.length) {
+      throw new ZennAdapterError(`Image rewrite changed physical lines in ${sourcePath}`);
     }
-    if (codeLines.has(index) || !readerVisibleScopes.has(index)) {
-      state.inlineTicks = 0;
-      converted.push(line);
-      continue;
-    }
-
-    const scope = readerVisibleScopes.get(index);
-    converted.push(await transformOutsideInlineCode(
-      line,
-      state,
-      rewriteImagesInSegment,
-      {
-        isInlineCodeOpening: (opening, length) => isBlockScopedInlineCodeOpening(
-          lines,
-          index,
-          scope,
-          opening,
-          length
-        )
-      }
-    ));
+    converted.splice(scope.start, sourceLines.length, ...rewrittenLines);
   }
 
   const result = converted.join('\n');
@@ -670,7 +686,12 @@ async function convertImagesAndAudit(source, {
         `Zenn source image must have a non-empty destination: ${sourcePath}:${line}`
       );
     }
-    if (!destination) continue;
+    if (token.type === 'link_open' && destination === '') {
+      throw new ZennAdapterError(
+        `Zenn source link must have a non-empty destination: ${sourcePath}:${line}`
+      );
+    }
+    if (destination === null) continue;
     const scheme = destinationScheme(destination);
     if (scheme && scheme !== 'https') {
       throw new ZennAdapterError(`Unsupported ${token.type === 'image' ? 'image' : 'link'} scheme in ${sourcePath}: ${scheme}:`);
