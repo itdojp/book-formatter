@@ -58,7 +58,7 @@ targets:
 5. 生成artifactに対してvisibility検査を再実行する。
 6. 既存出力が同じ`zenn` adapter所有であることを確認し、原子的に置換する。
 
-`internal` editionはZennへ出力しません。`config.yaml#published`は正本のedition statusにかかわらず必ず`false`です。paid editionでは`targets.zenn.price`を出力し、free/sample editionでは現行Zenn validatorが要求する`price: 0`を出力します。paid book内のfree/sample documentはchapter Front Matterを`free: true`、paid documentは`free: false`にします。
+`internal` editionはZennへ出力しません。`config.yaml#published`は正本のedition statusにかかわらず必ず`false`です。paid editionでは`targets.zenn.price`を出力し、free/sample editionでは現行Zenn validatorが要求する`price: 0`を出力します。paid book内では、included `paid` blockを持たないfree/sample documentだけをchapter Front Matterの`free: true`にします。paid documentと、document自体はfree/sampleでもincluded `paid` blockを含むchapterは`free: false`にして有償本文を無料公開しません。
 
 Issue #98の初期記述には「有償版の場合のみ`price`を出力」とありますが、2026-09-06に確認した現行Zenn validatorは`price`をnumber必須としています。そのためfield自体を省略せず、非0価格をpaid buildだけに限定します。
 
@@ -73,7 +73,7 @@ Issue #98の初期記述には「有償版の場合のみ`price`を出力」と�
 | included `:::paid` | visibility delimiterを除き本文だけを出力 |
 | excluded `:::paid` / `:::internal` | block全体を除外 |
 
-画像は標準Markdownの相対画像だけを受理し、宣言済み`assets/`配下の実fileを`/images/<book-slug>/...`へ書き換えます。途中componentを含むsymbolic link、root外参照、外部hotlink、空白を含むpath、3MB超、`.png` / `.jpg` / `.jpeg` / `.gif` / `.webp`以外を拒否します。fenced codeとinline code内の画像構文例は変換しません。
+画像は標準Markdownの相対画像だけを受理し、宣言済み`assets/`配下の実fileを`/images/<book-slug>/...`へ書き換えます。出力URLは各path componentをpercent encodeし、記号やpercent encode済み空白を含む有効なfile名でもMarkdownのdestination境界を壊しません。途中componentを含むsymbolic link、root外参照、外部hotlink、unescaped空白またはtitleを含むdestination、3MB超、`.png` / `.jpg` / `.jpeg` / `.gif` / `.webp`以外を拒否します。fenced codeとinline code内の画像構文例は変換しません。
 
 個別MarkdownのYAML Front Matterは`book.yaml`と二重管理になるため拒否し、adapterがZenn用Front Matterを生成します。外部linkは明示的な`https`だけを受理し、protocol-relative URLと他schemeを拒否します。相対linkは初版では変換せず、行番号付きwarningとしてmanifestへ記録します。
 

@@ -209,7 +209,7 @@ function decodeRelativeDestination(destination, sourcePath) {
   } catch {
     throw new ZennAdapterError(`Invalid percent-encoded image in ${sourcePath}`);
   }
-  if (!decoded || decoded.includes('\\') || decoded.includes('\0') || /\s/u.test(decoded)) {
+  if (!decoded || decoded.includes('\\') || decoded.includes('\0')) {
     throw new ZennAdapterError(`Invalid relative image in ${sourcePath}`);
   }
   return decoded;
@@ -282,6 +282,12 @@ function isBackslashEscaped(source, index) {
   return backslashes % 2 === 1;
 }
 
+function encodeZennPathComponent(component) {
+  return encodeURIComponent(component).replace(/[!'()*]/gu, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
 async function transformOutsideInlineCode(line, state, transform) {
   let output = '';
   let cursor = 0;
@@ -350,8 +356,13 @@ async function convertImagesAndAudit(source, {
         zennSlug,
         image.relativeToAssets.split(path.sep).join('/')
       );
+      const outputUrl = [
+        'images',
+        zennSlug,
+        ...image.relativeToAssets.split(path.sep)
+      ].map(encodeZennPathComponent).join('/');
       copiedAssets.set(outputRelative, image.source);
-      rebuilt += `![${match[1]}](/${outputRelative})`;
+      rebuilt += `![${match[1]}](/${outputUrl})`;
       cursor = match.index + match[0].length;
     }
     return rebuilt + segment.slice(cursor);
@@ -452,9 +463,13 @@ function createConfig(metadata, target, edition, chapterSlugs) {
   }, { lineWidth: 0 });
 }
 
-function createChapter(entry, body, paidBook) {
+function createChapter(entry, body, paidBook, containsPaidContent) {
   const frontMatter = { title: entry.title };
-  if (paidBook) frontMatter.free = entry.visibility === 'free' || entry.visibility === 'sample';
+  if (paidBook) {
+    frontMatter.free = !containsPaidContent && (
+      entry.visibility === 'free' || entry.visibility === 'sample'
+    );
+  }
   return `---\n${YAML.stringify(frontMatter, { lineWidth: 0 })}---\n${body}`;
 }
 
@@ -617,7 +632,13 @@ export async function writeZennProject({
       warnings,
       copiedAssets
     });
-    convertedDocuments.push({ entry, body: converted });
+    convertedDocuments.push({
+      entry,
+      body: converted,
+      containsPaidContent: includedReports[index].protectedRegions.some(
+        (region) => region.visibility === 'paid' && region.decision === 'include'
+      )
+    });
   }
 
   const normalizedWarnings = sortAndDeduplicateWarnings(warnings);
@@ -640,10 +661,15 @@ export async function writeZennProject({
 
   try {
     await fs.ensureDir(bookDirectory);
-    for (const { entry, body } of convertedDocuments) {
+    for (const { entry, body, containsPaidContent } of convertedDocuments) {
       await fs.writeFile(
         path.join(bookDirectory, `${entry.id}.md`),
-        createChapter(entry, body, edition.visibility === 'paid'),
+        createChapter(
+          entry,
+          body,
+          edition.visibility === 'paid',
+          containsPaidContent
+        ),
         'utf8'
       );
     }

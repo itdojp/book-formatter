@@ -115,12 +115,16 @@ describe('ZennAdapter', () => {
     assert.strictEqual(config.published, false);
     assert.strictEqual(config.price, 500);
     assert.deepStrictEqual(config.chapters, ['preface', 'introduction', 'workflow', 'afterword']);
-    for (const slug of ['preface', 'introduction', 'workflow']) {
+    for (const slug of ['preface', 'introduction']) {
       assert.match(
         await fs.readFile(path.join(bookOutput(result), `${slug}.md`), 'utf8'),
         /^---\ntitle: .+\nfree: true\n---\n/u
       );
     }
+    assert.match(
+      await fs.readFile(path.join(bookOutput(result), 'workflow.md'), 'utf8'),
+      /^---\ntitle: 正本から出力する流れ\nfree: false\n---\n/u
+    );
     assert.match(
       await fs.readFile(path.join(bookOutput(result), 'afterword.md'), 'utf8'),
       /^---\ntitle: おわりに\nfree: false\n---\n/u
@@ -136,9 +140,13 @@ describe('ZennAdapter', () => {
     const image = Buffer.from('89504e470d0a1a0a0000000049454e44ae426082', 'hex');
     await fs.ensureDir(path.join(bookDirectory, 'assets/figures'));
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow.png'), image);
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow).png'), image);
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow name.png'), image);
     await appendWorkflow(
       bookDirectory,
       '\n![処理フロー](../assets/figures/flow.png)\n' +
+        '![記号付き](../assets/figures/flow%29.png)\n' +
+        '![空白付き](../assets/figures/flow%20name.png)\n' +
         '`![inline example](../assets/missing.png)`\n' +
         '\\![escaped example](../assets/missing.png)\n' +
         '```markdown\n![fenced example](../assets/missing.png)\n```\n'
@@ -150,12 +158,32 @@ describe('ZennAdapter', () => {
       workflow,
       /!\[処理フロー\]\(\/images\/standard-book-example\/figures\/flow\.png\)/u
     );
+    assert.match(
+      workflow,
+      /!\[記号付き\]\(\/images\/standard-book-example\/figures\/flow%29\.png\)/u
+    );
+    assert.match(
+      workflow,
+      /!\[空白付き\]\(\/images\/standard-book-example\/figures\/flow%20name\.png\)/u
+    );
     assert.match(workflow, /`!\[inline example\]\(\.\.\/assets\/missing\.png\)`/u);
     assert.match(workflow, /\\!\[escaped example\]\(\.\.\/assets\/missing\.png\)/u);
     assert.match(workflow, /```markdown\n!\[fenced example\]\(\.\.\/assets\/missing\.png\)\n```/u);
     assert.deepStrictEqual(
       await fs.readFile(
         path.join(result.outputDirectory, 'images/standard-book-example/figures/flow.png')
+      ),
+      image
+    );
+    assert.deepStrictEqual(
+      await fs.readFile(
+        path.join(result.outputDirectory, 'images/standard-book-example/figures/flow).png')
+      ),
+      image
+    );
+    assert.deepStrictEqual(
+      await fs.readFile(
+        path.join(result.outputDirectory, 'images/standard-book-example/figures/flow name.png')
       ),
       image
     );
@@ -166,8 +194,7 @@ describe('ZennAdapter', () => {
       ['![external](https://assets.example/image.png)', /External images are not supported/],
       ['![root](/images/existing.png)', /must be relative/],
       ['![outside](../../../outside.png)', /resolves outside the book root/],
-      ['![title](../assets/image.png "caption")', /titles or whitespace paths are not supported/],
-      ['![encoded space](../assets/image%20name.png)', /Invalid relative image/]
+      ['![title](../assets/image.png "caption")', /titles or whitespace paths are not supported/]
     ];
     for (const [index, [markdown, expected]] of cases.entries()) {
       const bookDirectory = await copySampleBook();
