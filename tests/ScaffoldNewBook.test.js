@@ -598,6 +598,11 @@ test('argument parsing fails closed before creating output', async (t) => {
       error: /Invalid GitHub owner/,
     },
     {
+      name: 'owner with consecutive hyphens',
+      args: ['bad--owner', 'sample-book', '--output', 'sample-book'],
+      error: /Invalid GitHub owner/,
+    },
+    {
       name: 'invalid repository',
       args: ['itdojp', 'sample&book', '--output', 'sample-book'],
       error: /Invalid GitHub repository/,

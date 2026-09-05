@@ -66,7 +66,8 @@ fi
 
 # These finite names cover GitHub owner/repository names while keeping
 # placeholder substitution data separate from sed syntax.
-if ! [[ "$OWNER" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]; then
+if ! [[ "$OWNER" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]] || \
+   [[ "$OWNER" == *--* ]]; then
   die "Invalid GitHub owner name: $OWNER"
 fi
 if [ "$REPO" = "." ] || [ "$REPO" = ".." ] || \
