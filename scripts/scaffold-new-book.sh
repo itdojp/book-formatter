@@ -150,6 +150,17 @@ run_git() {
   run_without_git_routing run_without_external_git_config git "$@"
 }
 
+read_nonlocal_git_identity() {
+  local key=$1
+  local value
+
+  value="$(run_git_with_user_config config --global --get "$key" 2>/dev/null || true)"
+  if [ -z "$value" ]; then
+    value="$(run_git_with_user_config config --system --get "$key" 2>/dev/null || true)"
+  fi
+  printf '%s' "$value"
+}
+
 run_github_com_gh() {
   # A caller-level GH_HOST must not redirect a public repository operation to
   # an identically named owner on a GitHub Enterprise host. Disable SSH as a
@@ -184,10 +195,10 @@ if [ "$CREATE" -eq 1 ]; then
   GIT_IDENTITY_NAME="${GIT_AUTHOR_NAME:-}"
   GIT_IDENTITY_EMAIL="${GIT_AUTHOR_EMAIL:-}"
   if [ -z "$GIT_IDENTITY_NAME" ]; then
-    GIT_IDENTITY_NAME="$(run_git_with_user_config -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.name 2>/dev/null || true)"
+    GIT_IDENTITY_NAME="$(read_nonlocal_git_identity user.name)"
   fi
   if [ -z "$GIT_IDENTITY_EMAIL" ]; then
-    GIT_IDENTITY_EMAIL="$(run_git_with_user_config -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.email 2>/dev/null || true)"
+    GIT_IDENTITY_EMAIL="$(read_nonlocal_git_identity user.email)"
   fi
   if [ -z "$GIT_IDENTITY_NAME" ] || [ -z "$GIT_IDENTITY_EMAIL" ]; then
     die "--create requires a configured Git author name and email"

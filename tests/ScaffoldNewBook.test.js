@@ -755,6 +755,12 @@ test('--create accepts canonical casing in the returned GitHub origin', () => {
 test('--create reads user identity before isolating ordinary Git config', () => {
   const root = makeTemporaryRoot('global-identity');
   const output = path.join(root, 'outputs', 'sample-book');
+  const formatter = copyScaffoldSourceFixture(root, {
+    githubTemplates: true,
+  });
+  git(formatter, 'init');
+  git(formatter, 'config', 'user.name', 'Formatter Automation');
+  git(formatter, 'config', 'user.email', 'formatter@example.invalid');
   const customHome = path.join(root, 'home');
   mkdirSync(customHome);
   writeFileSync(
@@ -767,7 +773,11 @@ test('--create reads user identity before isolating ordinary Git config', () => 
   const result = runScaffold(
     root,
     ['itdojp', 'sample-book', '--output', output, '--create'],
-    { author: false, extraEnv: { HOME: customHome } },
+    {
+      author: false,
+      extraEnv: { HOME: customHome },
+      script: path.join(formatter, 'scripts/scaffold-new-book.sh'),
+    },
   );
 
   assert.equal(result.status, 0, result.stderr);
