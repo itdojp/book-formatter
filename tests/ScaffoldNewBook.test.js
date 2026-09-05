@@ -412,6 +412,15 @@ test('owner Pages repositories use a root Pages URL case-insensitively', () => {
     pullRequestTemplate,
     /Sample-Owner\.github\.io\/sample-owner\.GitHub\.io\//,
   );
+  const navWorkflow = readFileSync(
+    path.join(output, '.github/workflows/nav-link-check.yml'),
+    'utf8',
+  );
+  assert.match(
+    navWorkflow,
+    /if isinstance\(bu,str\):\s+baseurl = bu\.strip\(\)\.strip/,
+  );
+  assert.doesNotMatch(navWorkflow, /isinstance\(bu,str\) and bu\.strip\(\)/);
 });
 
 test('existing output objects are rejected without mutation', async (t) => {

@@ -33,7 +33,8 @@ jobs:
               try:
                   data = yaml.safe_load(cfg.read_text(encoding='utf-8')) or {}
                   bu = data.get('baseurl')
-                  if isinstance(bu,str) and bu.strip():
+                  # An explicit empty baseurl is valid for an owner Pages repository.
+                  if isinstance(bu,str):
                       baseurl = bu.strip().strip('"\'').strip()
               except Exception as e:
                   print(f"::warning file={cfg}::Failed to parse _config.yml as YAML; falling back to naive parse ({e})")
