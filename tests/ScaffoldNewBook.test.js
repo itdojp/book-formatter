@@ -86,6 +86,11 @@ function installMockGh(root) {
     '#!/usr/bin/env bash',
     'set -euo pipefail',
     '',
+    'if [ "${GH_HOST:-}" != github.com ]; then',
+    '  echo "gh host is not pinned to github.com" >&2',
+    '  exit 92',
+    'fi',
+    '',
     'printf \'%q \' "$@" >> "$GH_MOCK_LOG"',
     'printf \'\\n\' >> "$GH_MOCK_LOG"',
     'mode="$GH_MOCK_MODE"',
@@ -393,7 +398,10 @@ test('--create presents one clean main commit to one mocked gh create call', () 
   const calls = readFileSync(result.log, 'utf8').trim().split('\n');
   assert.equal(calls.length, 3);
   assert.match(calls[0], /^auth status --hostname github\.com /);
-  assert.match(calls[1], /^api --silent repos\/itdojp\/sample-book /);
+  assert.match(
+    calls[1],
+    /^api --hostname github\.com --silent repos\/itdojp\/sample-book /,
+  );
   assert.match(calls[2], /^repo create itdojp\/sample-book --public --source /);
   assert.match(calls[2], / --remote origin --push$/);
 });
@@ -424,6 +432,27 @@ test('--create ignores caller-owned Git repository routing variables', () => {
   assert.equal(existsSync(path.join(root, 'decoy.git')), false);
   assert.equal(existsSync(path.join(root, 'decoy-index')), false);
   assert.equal(existsSync(path.join(root, 'decoy-objects')), false);
+});
+
+test('--create pins every gh operation to github.com despite caller GH_HOST', () => {
+  const root = makeTemporaryRoot('gh-host');
+  const output = path.join(root, 'outputs', 'sample-book');
+  const result = runScaffold(
+    root,
+    ['itdojp', 'sample-book', '--output', output, '--create'],
+    { extraEnv: { GH_HOST: 'enterprise.example.invalid' } },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(git(output, 'branch', '--show-current'), 'main');
+  assert.equal(
+    git(output, 'remote', 'get-url', 'origin'),
+    'https://github.com/itdojp/sample-book.git',
+  );
+  const calls = readFileSync(result.log, 'utf8').trim().split('\n');
+  assert.equal(calls.length, 3);
+  assert.match(calls[1], /^api --hostname github\.com --silent /);
+  assert.match(calls[2], /^repo create itdojp\/sample-book /);
 });
 
 test('--create preflight failures do not create a local destination', async (t) => {

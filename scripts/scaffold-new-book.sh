@@ -110,6 +110,12 @@ run_git() {
   run_without_git_routing git "$@"
 }
 
+run_github_com_gh() {
+  # A caller-level GH_HOST must not redirect a public repository operation to
+  # an identically named owner on a GitHub Enterprise host.
+  run_without_git_routing env GH_HOST=github.com gh "$@"
+}
+
 git_owner_repo_without_routing() {
   (
     unset \
@@ -142,12 +148,12 @@ if [ "$CREATE" -eq 1 ]; then
     die "--create requires a configured Git author name and email"
   fi
 
-  if ! gh auth status --hostname github.com >/dev/null 2>&1; then
+  if ! run_github_com_gh auth status --hostname github.com >/dev/null 2>&1; then
     die "GitHub CLI authentication for github.com is required"
   fi
 
   REMOTE_LOOKUP_ERROR=""
-  if REMOTE_LOOKUP_ERROR="$(gh api --silent "repos/$OWNER/$REPO" 2>&1 >/dev/null)"; then
+  if REMOTE_LOOKUP_ERROR="$(run_github_com_gh api --hostname github.com --silent "repos/$OWNER/$REPO" 2>&1 >/dev/null)"; then
     die "GitHub repository already exists: $OWNER/$REPO"
   fi
   if ! printf '%s' "$REMOTE_LOOKUP_ERROR" | grep -Eqi '(HTTP[[:space:]]+404|status code[[:space:]]+404)'; then
@@ -244,7 +250,7 @@ if [ "$CREATE" -eq 1 ]; then
 
   # Repository creation is non-idempotent. Do not retry automatically: a
   # network failure can occur after the remote has already been created.
-  if ! run_without_git_routing gh repo create "$OWNER/$REPO" \
+  if ! run_github_com_gh repo create "$OWNER/$REPO" \
       --public \
       --source "$OUTPUT" \
       --remote origin \
