@@ -146,6 +146,10 @@ describe('ZennAdapter', () => {
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a(b).png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a)b.png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a`b`.png'), image);
+    await fs.writeFile(
+      path.join(bookDirectory, 'assets/figures/a[docs](target.md).png'),
+      image
+    );
     await appendWorkflow(
       bookDirectory,
       '\n![処理フロー](../assets/figures/flow.png)\n' +
@@ -156,6 +160,7 @@ describe('ZennAdapter', () => {
         '![angle path](<../assets/figures/a)b.png>)\n' +
         '![backtick path](../assets/figures/a`b`.png)\n' +
         'inline destination twin: `b`\n' +
+        '[docs](target.md) ![link-like path](../assets/figures/a[docs](target.md).png)\n' +
         '![a\\]b](../assets/figures/flow.png)\n' +
         '![metadata twin](../assets/figures/flow.png) ' +
         '[same metadata](https://example.test "literal ![metadata twin](../assets/figures/flow.png)")\n' +
@@ -203,6 +208,10 @@ describe('ZennAdapter', () => {
       /!\[backtick path\]\(\/images\/standard-book-example\/figures\/a%60b%60\.png\)/u
     );
     assert.match(workflow, /inline destination twin: `b`/u);
+    assert.match(
+      workflow,
+      /\[docs\]\(target\.md\) !\[link-like path\]\(\/images\/standard-book-example\/figures\/a%5Bdocs%5D%28target\.md%29\.png\)/u
+    );
     assert.ok(
       workflow.includes('![a\\]b](/images/standard-book-example/figures/flow.png)')
     );
@@ -818,6 +827,43 @@ describe('ZennAdapter', () => {
     );
     assert.strictEqual(await fs.pathExists(displacedDirectory), true);
     assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'zenn')), false);
+  });
+
+  test('検証後に変更されたstaging fileをinstallしない', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('staging file race assertion is skipped on Windows');
+      return;
+    }
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-staging-file-race-');
+    const outputDirectory = path.resolve(outputRoot, 'zenn');
+    const originalRename = fs.rename;
+    let injected = false;
+    fs.rename = async (source, destination, ...args) => {
+      if (
+        !injected &&
+        path.basename(source).startsWith('.zenn-') &&
+        path.resolve(destination) === outputDirectory
+      ) {
+        injected = true;
+        await fs.writeFile(
+          path.join(source, 'books/standard-book-example/config.yaml'),
+          'title: replaced\npublished: true\n',
+          'utf8'
+        );
+      }
+      return originalRename(source, destination, ...args);
+    };
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /Zenn staging file changed after exclusive creation/u
+      );
+    } finally {
+      fs.rename = originalRename;
+    }
+    assert.strictEqual(injected, true);
+    assert.strictEqual(await fs.pathExists(outputDirectory), false);
   });
 
   test('ownership検証後に差し替えられたoutputをbackup削除しない', async (context) => {
