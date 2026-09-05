@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
-import {
+import bootstrapApi from './ConsumerDependencyBootstrap.cjs';
+
+const {
   isLegacyMutationInvocation,
   isLegacyMutationHelpInvocation,
   isNpmLifecycleInvocation,
   legacyMutationHelpText,
   runFreshLegacyMutationProcess
-} from './ConsumerDependencyBootstrap.js';
+} = bootstrapApi;
 
 const args = process.argv.slice(2);
 let failureContext = 'Book formatter CLI failed';

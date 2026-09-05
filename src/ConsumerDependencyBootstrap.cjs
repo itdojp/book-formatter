@@ -1,11 +1,10 @@
-import crypto from 'node:crypto';
-import { execFileSync, spawnSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+const crypto = require('node:crypto');
+const { execFileSync, spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
-const MODULE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MODULE_ROOT = path.resolve(__dirname, '..');
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const MAX_PLAN_BYTES = 1024 * 1024;
 const MAX_GIT_OUTPUT = 64 * 1024 * 1024;
@@ -440,7 +439,7 @@ function rebuildFreshDependencies(repositoryRoot, options = {}) {
 
 function isLegacyMutationHelpInvocation(args = process.argv.slice(2)) {
   return (
-    LEGACY_MUTATION_COMMANDS.has(args[0])
+    isLegacyMutationCommand(args[0])
     && args.length === 2
     && (args[1] === '--help' || args[1] === '-h')
   );
@@ -470,9 +469,13 @@ function legacyMutationHelpText(command) {
   return `${common.join('\n')}\n`;
 }
 
+function isLegacyMutationCommand(command) {
+  return LEGACY_MUTATION_COMMANDS.has(command);
+}
+
 function isLegacyMutationInvocation(args = process.argv.slice(2)) {
   return (
-    LEGACY_MUTATION_COMMANDS.has(args[0])
+    isLegacyMutationCommand(args[0])
     && !isLegacyMutationHelpInvocation(args)
   );
 }
@@ -787,13 +790,53 @@ function isPathInside(root, candidate) {
   return relative !== '' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
+function snapshotLegacyMutationArguments(args) {
+  if (!Array.isArray(args)) {
+    throw new ConsumerDependencyBootstrapError(
+      'Legacy consumer mutation arguments must be an array'
+    );
+  }
+  const snapshot = Object.freeze(Array.from(args));
+  if (!snapshot.every((value) => typeof value === 'string')) {
+    throw new ConsumerDependencyBootstrapError(
+      'Legacy consumer mutation arguments must contain only strings'
+    );
+  }
+  return snapshot;
+}
+
+function snapshotBootstrapOptions(options = {}, { includeInstallStdio = false } = {}) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new ConsumerDependencyBootstrapError(
+      'Legacy consumer mutation options must be an object'
+    );
+  }
+  const repositoryRoot = options.repositoryRoot;
+  const cwd = options.cwd;
+  const stdio = options.stdio;
+  const installStdio = includeInstallStdio ? options.installStdio : undefined;
+  for (const [label, value] of [
+    ['repositoryRoot', repositoryRoot],
+    ['cwd', cwd]
+  ]) {
+    if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) {
+      throw new ConsumerDependencyBootstrapError(
+        `Legacy consumer mutation ${label} must be a non-empty string`
+      );
+    }
+  }
+  return Object.freeze({ repositoryRoot, cwd, stdio, installStdio });
+}
+
 function runFreshDependencyBootstrapForTest(args, options = {}) {
   if (process.env.NODE_TEST_CONTEXT !== 'child-v8') {
     throw new ConsumerDependencyBootstrapError(
       'Test-only dependency bootstrap requires the Node.js test runner'
     );
   }
-  const repositoryRoot = resolveRepositoryRoot(options.repositoryRoot);
+  const snapshotArgs = snapshotLegacyMutationArguments(args);
+  const snapshotOptions = snapshotBootstrapOptions(options, { includeInstallStdio: true });
+  const repositoryRoot = resolveRepositoryRoot(snapshotOptions.repositoryRoot);
   const testsRoot = fs.realpathSync(path.join(MODULE_ROOT, 'tests'));
   const sandboxRoot = fs.realpathSync(path.dirname(repositoryRoot));
   if (
@@ -805,7 +848,12 @@ function runFreshDependencyBootstrapForTest(args, options = {}) {
       'Test-only dependency bootstrap is restricted to a tests/tmp-* sandbox'
     );
   }
-  const plan = readBootstrapPlan(args, repositoryRoot);
+  if (path.resolve(snapshotOptions.cwd || process.cwd()) !== repositoryRoot) {
+    throw new ConsumerDependencyBootstrapError(
+      `Legacy consumer bootstrap must run from the formatter root: ${repositoryRoot}`
+    );
+  }
+  const plan = readBootstrapPlan(snapshotArgs, repositoryRoot);
   const rawPlan = JSON.parse(fs.readFileSync(plan.path, 'utf8'));
   const projected = rawPlanProjection(rawPlan, plan.path);
   if (!projected) {
@@ -826,27 +874,29 @@ function runFreshDependencyBootstrapForTest(args, options = {}) {
       );
     }
   }
-  return runFreshDependencyBootstrap(args, options);
+  return runFreshDependencyBootstrap(snapshotArgs, snapshotOptions);
 }
 
 function runFreshLegacyMutationProcess(args, options = {}) {
-  if (!Array.isArray(args) || !isLegacyMutationInvocation(args)) {
+  const snapshotArgs = snapshotLegacyMutationArguments(args);
+  const snapshotOptions = snapshotBootstrapOptions(options);
+  if (!isLegacyMutationInvocation(snapshotArgs)) {
     throw new ConsumerDependencyBootstrapError(
       'Programmatic legacy mutation requires a supported mutation command'
     );
   }
-  const repositoryRoot = resolveRepositoryRoot(options.repositoryRoot || MODULE_ROOT);
-  if (path.resolve(options.cwd || process.cwd()) !== repositoryRoot) {
+  const repositoryRoot = resolveRepositoryRoot(snapshotOptions.repositoryRoot || MODULE_ROOT);
+  if (path.resolve(snapshotOptions.cwd || process.cwd()) !== repositoryRoot) {
     throw new ConsumerDependencyBootstrapError(
       `Programmatic legacy mutation must run from the formatter root: ${repositoryRoot}`
     );
   }
-  const plan = readBootstrapPlan(args, repositoryRoot);
+  const plan = readBootstrapPlan(snapshotArgs, repositoryRoot);
   // The parent may already have imported formatter modules or dependencies.
   // It only verifies built-in inputs and starts a dedicated process; the child
   // performs the install and imports the mutation runtime with an empty cache.
   verifyBootstrapInputs(repositoryRoot, plan.formatterSha);
-  const stdio = options.stdio || 'pipe';
+  const stdio = snapshotOptions.stdio || 'pipe';
   if (!['inherit', 'pipe'].includes(stdio)) {
     throw new ConsumerDependencyBootstrapError(
       'Programmatic legacy mutation stdio must be inherit or pipe'
@@ -854,7 +904,7 @@ function runFreshLegacyMutationProcess(args, options = {}) {
   }
   const child = spawnSync(
     process.execPath,
-    [path.join(repositoryRoot, 'src', 'ConsumerDependencyBootstrap.js'), ...args],
+    [path.join(repositoryRoot, 'src', 'ConsumerDependencyBootstrap.cjs'), ...snapshotArgs],
     {
       cwd: repositoryRoot,
       encoding: 'utf8',
@@ -886,11 +936,7 @@ function loadFreshLegacyMutationApi() {
   );
 }
 
-const isDirectBootstrapEntrypoint = (
-  typeof process.argv[1] === 'string'
-  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-);
-if (isDirectBootstrapEntrypoint) {
+if (require.main === module) {
   setImmediate(async () => {
     try {
       const args = process.argv.slice(2);
@@ -913,11 +959,11 @@ if (isDirectBootstrapEntrypoint) {
   });
 }
 
-export {
+module.exports = Object.freeze({
   ConsumerDependencyBootstrapError,
-  LEGACY_MUTATION_COMMANDS,
   assertFreshDependencyRuntime,
   assertFreshDependencyRuntimePresent,
+  isLegacyMutationCommand,
   isLegacyMutationInvocation,
   isLegacyMutationHelpInvocation,
   isNpmLifecycleInvocation,
@@ -929,4 +975,4 @@ export {
   runFreshLegacyMutationProcess,
   safeEnvironment,
   verifyBootstrapInputs
-};
+});

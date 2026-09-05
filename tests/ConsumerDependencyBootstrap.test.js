@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, test } from 'node:test';
 import fs from 'fs-extra';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import {
+import bootstrapApi from '../src/ConsumerDependencyBootstrap.cjs';
+
+const {
   isLegacyMutationInvocation,
   isNpmLifecycleInvocation,
   legacyMutationHelpText,
@@ -15,7 +17,7 @@ import {
   runFreshLegacyMutationProcess,
   safeEnvironment,
   verifyBootstrapInputs
-} from '../src/ConsumerDependencyBootstrap.js';
+} = bootstrapApi;
 import {
   ConsumerMutationBoundary,
   loadConsumerMutationPlan
@@ -78,8 +80,8 @@ async function createFixture(tempRoot, { invalidLock = false } = {}) {
   await fs.ensureDir(path.join(repositoryRoot, 'consumer'));
   await fs.ensureDir(path.join(repositoryRoot, 'src'));
   await fs.copyFile(
-    path.join(REPOSITORY_ROOT, 'src', 'ConsumerDependencyBootstrap.js'),
-    path.join(repositoryRoot, 'src', 'ConsumerDependencyBootstrap.js')
+    path.join(REPOSITORY_ROOT, 'src', 'ConsumerDependencyBootstrap.cjs'),
+    path.join(repositoryRoot, 'src', 'ConsumerDependencyBootstrap.cjs')
   );
   await fs.copyFile(
     path.join(REPOSITORY_ROOT, 'src', 'index.js'),
@@ -90,7 +92,8 @@ async function createFixture(tempRoot, { invalidLock = false } = {}) {
     [
       'import fs from "node:fs";',
       'import path from "node:path";',
-      'import { assertFreshDependencyRuntimePresent } from "./ConsumerDependencyBootstrap.js";',
+      'import bootstrapApi from "./ConsumerDependencyBootstrap.cjs";',
+      'const { assertFreshDependencyRuntimePresent } = bootstrapApi;',
       'assertFreshDependencyRuntimePresent(process.cwd());',
       'const dependency = await import("fs-extra");',
       'fs.writeFileSync(path.join(process.cwd(), "runtime-output.json"),',
@@ -222,7 +225,7 @@ describe('ConsumerDependencyBootstrap', () => {
       'utf8'
     );
     const bootstrap = await fs.readFile(
-      path.join(REPOSITORY_ROOT, 'src', 'ConsumerDependencyBootstrap.js'),
+      path.join(REPOSITORY_ROOT, 'src', 'ConsumerDependencyBootstrap.cjs'),
       'utf8'
     );
     const implementation = await fs.readFile(
@@ -241,24 +244,27 @@ describe('ConsumerDependencyBootstrap', () => {
     const launcherDynamicImports = [
       ...launcher.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)
     ].map((match) => match[1]);
-    assert.deepStrictEqual(launcherStaticImports, ['./ConsumerDependencyBootstrap.js']);
+    assert.deepStrictEqual(launcherStaticImports, ['./ConsumerDependencyBootstrap.cjs']);
     assert.deepStrictEqual(launcherDynamicImports, ['./cli-implementation.js']);
     assert.doesNotMatch(launcher, /^\s*import\s*['"][^'"]+['"];\s*$/m);
     assert.ok(
       launcher.indexOf('runFreshLegacyMutationProcess(args, { stdio: \'inherit\' })')
       < launcher.indexOf('import(\'./cli-implementation.js\')')
     );
-    assert.ok(
-      [...bootstrap.matchAll(/^import[\s\S]*?from ['"]([^'"]+)['"];$/gm)]
-        .every((match) => match[1].startsWith('node:'))
-    );
-    assert.doesNotMatch(bootstrap, /^\s*import\s*['"][^'"]+['"];\s*$/m);
+    const bootstrapRequires = [
+      ...bootstrap.matchAll(/\brequire\(\s*['"]([^'"]+)['"]\s*\)/g)
+    ].map((match) => match[1]);
+    assert.ok(bootstrapRequires.length > 0);
+    assert.ok(bootstrapRequires.every((specifier) => specifier.startsWith('node:')));
+    assert.doesNotMatch(bootstrap, /^\s*import\s/m);
     assert.ok(
       [...bootstrap.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)]
         .every((match) => match[1].startsWith('./'))
     );
     assert.match(bootstrap, /runFreshLegacyMutationProcess/);
     assert.match(bootstrap, /In-process legacy mutation API loading is not supported/);
+    assert.match(bootstrap, /if \(require\.main === module\)/);
+    assert.doesNotMatch(bootstrap, /process\.argv\[1\].*ConsumerDependencyBootstrap/s);
     assert.doesNotMatch(bootstrap, /Promise\.all\(\[\s*import\('\.\/BookGenerator\.js'/);
     assert.ok(
       implementation.indexOf('assertFreshDependencyRuntimePresent(process.cwd())')
@@ -268,8 +274,13 @@ describe('ConsumerDependencyBootstrap', () => {
       bootstrap.match(/export \{[\s\S]*?\};/)?.[0] || '',
       /\brunFreshDependencyBootstrap,/
     );
-    const bootstrapModule = await import('../src/ConsumerDependencyBootstrap.js');
-    assert.strictEqual(Object.hasOwn(bootstrapModule, 'runFreshDependencyBootstrap'), false);
+    const bootstrapNamespace = await import('../src/ConsumerDependencyBootstrap.cjs');
+    assert.strictEqual(Object.hasOwn(bootstrapNamespace, 'runFreshDependencyBootstrap'), false);
+    assert.strictEqual(Object.isFrozen(bootstrapNamespace.default), true);
+    assert.strictEqual(
+      Reflect.set(bootstrapNamespace.default, 'assertFreshDependencyRuntime', () => ({})),
+      false
+    );
     assert.throws(
       () => runFreshDependencyBootstrapForTest(
         ['update-book', '--plan', path.join(REPOSITORY_ROOT, 'missing-plan.json')],
@@ -277,14 +288,90 @@ describe('ConsumerDependencyBootstrap', () => {
       ),
       /restricted to a tests\/tmp-\* sandbox/
     );
+
+    const spoofedImport = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        [
+          `process.argv[1] = ${JSON.stringify(path.join(
+            REPOSITORY_ROOT,
+            'src',
+            'ConsumerDependencyBootstrap.cjs'
+          ))};`,
+          `await import(${JSON.stringify(pathToFileURL(path.join(
+            REPOSITORY_ROOT,
+            'src',
+            'ConsumerDependencyBootstrap.cjs'
+          )).href)});`,
+          'process.stdout.write("import-only\\n");'
+        ].join('\n')
+      ],
+      {
+        cwd: REPOSITORY_ROOT,
+        encoding: 'utf8',
+        env: safeEnvironment()
+      }
+    );
+    assert.strictEqual(spoofedImport.status, 0, spoofedImport.stderr);
+    assert.strictEqual(spoofedImport.stdout, 'import-only\n');
+    assert.doesNotMatch(spoofedImport.stderr, /Legacy consumer bootstrap failed/);
+
+    const requireFirstProbe = spawnSync(
+      process.execPath,
+      [
+        '--input-type=commonjs',
+        '--eval',
+        [
+          `const bootstrap = require(${JSON.stringify(path.join(
+            REPOSITORY_ROOT,
+            'src',
+            'ConsumerDependencyBootstrap.cjs'
+          ))});`,
+          'const original = bootstrap.assertFreshDependencyRuntime;',
+          'const replaced = Reflect.set(bootstrap, "assertFreshDependencyRuntime", ({ plan }) => plan);',
+          `import(${JSON.stringify(pathToFileURL(path.join(
+            REPOSITORY_ROOT,
+            'src',
+            'ConsumerMutationBoundary.js'
+          )).href)}).then(({ ConsumerMutationBoundary }) => {`,
+          `  const boundary = new ConsumerMutationBoundary({ formatterRoot: ${JSON.stringify(
+            REPOSITORY_ROOT
+          )}, enforceFormatterCwd: false });`,
+          '  let blocked = false;',
+          '  try {',
+          '    boundary.assertFreshDependencyRuntime({ forged: true });',
+          '  } catch (error) {',
+          '    blocked = /runtime capability is missing or invalid/.test(error.message);',
+          '  }',
+          '  const intact = bootstrap.assertFreshDependencyRuntime === original;',
+          '  process.stdout.write(JSON.stringify({ frozen: Object.isFrozen(bootstrap), replaced, intact, blocked }) + "\\n");',
+          '  if (!Object.isFrozen(bootstrap) || replaced || !intact || !blocked) process.exitCode = 1;',
+          '});'
+        ].join('\n')
+      ],
+      {
+        cwd: REPOSITORY_ROOT,
+        encoding: 'utf8',
+        env: safeEnvironment()
+      }
+    );
+    assert.strictEqual(requireFirstProbe.status, 0, requireFirstProbe.stderr);
+    assert.deepStrictEqual(JSON.parse(requireFirstProbe.stdout), {
+      frozen: true,
+      replaced: false,
+      intact: true,
+      blocked: true
+    });
     assert.strictEqual(packageJson.scripts.start, 'node src/npm-compatibility-cli.js');
     assert.strictEqual(packageJson.scripts.dev, 'node src/npm-compatibility-cli.js --watch');
     assert.ok(
-      npmCompatibilityEntrypoint.indexOf('LEGACY_MUTATION_COMMANDS.has(command)')
+      npmCompatibilityEntrypoint.indexOf('isLegacyMutationCommand(command)')
       < npmCompatibilityEntrypoint.indexOf('new URL(\'./index.js\', import.meta.url)')
     );
     assert.ok(
-      npmCompatibilityEntrypoint.indexOf('LEGACY_MUTATION_COMMANDS.has(command)')
+      npmCompatibilityEntrypoint.indexOf('isLegacyMutationCommand(command)')
       < npmCompatibilityEntrypoint.indexOf('import(\'./index.js\')')
     );
 
@@ -576,6 +663,58 @@ describe('ConsumerDependencyBootstrap', () => {
     );
   });
 
+  test('test-only bootstrapはcaller-owned argumentsとoptionsを一度だけsnapshotする', async () => {
+    const fixture = await createFixture(tempRoot);
+    let planReads = 0;
+    let repositoryRootReads = 0;
+    let cwdReads = 0;
+    const argumentsProxy = new Proxy(
+      ['update-book', '--plan', fixture.planPath],
+      {
+        get(target, property, receiver) {
+          if (property === '2') {
+            planReads += 1;
+            return planReads === 1
+              ? fixture.planPath
+              : path.join(REPOSITORY_ROOT, 'outside-plan.json');
+          }
+          return Reflect.get(target, property, receiver);
+        }
+      }
+    );
+    const optionsProxy = new Proxy(
+      {
+        repositoryRoot: fixture.repositoryRoot,
+        cwd: fixture.repositoryRoot,
+        installStdio: 'pipe'
+      },
+      {
+        get(target, property, receiver) {
+          if (property === 'repositoryRoot') {
+            repositoryRootReads += 1;
+            return repositoryRootReads === 1 ? fixture.repositoryRoot : REPOSITORY_ROOT;
+          }
+          if (property === 'cwd') {
+            cwdReads += 1;
+            return cwdReads === 1 ? fixture.repositoryRoot : REPOSITORY_ROOT;
+          }
+          return Reflect.get(target, property, receiver);
+        }
+      }
+    );
+
+    const capability = runFreshDependencyBootstrapForTest(argumentsProxy, optionsProxy);
+
+    assert.strictEqual(capability.formatterSha, fixture.formatterSha);
+    assert.strictEqual(planReads, 1);
+    assert.strictEqual(repositoryRootReads, 1);
+    assert.strictEqual(cwdReads, 1);
+    assert.strictEqual(
+      await fs.pathExists(path.join(fixture.repositoryRoot, 'malicious-import-marker')),
+      false
+    );
+  });
+
   test('programmatic mutationはpreloaded module cacheを共有しないchildで実行する', async () => {
     const fixture = await createFixture(tempRoot);
     await installMaliciousDependency(fixture.repositoryRoot);
@@ -594,16 +733,53 @@ describe('ConsumerDependencyBootstrap', () => {
       /In-process legacy mutation API loading is not supported/
     );
 
-    const result = runFreshLegacyMutationProcess(
+    let planReads = 0;
+    let repositoryRootReads = 0;
+    let cwdReads = 0;
+    const argumentsProxy = new Proxy(
       ['update-book', '--plan', fixture.planPath, '--dry-run'],
+      {
+        get(target, property, receiver) {
+          if (property === '2') {
+            planReads += 1;
+            return planReads === 1
+              ? fixture.planPath
+              : path.join(REPOSITORY_ROOT, 'outside-plan.json');
+          }
+          return Reflect.get(target, property, receiver);
+        }
+      }
+    );
+    const optionsProxy = new Proxy(
       {
         repositoryRoot: fixture.repositoryRoot,
         cwd: fixture.repositoryRoot,
         stdio: 'pipe'
+      },
+      {
+        get(target, property, receiver) {
+          if (property === 'repositoryRoot') {
+            repositoryRootReads += 1;
+            return repositoryRootReads === 1 ? fixture.repositoryRoot : REPOSITORY_ROOT;
+          }
+          if (property === 'cwd') {
+            cwdReads += 1;
+            return cwdReads === 1 ? fixture.repositoryRoot : REPOSITORY_ROOT;
+          }
+          return Reflect.get(target, property, receiver);
+        }
       }
     );
 
+    const result = runFreshLegacyMutationProcess(
+      argumentsProxy,
+      optionsProxy
+    );
+
     assert.strictEqual(result.status, 0);
+    assert.strictEqual(planReads, 1);
+    assert.strictEqual(repositoryRootReads, 1);
+    assert.strictEqual(cwdReads, 1);
     assert.deepStrictEqual(
       await fs.readJson(path.join(fixture.repositoryRoot, 'runtime-output.json')),
       { identity: 'fresh-lockfile-install' }

@@ -13,7 +13,9 @@ import {
   selectConsumers
 } from '../src/ConsumerMutationBoundary.js';
 import { UxRollout } from '../src/UxRollout.js';
-import { runFreshDependencyBootstrapForTest } from '../src/ConsumerDependencyBootstrap.js';
+import bootstrapApi from '../src/ConsumerDependencyBootstrap.cjs';
+
+const { runFreshDependencyBootstrapForTest } = bootstrapApi;
 
 const TEST_ROOT = path.dirname(fileURLToPath(import.meta.url));
 

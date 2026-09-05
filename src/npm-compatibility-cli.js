@@ -2,14 +2,16 @@
 
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { LEGACY_MUTATION_COMMANDS } from './ConsumerDependencyBootstrap.js';
+import bootstrapApi from './ConsumerDependencyBootstrap.cjs';
+
+const { isLegacyMutationCommand } = bootstrapApi;
 
 const rawArgs = process.argv.slice(2);
 const watchMode = rawArgs[0] === '--watch';
 const args = watchMode ? rawArgs.slice(1) : rawArgs;
 const command = args[0];
 
-if (LEGACY_MUTATION_COMMANDS.has(command)) {
+if (isLegacyMutationCommand(command)) {
   console.error(
     'npm lifecycle scripts do not expose legacy consumer mutation commands; '
     + 'use node src/index.js directly'

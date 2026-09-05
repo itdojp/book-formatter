@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
-import {
+import bootstrapApi from './ConsumerDependencyBootstrap.cjs';
+
+const {
   assertFreshDependencyRuntimePresent,
   isLegacyMutationInvocation
-} from './ConsumerDependencyBootstrap.js';
+} = bootstrapApi;
 
 if (isLegacyMutationInvocation(process.argv.slice(2))) {
   // The supported src/index.js entrypoint establishes this state through an

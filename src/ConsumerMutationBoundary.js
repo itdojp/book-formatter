@@ -5,10 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ComponentSync } from '../scripts/sync-components.js';
-import {
-  assertFreshDependencyRuntime as assertDependencyRuntime,
-  safeEnvironment as bootstrapSafeEnvironment
-} from './ConsumerDependencyBootstrap.js';
+import bootstrapApi from './ConsumerDependencyBootstrap.cjs';
+
+const {
+  assertFreshDependencyRuntime: assertDependencyRuntime,
+  safeEnvironment: bootstrapSafeEnvironment
+} = bootstrapApi;
 
 const PLAN_SCHEMA_VERSION = 1;
 const MAX_CONSUMERS = 6;
