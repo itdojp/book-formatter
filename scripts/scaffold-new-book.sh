@@ -139,9 +139,17 @@ run_git() {
 
 run_github_com_gh() {
   # A caller-level GH_HOST must not redirect a public repository operation to
-  # an identically named owner on a GitHub Enterprise host.
+  # an identically named owner on a GitHub Enterprise host. Disable SSH as a
+  # fail-closed boundary: publication is allowed only after the HTTPS protocol
+  # preflight below succeeds.
   run_without_git_routing \
-    run_without_external_git_config env GH_HOST=github.com gh "$@"
+    run_without_external_git_config env \
+      GH_HOST=github.com \
+      GH_PROMPT_DISABLED=1 \
+      GIT_TERMINAL_PROMPT=0 \
+      GIT_SSH=false \
+      GIT_SSH_COMMAND=false \
+      gh "$@"
 }
 
 git_owner_repo_without_routing() {
@@ -169,6 +177,11 @@ if [ "$CREATE" -eq 1 ]; then
 
   if ! run_github_com_gh auth status --hostname github.com >/dev/null 2>&1; then
     die "GitHub CLI authentication for github.com is required"
+  fi
+
+  GITHUB_GIT_PROTOCOL="$(run_github_com_gh config get git_protocol --host github.com 2>/dev/null || true)"
+  if [ "$GITHUB_GIT_PROTOCOL" != "https" ]; then
+    die "--create requires GitHub CLI git_protocol=https for github.com; configure HTTPS before retrying"
   fi
 
   REMOTE_LOOKUP_ERROR=""
@@ -303,9 +316,19 @@ if [ "$CREATE" -eq 1 ]; then
   fi
 
   REMOTE_OWNER_REPO="$(git_owner_repo_without_routing "$OUTPUT" 2>/dev/null || true)"
+  REMOTE_PUSH_URL="$(run_git -C "$OUTPUT" remote get-url --push origin 2>/dev/null || true)"
   EXPECTED_OWNER_REPO_LOWER="$OWNER_LOWER/$REPO_LOWER"
   REMOTE_OWNER_REPO_LOWER="$(printf '%s' "$REMOTE_OWNER_REPO" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  REMOTE_PUSH_URL_LOWER="$(printf '%s' "$REMOTE_PUSH_URL" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  EXPECTED_PUSH_URL_LOWER="https://github.com/$EXPECTED_OWNER_REPO_LOWER"
+  REMOTE_PUSH_URL_VALID=0
+  case "$REMOTE_PUSH_URL_LOWER" in
+    "$EXPECTED_PUSH_URL_LOWER"|"$EXPECTED_PUSH_URL_LOWER.git")
+      REMOTE_PUSH_URL_VALID=1
+      ;;
+  esac
   if [ "$REMOTE_OWNER_REPO_LOWER" != "$EXPECTED_OWNER_REPO_LOWER" ] || \
+     [ "$REMOTE_PUSH_URL_VALID" -ne 1 ] || \
      [ "$(run_git -C "$OUTPUT" branch --show-current)" != "main" ] || \
      [ -n "$(run_git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all)" ]; then
     die "Remote command returned success but the local repository contract is incomplete: $OUTPUT"

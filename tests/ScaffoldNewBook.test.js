@@ -100,6 +100,8 @@ function installMockGh(root) {
     '  echo "git template injection remains" >&2',
     '  exit 93',
     'fi',
+    'test "${GIT_SSH:-}" = false',
+    'test "${GIT_SSH_COMMAND:-}" = false',
     'for name in GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; do',
     '  if [ -n "${!name:-}" ]; then echo "git config injection remains: $name" >&2; exit 93; fi',
     'done',
@@ -119,6 +121,13 @@ function installMockGh(root) {
     '    test "$2" = status',
     '    if [ "$mode" = auth-fail ]; then exit 1; fi',
     '    exit 0',
+    '    ;;',
+    '  config)',
+    '    test "$2" = get',
+    '    test "$3" = git_protocol',
+    '    test "$4" = --host',
+    '    test "$5" = github.com',
+    '    if [ "$mode" = ssh-protocol ]; then echo ssh; else echo https; fi',
     '    ;;',
     '  api)',
     '    case "$mode" in',
@@ -188,9 +197,11 @@ function installMockGh(root) {
     '    if [ "$mode" = canonical-origin ]; then',
     '      remote_name="$(printf \'%s\' "$full_name" | LC_ALL=C tr \'[:upper:]\' \'[:lower:]\')"',
     '    fi',
-    '    git -C "$source_path" remote add origin "https://github.com/$remote_name.git"',
+    '    remote_url="https://github.com/$remote_name.git"',
+    '    if [ "$mode" = ssh-origin ]; then remote_url="git@github.com:$remote_name.git"; fi',
+    '    git -C "$source_path" remote add origin "$remote_url"',
     '    effective_push_url="$(git -C "$source_path" remote get-url --push origin)"',
-    '    test "$effective_push_url" = "https://github.com/$remote_name.git"',
+    '    test "$effective_push_url" = "$remote_url"',
     '    printf \'push-url=%s\\n\' "$effective_push_url" >> "$GH_MOCK_EVIDENCE"',
     '    if [ "$mode" = create-fail ]; then',
     '      echo \'synthetic create/push failure\' >&2',
@@ -549,14 +560,15 @@ test('--create presents one clean main commit to one mocked gh create call', () 
   assert.match(evidence, /remotes-before=\n/);
 
   const calls = readFileSync(result.log, 'utf8').trim().split('\n');
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
   assert.match(calls[0], /^auth status --hostname github\.com /);
+  assert.match(calls[1], /^config get git_protocol --host github\.com /);
   assert.match(
-    calls[1],
+    calls[2],
     /^api --hostname github\.com --silent repos\/itdojp\/sample-book /,
   );
-  assert.match(calls[2], /^repo create itdojp\/sample-book --public --source /);
-  assert.match(calls[2], / --remote origin --push$/);
+  assert.match(calls[3], /^repo create itdojp\/sample-book --public --source /);
+  assert.match(calls[3], / --remote origin --push$/);
 });
 
 test('--create ignores caller-owned Git repository routing variables', () => {
@@ -582,6 +594,8 @@ test('--create ignores caller-owned Git repository routing variables', () => {
         GIT_CONFIG_COUNT: '1',
         GIT_CONFIG_KEY_0: 'remote.origin.pushurl',
         GIT_CONFIG_VALUE_0: 'https://enterprise.example.invalid/redirect.git',
+        GIT_SSH: path.join(root, 'malicious-ssh'),
+        GIT_SSH_COMMAND: 'ssh -F malicious-config',
       },
     },
   );
@@ -618,9 +632,10 @@ test('--create pins every gh operation to github.com despite caller GH_HOST', ()
     'https://github.com/itdojp/sample-book.git',
   );
   const calls = readFileSync(result.log, 'utf8').trim().split('\n');
-  assert.equal(calls.length, 3);
-  assert.match(calls[1], /^api --hostname github\.com --silent /);
-  assert.match(calls[2], /^repo create itdojp\/sample-book /);
+  assert.equal(calls.length, 4);
+  assert.match(calls[1], /^config get git_protocol --host github\.com /);
+  assert.match(calls[2], /^api --hostname github\.com --silent /);
+  assert.match(calls[3], /^repo create itdojp\/sample-book /);
 });
 
 test('--create accepts canonical casing in the returned GitHub origin', () => {
@@ -710,16 +725,22 @@ test('--create preflight failures do not create a local destination', async (t) 
       calls: 1,
     },
     {
+      name: 'SSH publication protocol',
+      mode: 'ssh-protocol',
+      error: /requires GitHub CLI git_protocol=https/,
+      calls: 2,
+    },
+    {
       name: 'existing remote',
       mode: 'remote-exists',
       error: /repository already exists/,
-      calls: 2,
+      calls: 3,
     },
     {
       name: 'remote lookup failure',
       mode: 'lookup-fail',
       error: /Unable to prove.*is absent/,
-      calls: 2,
+      calls: 3,
     },
   ];
 
@@ -808,6 +829,28 @@ test('a successful gh result with the wrong origin fails closed', () => {
   assert.equal(
     git(output, 'remote', 'get-url', 'origin'),
     'https://github.com/other/repository.git',
+  );
+  assert.match(result.stderr, /local repository contract is incomplete/);
+});
+
+test('a successful gh result with an SSH origin fails closed', () => {
+  const root = makeTemporaryRoot('ssh-origin');
+  const output = path.join(root, 'outputs', 'sample-book');
+  const result = runScaffold(
+    root,
+    ['itdojp', 'sample-book', '--output', output, '--create'],
+    { ghMode: 'ssh-origin' },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.equal(git(output, 'branch', '--show-current'), 'main');
+  assert.equal(
+    git(output, 'status', '--porcelain=v1', '--untracked-files=all'),
+    '',
+  );
+  assert.equal(
+    git(output, 'remote', 'get-url', 'origin'),
+    'git@github.com:itdojp/sample-book.git',
   );
   assert.match(result.stderr, /local repository contract is incomplete/);
 });

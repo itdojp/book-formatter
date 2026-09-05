@@ -213,12 +213,13 @@ mkdir -p ../generated-books
 GitHub repositoryの作成と初回pushまで行う場合:
 
 ```bash
+gh config set git_protocol https --host github.com
 ./scripts/scaffold-new-book.sh itdojp sample-book \
   --output ../generated-books/sample-book \
   --create
 ```
 
-`--create`は出力を作る前に、Git author name/email、`gh auth status`、対象remoteの不存在を確認します。その後、localで`main` branch、initial commit、clean status、remote未設定を成立させてから、`gh repo create --source ... --remote origin --push`を1回だけ実行します。remote作成は冪等ではないため、自動retryしません。
+`--create`は出力を作る前に、Git author name/email、`gh auth status`、github.com向け`git_protocol=https`、対象remoteの不存在を確認します。SSH protocolは利用者の`~/.ssh/config`によるhost書換えをpublication境界で排除できないためfail closedにし、script自身は利用者のGitHub CLI設定を変更しません。その後、localで`main` branch、initial commit、clean status、remote未設定を成立させてから、`gh repo create --source ... --remote origin --push`を1回だけ実行します。remote作成は冪等ではないため、自動retryしません。成功後も`origin`のpush URLがHTTPSのgithub.comかを検査します。
 
 作成またはpushが途中失敗した場合、cleanなlocal repositoryは`--output`に保持されます。次を確認するまで同じ処理を再実行したり、local出力を削除したりしないでください。
 
