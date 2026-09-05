@@ -1441,6 +1441,7 @@ export async function checkBookVisibility(bookDirectory, editionId, options = {}
       path: entry.path,
       visibility: entry.visibility || 'unknown',
       decision: included ? 'include' : 'exclude-document',
+      sourceDigest: digest(content),
       protectedRegions
     });
   }

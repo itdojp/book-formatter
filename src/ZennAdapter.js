@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { constants as fileSystemConstants } from 'node:fs';
 import { open as openFile } from 'node:fs/promises';
@@ -34,6 +34,40 @@ for (const entry of (await readdir('.')).sort()) {
   await rm(entry, { recursive: true, force: false, maxRetries: 0 });
 }
 if ((await readdir('.')).length !== 0) process.exit(74);
+`;
+const IDENTITY_BOUND_DIRECTORY_CREATE = `
+import { lstat, mkdir } from 'node:fs/promises';
+const [expectedDev, expectedIno, name] = process.argv.slice(1);
+if (!name || name === '.' || name === '..' || /[\\/]/u.test(name)) process.exit(64);
+const parent = await lstat('.');
+if (String(parent.dev) !== expectedDev || String(parent.ino) !== expectedIno) process.exit(73);
+await mkdir(name, { mode: 0o700 });
+const created = await lstat(name);
+if (!created.isDirectory() || created.isSymbolicLink()) process.exit(74);
+process.stdout.write(JSON.stringify({ dev: String(created.dev), ino: String(created.ino) }));
+`;
+const IDENTITY_BOUND_EXCLUSIVE_WRITE = `
+import { constants } from 'node:fs';
+import { lstat, open } from 'node:fs/promises';
+const [expectedDev, expectedIno, name] = process.argv.slice(1);
+if (!name || name === '.' || name === '..' || /[\\/]/u.test(name)) process.exit(64);
+const parent = await lstat('.');
+if (String(parent.dev) !== expectedDev || String(parent.ino) !== expectedIno) process.exit(73);
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+const handle = await open(
+  name,
+  constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+  0o600
+);
+try {
+  await handle.writeFile(Buffer.concat(chunks));
+  await handle.sync();
+  const written = await handle.stat();
+  if (!written.isFile()) process.exit(74);
+} finally {
+  await handle.close();
+}
 `;
 const HTML_ENTITY = /&(?:#[xX][0-9A-Fa-f]+|#\d+|[A-Za-z][A-Za-z0-9]+);?/gu;
 const SOURCE_AUDIT_MARKDOWN = new MarkdownIt({
@@ -1013,6 +1047,133 @@ function samePathIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
+async function runIdentityBoundOperation({ script, cwd, args, input, context }) {
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ['--input-type=module', '--eval', script, ...args],
+      {
+        cwd,
+        env: {},
+        stdio: ['pipe', 'pipe', 'ignore'],
+        windowsHide: true
+      }
+    );
+    const output = [];
+    let settled = false;
+    const timeout = setTimeout(() => child.kill(), 30_000);
+    child.stdout.on('data', (chunk) => output.push(chunk));
+    child.stdin.on('error', () => {});
+    child.once('error', (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve({ code, output: Buffer.concat(output).toString('utf8') });
+    });
+    child.stdin.end(input);
+  });
+  if (result.code !== 0) {
+    throw new ZennAdapterError(`${context} (${result.code ?? 'terminated'})`);
+  }
+  return result.output;
+}
+
+async function createDirectoryInHeldParent(parent, parentIdentity, name) {
+  const output = await runIdentityBoundOperation({
+    script: IDENTITY_BOUND_DIRECTORY_CREATE,
+    cwd: parent,
+    args: [String(parentIdentity.dev), String(parentIdentity.ino), name],
+    input: '',
+    context: 'Zenn staging directory could not be created exclusively'
+  });
+  let identity;
+  try {
+    identity = JSON.parse(output);
+  } catch {
+    throw new ZennAdapterError('Zenn staging directory identity response was invalid');
+  }
+  if (!/^\d+$/u.test(identity?.dev || '') || !/^\d+$/u.test(identity?.ino || '')) {
+    throw new ZennAdapterError('Zenn staging directory identity response was invalid');
+  }
+  return { dev: Number(identity.dev), ino: Number(identity.ino) };
+}
+
+async function writeFileInHeldDirectory(directory, directoryIdentity, name, contents) {
+  await runIdentityBoundOperation({
+    script: IDENTITY_BOUND_EXCLUSIVE_WRITE,
+    cwd: directory,
+    args: [String(directoryIdentity.dev), String(directoryIdentity.ino), name],
+    input: Buffer.isBuffer(contents) ? contents : Buffer.from(contents, 'utf8'),
+    context: 'Zenn staging file could not be created exclusively'
+  });
+}
+
+function stagingPathComponents(relativePath) {
+  const components = String(relativePath).split('/');
+  if (
+    components.length === 0 ||
+    components.some((component) =>
+      !component || component === '.' || component === '..' || /[\\/]/u.test(component)
+    )
+  ) {
+    throw new ZennAdapterError(`Invalid Zenn staging path: ${relativePath}`);
+  }
+  return components;
+}
+
+function createStagingTree(stagingDirectory, expectedStagingIdentity) {
+  const directories = new Map([
+    ['', { path: stagingDirectory, identity: expectedStagingIdentity }]
+  ]);
+
+  async function requireDirectory(relativePath) {
+    const components = relativePath ? stagingPathComponents(relativePath) : [];
+    let currentKey = '';
+    let current = directories.get(currentKey);
+    for (const component of components) {
+      const nextKey = currentKey ? `${currentKey}/${component}` : component;
+      let next = directories.get(nextKey);
+      if (!next) {
+        const identity = await createDirectoryInHeldParent(
+          current.path,
+          current.identity,
+          component
+        );
+        next = { path: path.join(current.path, component), identity };
+        directories.set(nextKey, next);
+      }
+      currentKey = nextKey;
+      current = next;
+    }
+    return current;
+  }
+
+  async function write(relativePath, contents) {
+    const components = stagingPathComponents(relativePath);
+    const name = components.pop();
+    const parent = await requireDirectory(components.join('/'));
+    await writeFileInHeldDirectory(parent.path, parent.identity, name, contents);
+  }
+
+  async function assertDirectoriesUnchanged() {
+    for (const directory of directories.values()) {
+      await assertPathObjectIdentity(
+        directory.path,
+        directory.identity,
+        'Zenn staging directory changed after exclusive creation'
+      );
+    }
+  }
+
+  return { write, assertDirectoriesUnchanged };
+}
+
 async function assertPathObjectIdentity(candidate, expected, context) {
   const current = await pathObjectIdentityIfExists(candidate);
   if (!current || !samePathIdentity(current, expected)) {
@@ -1193,6 +1354,74 @@ async function replaceOwnedDirectory({
   }
 }
 
+function sha256(contents) {
+  return createHash('sha256').update(contents).digest('hex');
+}
+
+async function readVisibilityBoundSource(bookRoot, sourcePath, expectedDigest) {
+  if (!/^[0-9a-f]{64}$/u.test(expectedDigest || '')) {
+    throw new ZennAdapterError(`Zenn source is missing its visibility digest: ${sourcePath}`);
+  }
+  const absolutePath = path.join(bookRoot, sourcePath);
+  let pathStat;
+  try {
+    pathStat = await fs.lstat(absolutePath);
+  } catch {
+    throw new ZennAdapterError(`Zenn source became unavailable: ${sourcePath}`);
+  }
+  if (pathStat.isSymbolicLink() || !pathStat.isFile()) {
+    throw new ZennAdapterError(`Zenn source must remain a regular non-symlink file: ${sourcePath}`);
+  }
+
+  let handle;
+  try {
+    handle = await openFile(
+      absolutePath,
+      fileSystemConstants.O_RDONLY | fileSystemConstants.O_NOFOLLOW
+    );
+    const openedStat = await handle.stat();
+    if (
+      !openedStat.isFile() ||
+      openedStat.dev !== pathStat.dev ||
+      openedStat.ino !== pathStat.ino ||
+      openedStat.size !== pathStat.size
+    ) {
+      throw new ZennAdapterError(`Zenn source changed during safe open: ${sourcePath}`);
+    }
+    const contents = await handle.readFile();
+    const completedStat = await handle.stat();
+    if (
+      completedStat.dev !== openedStat.dev ||
+      completedStat.ino !== openedStat.ino ||
+      completedStat.size !== openedStat.size ||
+      completedStat.mtimeMs !== openedStat.mtimeMs ||
+      completedStat.ctimeMs !== openedStat.ctimeMs ||
+      contents.length !== openedStat.size
+    ) {
+      throw new ZennAdapterError(`Zenn source changed while being read: ${sourcePath}`);
+    }
+    const currentPathStat = await fs.lstat(absolutePath);
+    if (
+      currentPathStat.isSymbolicLink() ||
+      currentPathStat.dev !== openedStat.dev ||
+      currentPathStat.ino !== openedStat.ino
+    ) {
+      throw new ZennAdapterError(`Zenn source path changed during safe read: ${sourcePath}`);
+    }
+    if (sha256(contents) !== expectedDigest) {
+      throw new ZennAdapterError(
+        `Zenn source changed after visibility validation: ${sourcePath}`
+      );
+    }
+    return contents.toString('utf8');
+  } catch (error) {
+    if (error instanceof ZennAdapterError) throw error;
+    throw new ZennAdapterError(`Zenn source could not be opened safely: ${sourcePath}`);
+  } finally {
+    if (handle) await handle.close();
+  }
+}
+
 export async function writeZennProject({
   standardBook,
   edition,
@@ -1228,7 +1457,11 @@ export async function writeZennProject({
   const convertedDocuments = [];
 
   for (const [index, entry] of includedEntries.entries()) {
-    const source = await fs.readFile(path.join(standardBook.bookRoot, entry.path), 'utf8');
+    const source = await readVisibilityBoundSource(
+      standardBook.bookRoot,
+      entry.path,
+      includedReports[index].sourceDigest
+    );
     rejectSourceFrontMatter(source, entry.path);
     const projected = applyVisibilityRegions(
       source,
@@ -1270,40 +1503,35 @@ export async function writeZennProject({
   const parent = path.dirname(outputDirectory);
   await fs.ensureDir(parent);
   const stagingDirectory = path.join(parent, `.zenn-${process.pid}-${randomUUID()}.tmp`);
-  const bookDirectory = path.join(stagingDirectory, 'books', target.slug);
   let expectedStagingIdentity;
 
   try {
-    await fs.mkdir(stagingDirectory);
+    await fs.mkdir(stagingDirectory, { mode: 0o700 });
     expectedStagingIdentity = await pathObjectIdentity(stagingDirectory);
-    await fs.ensureDir(bookDirectory);
+    const staging = createStagingTree(stagingDirectory, expectedStagingIdentity);
     for (const { entry, body, containsPaidContent } of convertedDocuments) {
-      await fs.writeFile(
-        path.join(bookDirectory, `${entry.id}.md`),
+      await staging.write(
+        `books/${target.slug}/${entry.id}.md`,
         createChapter(
           entry,
           body,
           edition.visibility === 'paid',
           containsPaidContent
-        ),
-        'utf8'
+        )
       );
     }
     for (const [destination, contents] of copiedAssets) {
-      const outputPath = path.join(stagingDirectory, ...destination.split('/'));
-      await fs.ensureDir(path.dirname(outputPath));
-      await fs.writeFile(outputPath, contents);
+      await staging.write(destination, contents);
     }
-    await fs.writeFile(
-      path.join(bookDirectory, 'config.yaml'),
-      createConfig(standardBook.metadata, target, edition, includedEntries.map((entry) => entry.id)),
-      'utf8'
+    await staging.write(
+      `books/${target.slug}/config.yaml`,
+      createConfig(standardBook.metadata, target, edition, includedEntries.map((entry) => entry.id))
     );
-    await fs.writeFile(
-      path.join(stagingDirectory, 'manifest.json'),
-      `${JSON.stringify(manifest, null, 2)}\n`,
-      'utf8'
+    await staging.write(
+      'manifest.json',
+      `${JSON.stringify(manifest, null, 2)}\n`
     );
+    await staging.assertDirectoriesUnchanged();
 
     const artifactReport = await verifyArtifact(stagingDirectory);
     if (!artifactReport.summary.safe) {
@@ -1311,6 +1539,7 @@ export async function writeZennProject({
         `Generated Zenn artifact failed visibility verification: ${artifactReport.summary.findings} finding(s)`
       );
     }
+    await staging.assertDirectoriesUnchanged();
 
     await revalidateOutputDestination();
     const expectedOutputIdentity = await assertOwnedExistingOutput(outputDirectory);

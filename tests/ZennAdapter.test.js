@@ -332,6 +332,54 @@ describe('ZennAdapter', () => {
     assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'zenn')), false);
   });
 
+  test('可視性検査後に差し替えられた原稿を安全な読み取りとdigestで拒否する', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('source symbolic-link race assertion is skipped on Windows');
+      return;
+    }
+    const cases = [
+      {
+        name: 'regular replacement',
+        replace: async (sourcePath) => {
+          await fs.writeFile(sourcePath, '# Replaced\n\nreplacement content\n', 'utf8');
+        },
+        expected: /changed after visibility validation/u
+      },
+      {
+        name: 'symbolic-link replacement',
+        replace: async (sourcePath, bookDirectory) => {
+          await fs.remove(sourcePath);
+          await fs.symlink('../other.txt', sourcePath);
+          await fs.writeFile(path.join(bookDirectory, 'other.txt'), '# Linked\n\nlinked content\n');
+        },
+        expected: /must remain a regular non-symlink file/u
+      }
+    ];
+
+    for (const scenario of cases) {
+      const bookDirectory = await copySampleBook();
+      const outputRoot = await temporaryDirectory('tmp-zenn-source-race-');
+      const sourcePath = path.join(bookDirectory, 'manuscript/02-workflow.md');
+      const originalReadFile = fs.readFile;
+      let replaced = false;
+      fs.readFile = async (candidate, ...args) => {
+        const contents = await originalReadFile(candidate, ...args);
+        if (!replaced && path.resolve(candidate) === sourcePath) {
+          replaced = true;
+          await scenario.replace(sourcePath, bookDirectory);
+        }
+        return contents;
+      };
+      try {
+        await assert.rejects(build(bookDirectory, outputRoot), scenario.expected, scenario.name);
+      } finally {
+        fs.readFile = originalReadFile;
+      }
+      assert.strictEqual(replaced, true, scenario.name);
+      assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'zenn')), false);
+    }
+  });
+
   test('target metadata、title、chapter slug、internal edition境界を拒否する', async () => {
     const missingTarget = await copySampleBook();
     await updateMetadata(missingTarget, (metadata) => delete metadata.targets);
@@ -657,6 +705,48 @@ describe('ZennAdapter', () => {
       await fs.readFile(path.join(first.outputDirectory, 'preserve.txt'), 'utf8'),
       'existing output\n'
     );
+  });
+
+  test('同時に植え付けられたstaging symlinkを追従せず外部fileを変更しない', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('staging symbolic-link race assertion is skipped on Windows');
+      return;
+    }
+    for (const plantedPath of ['books', 'manifest.json']) {
+      const bookDirectory = await copySampleBook();
+      const outputRoot = await temporaryDirectory('tmp-zenn-staging-race-');
+      const outside = await temporaryDirectory('tmp-zenn-staging-outside-');
+      const outsideFile = path.join(outside, 'outside.txt');
+      await fs.writeFile(outsideFile, 'outside data\n');
+      const originalMkdir = fs.mkdir;
+      let planted = false;
+      fs.mkdir = async (candidate, ...args) => {
+        const result = await originalMkdir(candidate, ...args);
+        if (!planted && path.basename(candidate).startsWith('.zenn-')) {
+          planted = true;
+          const destination = plantedPath === 'books' ? outside : outsideFile;
+          await fs.symlink(
+            destination,
+            path.join(candidate, plantedPath),
+            plantedPath === 'books' ? 'dir' : 'file'
+          );
+        }
+        return result;
+      };
+      try {
+        await assert.rejects(
+          build(bookDirectory, outputRoot),
+          /staging (?:directory|file) could not be created exclusively/u,
+          plantedPath
+        );
+      } finally {
+        fs.mkdir = originalMkdir;
+      }
+      assert.strictEqual(planted, true, plantedPath);
+      assert.strictEqual(await fs.readFile(outsideFile, 'utf8'), 'outside data\n');
+      assert.deepStrictEqual(await fs.readdir(outside), ['outside.txt']);
+      assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'zenn')), false);
+    }
   });
 
   test('ownership検証後に差し替えられたoutputをbackup削除しない', async (context) => {
