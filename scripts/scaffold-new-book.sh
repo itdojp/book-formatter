@@ -92,6 +92,17 @@ fi
 
 require_cmd cp env mkdir sed
 
+REQUIRED_GITHUB_TEMPLATE_FILES=(
+  "$BOOK_FORMATTER_REPO_ROOT/templates/.github/PULL_REQUEST_TEMPLATE.md"
+  "$BOOK_FORMATTER_REPO_ROOT/templates/.github/workflows/book-qa.yml"
+  "$BOOK_FORMATTER_REPO_ROOT/templates/.github/workflows/nav-link-check.yml"
+)
+for source_file in "${REQUIRED_GITHUB_TEMPLATE_FILES[@]}"; do
+  if [ ! -f "$source_file" ]; then
+    die "Required scaffold source file is missing: $source_file"
+  fi
+done
+
 # Do not let caller-owned repository routing variables redirect local Git or
 # the Git subprocesses started by `gh repo create` outside the new output.
 run_without_git_routing() (
@@ -231,10 +242,8 @@ sed_inplace() {
 # Preserve the finite legacy-Jekyll scaffold mapping.
 cp -R "$BOOK_FORMATTER_REPO_ROOT/templates/starter/." "$OUTPUT/"
 
-if [ -d "$BOOK_FORMATTER_REPO_ROOT/templates/.github" ]; then
-  mkdir -p "$OUTPUT/.github"
-  cp -R "$BOOK_FORMATTER_REPO_ROOT/templates/.github/." "$OUTPUT/.github/"
-fi
+mkdir -p "$OUTPUT/.github"
+cp -R "$BOOK_FORMATTER_REPO_ROOT/templates/.github/." "$OUTPUT/.github/"
 
 mkdir -p "$OUTPUT/docs/_layouts" "$OUTPUT/docs/_includes" "$OUTPUT/docs/assets"
 cp -R "$BOOK_FORMATTER_REPO_ROOT/shared/layouts/." "$OUTPUT/docs/_layouts/"

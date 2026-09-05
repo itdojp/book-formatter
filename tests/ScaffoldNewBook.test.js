@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -224,7 +225,7 @@ function installMockGh(root) {
 function runScaffold(
   root,
   args,
-  { ghMode = '', author = true, extraEnv = {} } = {},
+  { ghMode = '', author = true, extraEnv = {}, script = SCRIPT } = {},
 ) {
   const log = path.join(root, 'gh.log');
   const evidence = path.join(root, 'gh-evidence.txt');
@@ -245,7 +246,7 @@ function runScaffold(
     delete env.GIT_AUTHOR_NAME;
     delete env.GIT_AUTHOR_EMAIL;
   }
-  const result = spawnSync('bash', [SCRIPT, ...args], {
+  const result = spawnSync('bash', [script, ...args], {
     cwd: path.join(root, 'caller'),
     env,
     encoding: 'utf8',
@@ -337,6 +338,38 @@ test('local scaffold persists and preserves the finite starter/shared mapping', 
     /https:\/\/itdojp\.github\.io\/sample-book\//,
   );
   assert.doesNotMatch(pullRequestTemplate, /<(?:owner|repo|REPO)>/);
+});
+
+test('missing canonical GitHub templates fail before output creation', () => {
+  const root = makeTemporaryRoot('missing-github-templates');
+  const formatter = path.join(root, 'formatter');
+  mkdirSync(path.join(formatter, 'scripts'), { recursive: true });
+  mkdirSync(path.join(formatter, 'templates'), { recursive: true });
+  cpSync(SCRIPT, path.join(formatter, 'scripts/scaffold-new-book.sh'));
+  cpSync(
+    path.join(REPOSITORY_ROOT, 'scripts/lib.sh'),
+    path.join(formatter, 'scripts/lib.sh'),
+  );
+  cpSync(
+    path.join(REPOSITORY_ROOT, 'templates/starter'),
+    path.join(formatter, 'templates/starter'),
+    { recursive: true },
+  );
+  cpSync(path.join(REPOSITORY_ROOT, 'shared'), path.join(formatter, 'shared'), {
+    recursive: true,
+  });
+
+  const output = path.join(root, 'outputs', 'sample-book');
+  const result = runScaffold(
+    root,
+    ['itdojp', 'sample-book', '--output', output],
+    { script: path.join(formatter, 'scripts/scaffold-new-book.sh') },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Required scaffold source file is missing/);
+  assert.equal(existsSync(output), false);
+  assert.equal(readFileSync(result.log, 'utf8'), '');
 });
 
 test('option-like relative output names remain literal paths', () => {
