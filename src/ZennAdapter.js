@@ -495,12 +495,61 @@ function collectInlineImages(segment) {
       start: index,
       end: cursor,
       alt: segment.slice(index + 2, altEnd),
-      destination: segment.slice(destinationStart, cursor - 1)
+      destination: segment.slice(destinationStart, cursor - 1),
+      source: segment.slice(index, cursor)
     });
     index = cursor;
   }
 
   return images;
+}
+
+function parsedInlineImages(source) {
+  return collectTokens(SOURCE_AUDIT_MARKDOWN.parseInline(source, {}))
+    .map(({ token }) => token)
+    .filter((token) => token.type === 'image');
+}
+
+function imageTokenKey(token) {
+  return JSON.stringify([
+    token.content,
+    token.attrGet('src'),
+    token.attrGet('title') || ''
+  ]);
+}
+
+function selectParsedInlineImages(segment, sourcePath) {
+  const parsedKeys = parsedInlineImages(segment).map(imageTokenKey);
+  if (parsedKeys.length === 0) return [];
+
+  const candidates = collectInlineImages(segment).map((candidate) => {
+    const tokens = parsedInlineImages(candidate.source);
+    return {
+      ...candidate,
+      key: tokens.length === 1 ? imageTokenKey(tokens[0]) : null
+    };
+  });
+  const solutions = [];
+
+  function visit(parsedIndex, candidateIndex, selected) {
+    if (solutions.length > 1) return;
+    if (parsedIndex === parsedKeys.length) {
+      solutions.push(selected);
+      return;
+    }
+    for (let index = candidateIndex; index < candidates.length; index += 1) {
+      if (candidates[index].key !== parsedKeys[parsedIndex]) continue;
+      visit(parsedIndex + 1, index + 1, [...selected, candidates[index]]);
+    }
+  }
+
+  visit(0, 0, []);
+  if (solutions.length !== 1) {
+    throw new ZennAdapterError(
+      `Parsed image syntax could not be mapped unambiguously in ${sourcePath}`
+    );
+  }
+  return solutions[0];
 }
 
 async function convertImagesAndAudit(source, {
@@ -522,7 +571,7 @@ async function convertImagesAndAudit(source, {
   async function rewriteImagesInSegment(segment) {
     let rebuilt = '';
     let cursor = 0;
-    for (const imageSyntax of collectInlineImages(segment)) {
+    for (const imageSyntax of selectParsedInlineImages(segment, sourcePath)) {
       rebuilt += segment.slice(cursor, imageSyntax.start);
       const destination = imageSyntax.destination.trim();
       if (!destination) {

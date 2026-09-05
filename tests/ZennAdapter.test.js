@@ -151,6 +151,7 @@ describe('ZennAdapter', () => {
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
         '`![inline example](../assets/missing.png)`\n' +
         '\\![escaped example](../assets/missing.png)\n' +
+        '[docs](https://example.test "literal ![icon](../assets/missing.png)")\n' +
         '```markdown\n![fenced example](../assets/missing.png)\n```\n'
     );
 
@@ -177,6 +178,10 @@ describe('ZennAdapter', () => {
     );
     assert.match(workflow, /`!\[inline example\]\(\.\.\/assets\/missing\.png\)`/u);
     assert.match(workflow, /\\!\[escaped example\]\(\.\.\/assets\/missing\.png\)/u);
+    assert.match(
+      workflow,
+      /\[docs\]\(https:\/\/example\.test "literal !\[icon\]\(\.\.\/assets\/missing\.png\)"\)/u
+    );
     assert.match(workflow, /```markdown\n!\[fenced example\]\(\.\.\/assets\/missing\.png\)\n```/u);
     assert.deepStrictEqual(
       await fs.readFile(
