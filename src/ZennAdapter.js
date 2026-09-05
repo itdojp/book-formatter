@@ -362,10 +362,7 @@ function hasInlineCodeClose(lines, lineIndex, openingEnd, tickLength, scopeEnd) 
   return false;
 }
 
-async function addRelativeLinkWarnings(source, blockTokens, environment, sourcePath, warnings) {
-  // markdown-it does not expose source offsets for inline children. Reparse each
-  // reader-visible physical line after masking code spans, and require its link
-  // count to agree with the complete-document parse rather than inventing a line.
+function collectReaderVisibleScopes(blockTokens) {
   const codeLines = new Set();
   const readerVisibleScopes = new Map();
   for (const token of blockTokens) {
@@ -382,6 +379,24 @@ async function addRelativeLinkWarnings(source, blockTokens, environment, sourceP
       }
     }
   }
+  return { codeLines, readerVisibleScopes };
+}
+
+function isBlockScopedInlineCodeOpening(lines, lineIndex, scope, opening, length) {
+  return hasInlineCodeClose(
+    lines,
+    lineIndex,
+    opening + length,
+    length,
+    scope.end
+  );
+}
+
+async function addRelativeLinkWarnings(source, blockTokens, environment, sourcePath, warnings) {
+  // markdown-it does not expose source offsets for inline children. Reparse each
+  // reader-visible physical line after masking code spans, and require its link
+  // count to agree with the complete-document parse rather than inventing a line.
+  const { codeLines, readerVisibleScopes } = collectReaderVisibleScopes(blockTokens);
 
   const state = { inlineTicks: 0 };
   let detectedLinks = 0;
@@ -398,12 +413,12 @@ async function addRelativeLinkWarnings(source, blockTokens, environment, sourceP
       async (segment) => segment,
       {
         maskInlineCode: true,
-        isInlineCodeOpening: (opening, length) => hasInlineCodeClose(
+        isInlineCodeOpening: (opening, length) => isBlockScopedInlineCodeOpening(
           lines,
           index,
-          opening + length,
-          length,
-          scope.end
+          scope,
+          opening,
+          length
         )
       }
     );
@@ -439,6 +454,8 @@ async function convertImagesAndAudit(source, {
   const assetRoot = path.resolve(bookRoot, metadata.source.assets);
   const convertedImageDestinations = new Set();
   const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
+  const sourceBlockTokens = SOURCE_AUDIT_MARKDOWN.parse(lines.join('\n'), {});
+  const { codeLines, readerVisibleScopes } = collectReaderVisibleScopes(sourceBlockTokens);
   const state = { fence: null, inlineTicks: 0 };
   const converted = [];
 
@@ -485,8 +502,27 @@ async function convertImagesAndAudit(source, {
       converted.push(line);
       continue;
     }
+    if (codeLines.has(index) || !readerVisibleScopes.has(index)) {
+      state.inlineTicks = 0;
+      converted.push(line);
+      continue;
+    }
 
-    converted.push(await transformOutsideInlineCode(line, state, rewriteImagesInSegment));
+    const scope = readerVisibleScopes.get(index);
+    converted.push(await transformOutsideInlineCode(
+      line,
+      state,
+      rewriteImagesInSegment,
+      {
+        isInlineCodeOpening: (opening, length) => isBlockScopedInlineCodeOpening(
+          lines,
+          index,
+          scope,
+          opening,
+          length
+        )
+      }
+    ));
   }
 
   const result = converted.join('\n');
