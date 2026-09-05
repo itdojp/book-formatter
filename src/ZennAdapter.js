@@ -736,18 +736,69 @@ function selectUniqueParsedCandidates(candidates, parsedKeys, sourcePath, kind) 
   return earliest.map((index) => candidates[index]);
 }
 
+function selectParsedInlineLinkSyntaxes(
+  segment,
+  environment,
+  sourcePath,
+  tokenPredicate,
+  kind
+) {
+  const parsedKeys = parsedInlineLinks(segment, environment)
+    .filter(tokenPredicate)
+    .map(linkTokenKey);
+  if (parsedKeys.length === 0) return [];
+
+  const candidates = collectInlineLinks(segment).map((candidate) => {
+    const token = parsedRootLink(candidate.source, environment);
+    return {
+      ...candidate,
+      key: token ? linkTokenKey(token) : null
+    };
+  });
+  return selectUniqueParsedCandidates(candidates, parsedKeys, sourcePath, kind);
+}
+
 function selectParsedInlineImages(segment, sourcePath) {
   const parsedKeys = parsedInlineImages(segment).map(imageTokenKey);
   if (parsedKeys.length === 0) return [];
 
-  const candidates = collectInlineImages(segment).map((candidate) => {
-    const tokens = parsedInlineImages(candidate.source);
-    return {
-      ...candidate,
-      key: tokens.length === 1 ? imageTokenKey(tokens[0]) : null,
-      parsedDestination: tokens.length === 1 ? tokens[0].attrGet('src') : null
-    };
-  });
+  const linkMetadataSpans = selectParsedInlineLinkSyntaxes(
+    segment,
+    {},
+    sourcePath,
+    (token) => token.markup !== 'autolink',
+    'link metadata'
+  )
+    .filter((candidate) => candidate.destinationStart !== undefined)
+    .map((candidate) => ({
+      start: candidate.destinationStart,
+      end: candidate.destinationEnd
+    }));
+  const sourceImageCandidates = collectInlineImages(segment);
+  const visibleImageCandidates = [];
+  let metadataIndex = 0;
+  for (const candidate of sourceImageCandidates) {
+    while (
+      metadataIndex < linkMetadataSpans.length &&
+      linkMetadataSpans[metadataIndex].end <= candidate.start
+    ) metadataIndex += 1;
+    const metadata = linkMetadataSpans[metadataIndex];
+    if (
+      metadata &&
+      candidate.start >= metadata.start &&
+      candidate.end <= metadata.end
+    ) continue;
+    visibleImageCandidates.push(candidate);
+  }
+  const candidates = visibleImageCandidates
+    .map((candidate) => {
+      const tokens = parsedInlineImages(candidate.source);
+      return {
+        ...candidate,
+        key: tokens.length === 1 ? imageTokenKey(tokens[0]) : null,
+        parsedDestination: tokens.length === 1 ? tokens[0].attrGet('src') : null
+      };
+    });
   return selectUniqueParsedCandidates(candidates, parsedKeys, sourcePath, 'image');
 }
 
@@ -783,19 +834,13 @@ function isRelativeLinkDestination(destination) {
 }
 
 function selectParsedInlineLinks(segment, environment, sourcePath) {
-  const parsedKeys = parsedInlineLinks(segment, environment)
-    .filter((token) => isRelativeLinkDestination(token.attrGet('href')))
-    .map(linkTokenKey);
-  if (parsedKeys.length === 0) return [];
-
-  const candidates = collectInlineLinks(segment).map((candidate) => {
-    const token = parsedRootLink(candidate.source, environment);
-    return {
-      ...candidate,
-      key: token ? linkTokenKey(token) : null
-    };
-  });
-  return selectUniqueParsedCandidates(candidates, parsedKeys, sourcePath, 'relative link');
+  return selectParsedInlineLinkSyntaxes(
+    segment,
+    environment,
+    sourcePath,
+    (token) => isRelativeLinkDestination(token.attrGet('href')),
+    'relative link'
+  );
 }
 
 async function convertImagesAndAudit(source, {

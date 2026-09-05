@@ -156,6 +156,8 @@ describe('ZennAdapter', () => {
         '![angle path](<../assets/figures/a)b.png>)\n' +
         '![backtick path](../assets/figures/a`b`.png)\n' +
         '![a\\]b](../assets/figures/flow.png)\n' +
+        '![metadata twin](../assets/figures/flow.png) ' +
+        '[same metadata](https://example.test "literal ![metadata twin](../assets/figures/flow.png)")\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
         '`![inline example](../assets/missing.png)`\n' +
         '\\![escaped example](../assets/missing.png)\n' +
@@ -201,6 +203,12 @@ describe('ZennAdapter', () => {
     );
     assert.ok(
       workflow.includes('![a\\]b](/images/standard-book-example/figures/flow.png)')
+    );
+    assert.ok(
+      workflow.includes(
+        '![metadata twin](/images/standard-book-example/figures/flow.png) ' +
+        '[same metadata](https://example.test "literal ![metadata twin](../assets/figures/flow.png)")'
+      )
     );
     assert.match(
       workflow,
