@@ -155,6 +155,7 @@ describe('ZennAdapter', () => {
         '![escaped path](../assets/figures/a\\(b\\).png)\n' +
         '![angle path](<../assets/figures/a)b.png>)\n' +
         '![backtick path](../assets/figures/a`b`.png)\n' +
+        'inline destination twin: `b`\n' +
         '![a\\]b](../assets/figures/flow.png)\n' +
         '![metadata twin](../assets/figures/flow.png) ' +
         '[same metadata](https://example.test "literal ![metadata twin](../assets/figures/flow.png)")\n' +
@@ -201,6 +202,7 @@ describe('ZennAdapter', () => {
       workflow,
       /!\[backtick path\]\(\/images\/standard-book-example\/figures\/a%60b%60\.png\)/u
     );
+    assert.match(workflow, /inline destination twin: `b`/u);
     assert.ok(
       workflow.includes('![a\\]b](/images/standard-book-example/figures/flow.png)')
     );
@@ -748,10 +750,10 @@ describe('ZennAdapter', () => {
       const outside = await temporaryDirectory('tmp-zenn-staging-outside-');
       const outsideFile = path.join(outside, 'outside.txt');
       await fs.writeFile(outsideFile, 'outside data\n');
-      const originalMkdir = fs.mkdir;
+      const originalLstat = fs.lstat;
       let planted = false;
-      fs.mkdir = async (candidate, ...args) => {
-        const result = await originalMkdir(candidate, ...args);
+      fs.lstat = async (candidate, ...args) => {
+        const result = await originalLstat(candidate, ...args);
         if (!planted && path.basename(candidate).startsWith('.zenn-')) {
           planted = true;
           const destination = plantedPath === 'books' ? outside : outsideFile;
@@ -770,13 +772,52 @@ describe('ZennAdapter', () => {
           plantedPath
         );
       } finally {
-        fs.mkdir = originalMkdir;
+        fs.lstat = originalLstat;
       }
       assert.strictEqual(planted, true, plantedPath);
       assert.strictEqual(await fs.readFile(outsideFile, 'utf8'), 'outside data\n');
       assert.deepStrictEqual(await fs.readdir(outside), ['outside.txt']);
       assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'zenn')), false);
     }
+  });
+
+  test('staging rootはheld parentで作成したidentityと差し替えを分離する', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('staging root identity race assertion is skipped on Windows');
+      return;
+    }
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-staging-root-race-');
+    const originalLstat = fs.lstat;
+    let injected = false;
+    let stagingDirectory;
+    let displacedDirectory;
+    fs.lstat = async (candidate, ...args) => {
+      if (!injected && path.basename(candidate).startsWith('.zenn-')) {
+        injected = true;
+        stagingDirectory = candidate;
+        displacedDirectory = `${candidate}.displaced`;
+        await fs.rename(candidate, displacedDirectory);
+        await fs.mkdir(candidate, { mode: 0o700 });
+        await fs.writeFile(path.join(candidate, 'unrelated.txt'), 'concurrent owner data\n');
+      }
+      return originalLstat(candidate, ...args);
+    };
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /staging cleanup retained path/u
+      );
+    } finally {
+      fs.lstat = originalLstat;
+    }
+    assert.strictEqual(injected, true);
+    assert.strictEqual(
+      await fs.readFile(path.join(stagingDirectory, 'unrelated.txt'), 'utf8'),
+      'concurrent owner data\n'
+    );
+    assert.strictEqual(await fs.pathExists(displacedDirectory), true);
+    assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'zenn')), false);
   });
 
   test('ownership検証後に差し替えられたoutputをbackup削除しない', async (context) => {

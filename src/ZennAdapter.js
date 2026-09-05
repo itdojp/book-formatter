@@ -491,7 +491,10 @@ function maskReaderVisibleScope(lines, scope, sourcePath) {
   const parsedKeys = parsedInlineCodeTokens(visibleScope).map(inlineCodeTokenKey);
   if (parsedKeys.length === 0) return visibleScope;
   const spans = selectUniqueParsedCandidates(
-    collectInlineCodeCandidates(visibleScope),
+    excludeCandidatesWithinSpans(
+      collectInlineCodeCandidates(visibleScope),
+      standaloneInlineDestinationSpans(visibleScope)
+    ),
     parsedKeys,
     sourcePath,
     'inline code'
@@ -774,23 +777,10 @@ function selectParsedInlineImages(segment, sourcePath) {
       start: candidate.destinationStart,
       end: candidate.destinationEnd
     }));
-  const sourceImageCandidates = collectInlineImages(segment);
-  const visibleImageCandidates = [];
-  let metadataIndex = 0;
-  for (const candidate of sourceImageCandidates) {
-    while (
-      metadataIndex < linkMetadataSpans.length &&
-      linkMetadataSpans[metadataIndex].end <= candidate.start
-    ) metadataIndex += 1;
-    const metadata = linkMetadataSpans[metadataIndex];
-    if (
-      metadata &&
-      candidate.start >= metadata.start &&
-      candidate.end <= metadata.end
-    ) continue;
-    visibleImageCandidates.push(candidate);
-  }
-  const candidates = visibleImageCandidates
+  const candidates = excludeCandidatesWithinSpans(
+    collectInlineImages(segment),
+    linkMetadataSpans
+  )
     .map((candidate) => {
       const tokens = parsedInlineImages(candidate.source);
       return {
@@ -800,6 +790,50 @@ function selectParsedInlineImages(segment, sourcePath) {
       };
     });
   return selectUniqueParsedCandidates(candidates, parsedKeys, sourcePath, 'image');
+}
+
+function excludeCandidatesWithinSpans(candidates, spans) {
+  const orderedSpans = [...spans].sort((left, right) =>
+    left.start - right.start || left.end - right.end
+  );
+  const mergedSpans = [];
+  for (const span of orderedSpans) {
+    const previous = mergedSpans.at(-1);
+    if (previous && span.start <= previous.end) {
+      previous.end = Math.max(previous.end, span.end);
+    } else {
+      mergedSpans.push({ ...span });
+    }
+  }
+
+  const remaining = [];
+  let spanIndex = 0;
+  for (const candidate of candidates) {
+    while (
+      spanIndex < mergedSpans.length &&
+      mergedSpans[spanIndex].end <= candidate.start
+    ) spanIndex += 1;
+    const span = mergedSpans[spanIndex];
+    if (span && candidate.start >= span.start && candidate.end <= span.end) continue;
+    remaining.push(candidate);
+  }
+  return remaining;
+}
+
+function standaloneInlineDestinationSpans(segment) {
+  const links = collectInlineLinks(segment).filter((candidate) =>
+    Boolean(parsedRootLink(candidate.source, {}))
+  );
+  const images = collectInlineImages(segment).filter((candidate) => {
+    const children = SOURCE_AUDIT_MARKDOWN.parseInline(candidate.source, {})[0]?.children || [];
+    return children.length === 1 && children[0].type === 'image';
+  });
+  return [...links, ...images]
+    .filter((candidate) => candidate.destinationStart !== undefined)
+    .map((candidate) => ({
+      start: candidate.destinationStart,
+      end: candidate.destinationEnd
+    }));
 }
 
 function parsedInlineLinks(source, environment) {
@@ -1558,12 +1592,22 @@ export async function writeZennProject({
 
   const parent = path.dirname(outputDirectory);
   await fs.ensureDir(parent);
-  const stagingDirectory = path.join(parent, `.zenn-${process.pid}-${randomUUID()}.tmp`);
+  const parentIdentity = await pathObjectIdentity(parent);
+  const stagingName = `.zenn-${process.pid}-${randomUUID()}.tmp`;
+  const stagingDirectory = path.join(parent, stagingName);
   let expectedStagingIdentity;
 
   try {
-    await fs.mkdir(stagingDirectory, { mode: 0o700 });
-    expectedStagingIdentity = await pathObjectIdentity(stagingDirectory);
+    expectedStagingIdentity = await createDirectoryInHeldParent(
+      parent,
+      parentIdentity,
+      stagingName
+    );
+    await assertPathObjectIdentity(
+      stagingDirectory,
+      expectedStagingIdentity,
+      'Zenn staging directory changed after exclusive creation'
+    );
     const staging = createStagingTree(stagingDirectory, expectedStagingIdentity);
     for (const { entry, body, containsPaidContent } of convertedDocuments) {
       await staging.write(
