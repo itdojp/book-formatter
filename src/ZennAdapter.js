@@ -335,6 +335,7 @@ async function convertImagesAndAudit(source, {
   copiedAssets
 }) {
   const assetRoot = path.resolve(bookRoot, metadata.source.assets);
+  const convertedImageDestinations = new Set();
   const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
   const state = { fence: null, inlineTicks: 0 };
   const converted = [];
@@ -362,6 +363,7 @@ async function convertImagesAndAudit(source, {
         ...image.relativeToAssets.split(path.sep)
       ].map(encodeZennPathComponent).join('/');
       copiedAssets.set(outputRelative, image.source);
+      convertedImageDestinations.add(`/${outputUrl}`);
       rebuilt += `![${match[1]}](/${outputUrl})`;
       cursor = match.index + match[0].length;
     }
@@ -408,7 +410,7 @@ async function convertImagesAndAudit(source, {
     if (scheme && scheme !== 'https') {
       throw new ZennAdapterError(`Unsupported ${token.type === 'image' ? 'image' : 'link'} scheme in ${sourcePath}: ${scheme}:`);
     }
-    if (token.type === 'image' && !destination.startsWith(`/images/${zennSlug}/`)) {
+    if (token.type === 'image' && !convertedImageDestinations.has(destination)) {
       throw new ZennAdapterError(`Unsupported image syntax remained after Zenn conversion: ${sourcePath}`);
     }
     if (token.type === 'link_open' && destination.startsWith('//')) {

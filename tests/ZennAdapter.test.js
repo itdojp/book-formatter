@@ -192,6 +192,10 @@ describe('ZennAdapter', () => {
   test('外部・root外・未対応・過大・symlink画像をfail closedで拒否する', async (context) => {
     const cases = [
       ['![empty]()', /must have a non-empty destination/],
+      [
+        '![reference][asset]\n\n[asset]: /images/standard-book-example/missing.png',
+        /Unsupported image syntax remained/
+      ],
       ['![external](https://assets.example/image.png)', /External images are not supported/],
       ['![root](/images/existing.png)', /must be relative/],
       ['![outside](../../../outside.png)', /resolves outside the book root/],
@@ -276,6 +280,7 @@ describe('ZennAdapter', () => {
       build(utf16Topic, await temporaryDirectory('tmp-zenn-utf16-topic-')),
       /topic length and character contract/
     );
+
   });
 
   test('unsupported warningはredactedで、unknown ownerをdry-run含め置換しない', async () => {
