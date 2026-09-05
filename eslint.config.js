@@ -28,5 +28,27 @@ export default [
       'preserve-caught-error': 'off',
       'no-console': 'off'
     }
+  },
+  {
+    files: ['src/**/*.cjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node
+      }
+    },
+    rules: {
+      indent: ['error', 2],
+      'linebreak-style': ['error', 'unix'],
+      quotes: ['error', 'single'],
+      semi: ['error', 'always'],
+      'no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', caughtErrors: 'none' }
+      ],
+      'preserve-caught-error': 'off',
+      'no-console': 'off'
+    }
   }
 ];

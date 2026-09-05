@@ -66,7 +66,41 @@ describe('UxRollout', () => {
     assert.strictEqual(result.key, 'sample-book');
   });
 
-  test('updateBookConfig は ux を書き込む', async () => {
+  test('resolveRegistryEntry は隔離worktree名よりplanのconsumer IDを優先する', () => {
+    const registry = {
+      books: {
+        'sample-book': { profile: 'A', modules: { quickStart: true } },
+        'book-formatter-sync': { profile: 'B', modules: { quickStart: false } }
+      }
+    };
+    const result = rollout.resolveRegistryEntry(
+      '/workspace/sample-book/book-formatter-sync',
+      null,
+      registry,
+      'sample-book'
+    );
+    assert.ok(result);
+    assert.strictEqual(result.key, 'sample-book');
+    assert.strictEqual(result.entry.profile, 'A');
+  });
+
+  test('resolveRegistryEntry はplanのconsumer ID欠落時にlegacy fallbackしない', () => {
+    const registry = {
+      books: {
+        'book-formatter-sync': { profile: 'B', modules: { quickStart: false } },
+        'repository-fallback': { profile: 'C', modules: { quickStart: false } }
+      }
+    };
+    const result = rollout.resolveRegistryEntry(
+      '/workspace/sample-book/book-formatter-sync',
+      { repository: { url: 'https://github.com/itdojp/repository-fallback.git' } },
+      registry,
+      'sample-book'
+    );
+    assert.strictEqual(result, null);
+  });
+
+  test('updateBookConfig は監査済みtransaction外の直接writeを拒否する', async () => {
     const bookPath = path.join(tempDir, 'book');
     await fs.ensureDir(bookPath);
     const configPath = path.join(bookPath, 'book-config.json');
@@ -86,12 +120,16 @@ describe('UxRollout', () => {
       }
     };
 
-    const result = await rollout.updateBookConfig(bookPath, entry, { dryRun: false, backup: false });
-    assert.strictEqual(result.updated, true);
-
-    const updated = await fs.readJson(configPath);
-    assert.strictEqual(updated.ux.profile, 'B');
-    assert.strictEqual(updated.ux.modules.checklistPack, true);
+    await assert.rejects(
+      rollout.updateBookConfig(bookPath, entry, { dryRun: false, backup: false }),
+      /audited consumer transaction/
+    );
+    await assert.rejects(
+      rollout.updateBookConfig(bookPath, entry),
+      /audited consumer transaction/
+    );
+    const unchanged = await fs.readJson(configPath);
+    assert.strictEqual(unchanged.ux, undefined);
   });
 
   test('loadRegistry は JSON/YAML を読み込む', async () => {
@@ -108,32 +146,14 @@ describe('UxRollout', () => {
     assert.deepStrictEqual(yamlRegistry.books, {});
   });
 
-  test('applyUxCore はdry/writeともconsumer ancestor symlinkを拒否して外部へ書き込まない', async () => {
-    await rollout.componentSync.loadVersion();
+  test('applyUxCore は監査済みtransaction外の直接dry/writeを拒否する', async () => {
+    const bookPath = path.join(tempDir, 'book');
+    await fs.ensureDir(bookPath);
 
-    for (const dryRun of [true, false]) {
-      const fixturePath = path.join(tempDir, dryRun ? 'dry-run' : 'write');
-      const bookPath = path.join(fixturePath, 'book');
-      const outsidePath = path.join(fixturePath, 'outside');
-      await fs.ensureDir(bookPath);
-      await fs.ensureDir(outsidePath);
-      await fs.writeJson(path.join(bookPath, 'book-config.json'), {
-        title: 'UX core destination boundary fixture',
-        shared: {
-          version: dryRun ? rollout.componentSync.version.version : '0.0.0',
-          components: { layouts: true, includes: true, assets: { css: true, js: true } }
-        }
-      }, { spaces: 2 });
-      await fs.symlink(outsidePath, path.join(bookPath, 'docs'), 'dir');
-
+    for (const options of [undefined, { dryRun: true }, { dryRun: false }]) {
       await assert.rejects(
-        rollout.applyUxCore(bookPath, { dryRun }),
-        /Managed destination must not contain a symbolic link/
-      );
-      assert.deepStrictEqual(await fs.readdir(outsidePath), []);
-      assert.equal(
-        (await fs.readJson(path.join(bookPath, 'book-config.json'))).shared.version,
-        dryRun ? rollout.componentSync.version.version : '0.0.0'
+        rollout.applyUxCore(bookPath, options),
+        /audited consumer transaction/
       );
     }
   });
