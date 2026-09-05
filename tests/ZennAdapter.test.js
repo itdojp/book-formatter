@@ -442,6 +442,33 @@ describe('ZennAdapter', () => {
     assert.deepStrictEqual(warnings.map((warning) => warning.line), [1, 2, 5, 6]);
   });
 
+  test('異なる長さの未完了backtick runを一度indexし後続linkを検査する', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-backtick-index-');
+    const unmatchedRuns = Array.from(
+      { length: 512 },
+      (_, index) => `${'`'.repeat(index + 1)}x`
+    ).join(' ');
+    const delimiter = '`'.repeat(513);
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      `# Warning positions\n${unmatchedRuns} ${delimiter}code${delimiter} [visible](../visible.md)\n`,
+      'utf8'
+    );
+
+    const result = await build(bookDirectory, outputRoot);
+    assert.deepStrictEqual(
+      result.manifest.adapter.warnings.filter(
+        (warning) => warning.file === 'manuscript/02-workflow.md'
+      ),
+      [{
+        code: 'relative_link_passthrough',
+        file: 'manuscript/02-workflow.md',
+        line: 1
+      }]
+    );
+  });
+
   test('複数行に分割されたrelative linkも開始物理行へwarningを対応付ける', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-zenn-multiline-link-');

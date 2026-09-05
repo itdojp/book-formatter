@@ -390,45 +390,64 @@ function inlineCodeTokenKey(token) {
   return JSON.stringify([token.markup, token.content]);
 }
 
+function indexBacktickRuns(segment) {
+  const runs = [];
+  let cursor = 0;
+  while (cursor < segment.length) {
+    const start = segment.indexOf('`', cursor);
+    if (start === -1) break;
+    let end = start + 1;
+    while (segment[end] === '`') end += 1;
+    runs.push({
+      start,
+      end,
+      length: end - start,
+      canOpen: !isBackslashEscaped(segment, start)
+    });
+    cursor = end;
+  }
+
+  const nextSameLength = Array(runs.length).fill(-1);
+  const nearestByLength = new Map();
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    nextSameLength[index] = nearestByLength.get(runs[index].length) ?? -1;
+    nearestByLength.set(runs[index].length, index);
+  }
+  return { runs, nextSameLength };
+}
+
 function collectInlineCodeCandidates(segment) {
   const candidates = [];
-  let index = 0;
-  while (index < segment.length) {
-    let opening = segment.indexOf('`', index);
-    while (opening !== -1 && isBackslashEscaped(segment, opening)) {
-      opening = segment.indexOf('`', opening + 1);
+  const { runs, nextSameLength } = indexBacktickRuns(segment);
+  let runIndex = 0;
+  while (runIndex < runs.length) {
+    const opening = runs[runIndex];
+    if (!opening.canOpen) {
+      runIndex += 1;
+      continue;
     }
-    if (opening === -1) break;
-    let openingLength = 1;
-    while (segment[opening + openingLength] === '`') openingLength += 1;
 
-    let closing = opening + openingLength;
+    let closingIndex = nextSameLength[runIndex];
     let matched = false;
-    while (closing < segment.length) {
-      closing = segment.indexOf('`', closing);
-      if (closing === -1) break;
-      let closingLength = 1;
-      while (segment[closing + closingLength] === '`') closingLength += 1;
-      if (closingLength === openingLength) {
-        const end = closing + closingLength;
-        const source = segment.slice(opening, end);
-        const inline = SOURCE_AUDIT_MARKDOWN.parseInline(source, {})[0];
-        const children = inline?.children || [];
-        if (children.length === 1 && children[0].type === 'code_inline') {
-          candidates.push({
-            start: opening,
-            end,
-            source,
-            key: inlineCodeTokenKey(children[0])
-          });
-          index = end;
-          matched = true;
-          break;
-        }
+    while (closingIndex !== -1) {
+      const closing = runs[closingIndex];
+      const source = segment.slice(opening.start, closing.end);
+      const inline = SOURCE_AUDIT_MARKDOWN.parseInline(source, {})[0];
+      const children = inline?.children || [];
+      if (children.length === 1 && children[0].type === 'code_inline') {
+        candidates.push({
+          start: opening.start,
+          end: closing.end,
+          source,
+          key: inlineCodeTokenKey(children[0])
+        });
+        runIndex = closingIndex + 1;
+        matched = true;
+        break;
       }
-      closing += closingLength;
+      closingIndex = nextSameLength[closingIndex];
     }
-    if (!matched) index = opening + openingLength;
+    if (!matched) runIndex += 1;
   }
   return candidates;
 }
