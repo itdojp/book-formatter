@@ -288,6 +288,7 @@ test('local scaffold persists and preserves the finite starter/shared mapping', 
   assert.match(config, /title: "sample book"/);
   assert.match(config, /repository: "itdojp\/sample-book"/);
   assert.match(config, /url: "https:\/\/itdojp\.github\.io"/);
+  assert.match(config, /^baseurl: "\/sample-book"$/m);
   assert.doesNotMatch(
     config,
     /<(owner|repo|BOOK TITLE|SHORT DESCRIPTION|AUTHOR)>/,
@@ -385,6 +386,32 @@ test('copied PR template uses the requested Pages owner and repository', () => {
     /https:\/\/sample-owner\.github\.io\/sample-book\//,
   );
   assert.doesNotMatch(pullRequestTemplate, /itdojp\.github\.io|<[^>]+>/);
+});
+
+test('owner Pages repositories use a root Pages URL case-insensitively', () => {
+  const root = makeTemporaryRoot('owner-pages-root');
+  const output = path.join(root, 'outputs', 'owner-pages-site');
+  const result = runScaffold(root, [
+    'Sample-Owner',
+    'sample-owner.GitHub.io',
+    '--output',
+    output,
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  const config = readFileSync(path.join(output, 'docs/_config.yml'), 'utf8');
+  assert.match(config, /^url: "https:\/\/Sample-Owner\.github\.io"$/m);
+  assert.match(config, /^baseurl: ""$/m);
+  assert.doesNotMatch(config, /baseurl: "\/sample-owner\.GitHub\.io"/);
+  const pullRequestTemplate = readFileSync(
+    path.join(output, '.github/PULL_REQUEST_TEMPLATE.md'),
+    'utf8',
+  );
+  assert.match(pullRequestTemplate, /https:\/\/Sample-Owner\.github\.io\//);
+  assert.doesNotMatch(
+    pullRequestTemplate,
+    /Sample-Owner\.github\.io\/sample-owner\.GitHub\.io\//,
+  );
 });
 
 test('existing output objects are rejected without mutation', async (t) => {

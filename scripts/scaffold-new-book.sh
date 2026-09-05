@@ -229,13 +229,21 @@ cp -R "$BOOK_FORMATTER_REPO_ROOT/shared/includes/." "$OUTPUT/docs/_includes/"
 cp -R "$BOOK_FORMATTER_REPO_ROOT/shared/assets/." "$OUTPUT/docs/assets/"
 
 TITLE_DEFAULT="${REPO//-/ }"
+OWNER_LOWER="$(printf '%s' "$OWNER" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+REPO_LOWER="$(printf '%s' "$REPO" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+PAGES_BASEURL="/$REPO"
+PAGES_CONFIRMATION_URL="https://$OWNER.github.io/$REPO/"
+if [ "$REPO_LOWER" = "$OWNER_LOWER.github.io" ]; then
+  PAGES_BASEURL=""
+  PAGES_CONFIRMATION_URL="https://$OWNER.github.io/"
+fi
 sed_inplace \
-  "s#<owner>#$OWNER#g; s#<repo>#$REPO#g; s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<SHORT DESCRIPTION>#Book description#g; s#<AUTHOR>#ITDO Inc.#g" \
+  "s#baseurl: \"/<repo>\"#baseurl: \"$PAGES_BASEURL\"#; s#<owner>#$OWNER#g; s#<repo>#$REPO#g; s#<BOOK TITLE>#$TITLE_DEFAULT#g; s#<SHORT DESCRIPTION>#Book description#g; s#<AUTHOR>#ITDO Inc.#g" \
   "$OUTPUT/docs/_config.yml"
 sed_inplace "s#<BOOK TITLE>#$TITLE_DEFAULT#g" "$OUTPUT/docs/index.md"
 if [ -f "$OUTPUT/.github/PULL_REQUEST_TEMPLATE.md" ]; then
   sed_inplace \
-    "s#<owner>#$OWNER#g; s#<repo>#$REPO#g" \
+    "s#https://<owner>.github.io/<repo>/#$PAGES_CONFIRMATION_URL#g; s#<owner>#$OWNER#g; s#<repo>#$REPO#g" \
     "$OUTPUT/.github/PULL_REQUEST_TEMPLATE.md"
 fi
 
@@ -295,7 +303,7 @@ if [ "$CREATE" -eq 1 ]; then
   fi
 
   REMOTE_OWNER_REPO="$(git_owner_repo_without_routing "$OUTPUT" 2>/dev/null || true)"
-  EXPECTED_OWNER_REPO_LOWER="$(printf '%s' "$OWNER/$REPO" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  EXPECTED_OWNER_REPO_LOWER="$OWNER_LOWER/$REPO_LOWER"
   REMOTE_OWNER_REPO_LOWER="$(printf '%s' "$REMOTE_OWNER_REPO" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
   if [ "$REMOTE_OWNER_REPO_LOWER" != "$EXPECTED_OWNER_REPO_LOWER" ] || \
      [ "$(run_git -C "$OUTPUT" branch --show-current)" != "main" ] || \
