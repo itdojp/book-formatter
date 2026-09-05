@@ -517,6 +517,28 @@ describe('ZennAdapter', () => {
     );
   });
 
+  test('未完了link labelを一度indexし先行relative linkを保持する', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-bracket-index-');
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      `# Warning positions\n[visible](../visible.md) ${'['.repeat(20_000)}\n`,
+      'utf8'
+    );
+
+    const result = await build(bookDirectory, outputRoot);
+    assert.deepStrictEqual(
+      result.manifest.adapter.warnings.filter(
+        (warning) => warning.file === 'manuscript/02-workflow.md'
+      ),
+      [{
+        code: 'relative_link_passthrough',
+        file: 'manuscript/02-workflow.md',
+        line: 1
+      }]
+    );
+  });
+
   test('複数行に分割されたrelative linkも開始物理行へwarningを対応付ける', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-zenn-multiline-link-');

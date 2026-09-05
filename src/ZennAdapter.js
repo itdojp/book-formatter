@@ -523,9 +523,29 @@ async function addRelativeLinkWarnings(source, blockTokens, environment, sourceP
   return detectedLinks;
 }
 
+function indexBracketClosures(segment) {
+  const openings = [];
+  const closingByOpening = new Map();
+  let cursor = 0;
+  while (cursor < segment.length) {
+    if (segment[cursor] === '\\') {
+      cursor += Math.min(2, segment.length - cursor);
+      continue;
+    }
+    if (segment[cursor] === '[') {
+      openings.push(cursor);
+    } else if (segment[cursor] === ']' && openings.length > 0) {
+      closingByOpening.set(openings.pop(), cursor);
+    }
+    cursor += 1;
+  }
+  return closingByOpening;
+}
+
 function collectInlineDestinations(segment, kind) {
   const destinations = [];
   const isImage = kind === 'image';
+  const closingByOpening = indexBracketClosures(segment);
   let index = 0;
 
   while (index < segment.length - 1) {
@@ -541,24 +561,15 @@ function collectInlineDestinations(segment, kind) {
       continue;
     }
 
-    const labelStart = index + (isImage ? 2 : 1);
-    let cursor = labelStart;
-    let bracketDepth = 1;
-    while (cursor < segment.length && bracketDepth > 0) {
-      if (segment[cursor] === '\\') {
-        cursor += Math.min(2, segment.length - cursor);
-        continue;
-      }
-      if (segment[cursor] === '[') bracketDepth += 1;
-      if (segment[cursor] === ']') bracketDepth -= 1;
-      cursor += 1;
-    }
-    if (bracketDepth !== 0) {
+    const openingBracket = index + (isImage ? 1 : 0);
+    const labelEnd = closingByOpening.get(openingBracket);
+    if (labelEnd === undefined) {
       index += isImage ? 2 : 1;
       continue;
     }
 
-    const labelEnd = cursor - 1;
+    const labelStart = openingBracket + 1;
+    let cursor = labelEnd + 1;
     if (!isImage && segment[cursor] !== '(') {
       let candidateEnd = cursor;
       if (segment[cursor] === '[') {
