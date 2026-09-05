@@ -11,8 +11,8 @@ import {
   loadFreshLegacyMutationApi,
   readBootstrapPlan,
   rebuildFreshDependencies,
+  runFreshDependencyBootstrapForTest,
   runFreshLegacyMutationProcess,
-  runFreshDependencyBootstrap,
   safeEnvironment,
   verifyBootstrapInputs
 } from '../src/ConsumerDependencyBootstrap.js';
@@ -75,6 +75,7 @@ async function createFixture(tempRoot, { invalidLock = false } = {}) {
       ''
     ].join('\n')
   );
+  await fs.ensureDir(path.join(repositoryRoot, 'consumer'));
   await fs.ensureDir(path.join(repositoryRoot, 'src'));
   await fs.copyFile(
     path.join(REPOSITORY_ROOT, 'src', 'ConsumerDependencyBootstrap.js'),
@@ -244,7 +245,7 @@ describe('ConsumerDependencyBootstrap', () => {
     assert.deepStrictEqual(launcherDynamicImports, ['./cli-implementation.js']);
     assert.doesNotMatch(launcher, /^\s*import\s*['"][^'"]+['"];\s*$/m);
     assert.ok(
-      launcher.indexOf('runFreshDependencyBootstrap(args)')
+      launcher.indexOf('runFreshLegacyMutationProcess(args, { stdio: \'inherit\' })')
       < launcher.indexOf('import(\'./cli-implementation.js\')')
     );
     assert.ok(
@@ -263,7 +264,19 @@ describe('ConsumerDependencyBootstrap', () => {
       implementation.indexOf('assertFreshDependencyRuntimePresent(process.cwd())')
       < implementation.indexOf('import(\'commander\')')
     );
-    assert.doesNotMatch(bootstrap, /NODE_TEST_CONTEXT|establishFreshDependencyRuntimeFromFd/);
+    assert.doesNotMatch(
+      bootstrap.match(/export \{[\s\S]*?\};/)?.[0] || '',
+      /\brunFreshDependencyBootstrap,/
+    );
+    const bootstrapModule = await import('../src/ConsumerDependencyBootstrap.js');
+    assert.strictEqual(Object.hasOwn(bootstrapModule, 'runFreshDependencyBootstrap'), false);
+    assert.throws(
+      () => runFreshDependencyBootstrapForTest(
+        ['update-book', '--plan', path.join(REPOSITORY_ROOT, 'missing-plan.json')],
+        { repositoryRoot: REPOSITORY_ROOT, cwd: REPOSITORY_ROOT }
+      ),
+      /restricted to a tests\/tmp-\* sandbox/
+    );
     assert.strictEqual(packageJson.scripts.start, 'node src/npm-compatibility-cli.js');
     assert.strictEqual(packageJson.scripts.dev, 'node src/npm-compatibility-cli.js --watch');
     assert.ok(
@@ -328,10 +341,10 @@ describe('ConsumerDependencyBootstrap', () => {
     assert.match(launcher, /failureContext = 'Legacy consumer bootstrap failed'/);
     assert.ok(
       launcher.indexOf('failureContext = \'Legacy consumer bootstrap failed\'')
-      < launcher.indexOf('runFreshDependencyBootstrap(args)')
+      < launcher.indexOf('runFreshLegacyMutationProcess(args, { stdio: \'inherit\' })')
     );
     assert.ok(
-      launcher.indexOf('runFreshDependencyBootstrap(args)')
+      launcher.indexOf('runFreshLegacyMutationProcess(args, { stdio: \'inherit\' })')
       < launcher.lastIndexOf('failureContext = \'Book formatter CLI failed\'')
     );
   });
@@ -505,7 +518,7 @@ describe('ConsumerDependencyBootstrap', () => {
     const fixture = await createFixture(tempRoot);
     await installMaliciousDependency(fixture.repositoryRoot);
 
-    const capability = runFreshDependencyBootstrap(
+    const capability = runFreshDependencyBootstrapForTest(
       ['update-book', '--plan', fixture.planPath],
       {
         repositoryRoot: fixture.repositoryRoot,
@@ -609,7 +622,7 @@ describe('ConsumerDependencyBootstrap', () => {
     const fixture = await createFixture(tempRoot, { invalidLock: true });
 
     assert.throws(
-      () => runFreshDependencyBootstrap(
+      () => runFreshDependencyBootstrapForTest(
         ['update-book', '--plan', fixture.planPath],
         {
           repositoryRoot: fixture.repositoryRoot,
@@ -672,7 +685,7 @@ describe('ConsumerDependencyBootstrap', () => {
     await fs.symlink(outside, path.join(fixture.repositoryRoot, 'node_modules'));
 
     assert.throws(
-      () => runFreshDependencyBootstrap(
+      () => runFreshDependencyBootstrapForTest(
         ['update-book', '--plan', fixture.planPath],
         {
           repositoryRoot: fixture.repositoryRoot,

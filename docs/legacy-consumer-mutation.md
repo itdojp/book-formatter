@@ -46,8 +46,8 @@ executableで`node src/index.js ...`を直接実行します。`npm start` / `np
 mutation手順でnpm自体を起動してはいけません。
 
 programmatic利用では、built-in-onlyの`ConsumerDependencyBootstrap.js`から
-`runFreshLegacyMutationProcess(args)`を呼びます。この関数は固定された`src/index.js`を専用の
-Node.js child processで起動し、parent processのmodule cacheを共有しません。返却値は終了statusと
+`runFreshLegacyMutationProcess(args)`を呼びます。この関数は監査対象のbuilt-in-only bootstrap
+entrypointを専用Node.js child processで起動し、parent processのmodule cacheを共有しません。返却値は終了statusと
 標準出力・標準エラーだけで、module constructorやin-process capabilityを返しません。
 `loadFreshLegacyMutationApi()`はfail closedであり、同一process内のmodule cacheをfresh runtimeとして
 再利用しません。`BookGenerator.js`、`UxRollout.js`、`ConsumerMutationBoundary.js`の直接importは

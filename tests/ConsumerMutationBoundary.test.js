@@ -13,7 +13,7 @@ import {
   selectConsumers
 } from '../src/ConsumerMutationBoundary.js';
 import { UxRollout } from '../src/UxRollout.js';
-import { runFreshDependencyBootstrap } from '../src/ConsumerDependencyBootstrap.js';
+import { runFreshDependencyBootstrapForTest } from '../src/ConsumerDependencyBootstrap.js';
 
 const TEST_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
@@ -168,7 +168,7 @@ function bootstrapArgsForPlan(plan) {
 
 function freshCapabilityForPlan(formatter, plan) {
   fs.writeJsonSync(plan.path, rawPlanFromNormalized(plan), { spaces: 2 });
-  return runFreshDependencyBootstrap(
+  return runFreshDependencyBootstrapForTest(
     bootstrapArgsForPlan(plan),
     {
       repositoryRoot: formatter.formatterRoot,
@@ -1635,7 +1635,8 @@ test('rollout_unificationは安全な単一target wrapperでremote Git操作を�
 test('update-book CLIはdry-runの有限plan全件検査とwriteの単一targetを保持する', async () => {
   const launcherSource = await fs.readFile(path.resolve('src/index.js'), 'utf8');
   const source = await fs.readFile(path.resolve('src/cli-implementation.js'), 'utf8');
-  assert.match(launcherSource, /runFreshDependencyBootstrap/);
+  assert.match(launcherSource, /runFreshLegacyMutationProcess/);
+  assert.doesNotMatch(launcherSource, /runFreshDependencyBootstrap/);
   assert.match(launcherSource, /isLegacyMutationInvocation/);
   const updateBlock = source.slice(
     source.indexOf('.command(\'update-book\')'),

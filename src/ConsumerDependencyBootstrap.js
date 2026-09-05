@@ -782,6 +782,53 @@ function runFreshDependencyBootstrap(args, options = {}) {
   return currentRuntimeAttestation;
 }
 
+function isPathInside(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== '' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function runFreshDependencyBootstrapForTest(args, options = {}) {
+  if (process.env.NODE_TEST_CONTEXT !== 'child-v8') {
+    throw new ConsumerDependencyBootstrapError(
+      'Test-only dependency bootstrap requires the Node.js test runner'
+    );
+  }
+  const repositoryRoot = resolveRepositoryRoot(options.repositoryRoot);
+  const testsRoot = fs.realpathSync(path.join(MODULE_ROOT, 'tests'));
+  const sandboxRoot = fs.realpathSync(path.dirname(repositoryRoot));
+  if (
+    !isPathInside(testsRoot, sandboxRoot)
+    || !path.basename(sandboxRoot).startsWith('tmp-')
+    || !isPathInside(sandboxRoot, fs.realpathSync(repositoryRoot))
+  ) {
+    throw new ConsumerDependencyBootstrapError(
+      'Test-only dependency bootstrap is restricted to a tests/tmp-* sandbox'
+    );
+  }
+  const plan = readBootstrapPlan(args, repositoryRoot);
+  const rawPlan = JSON.parse(fs.readFileSync(plan.path, 'utf8'));
+  const projected = rawPlanProjection(rawPlan, plan.path);
+  if (!projected) {
+    throw new ConsumerDependencyBootstrapError(
+      'Test-only dependency bootstrap requires a valid projected plan'
+    );
+  }
+  const referencedPaths = [
+    plan.path,
+    projected.registryPath,
+    ...projected.consumers.flatMap((consumer) => [consumer.worktree, consumer.configPath])
+  ].filter(Boolean);
+  for (const referencedPath of referencedPaths) {
+    const realPath = fs.realpathSync(referencedPath);
+    if (!isPathInside(sandboxRoot, realPath)) {
+      throw new ConsumerDependencyBootstrapError(
+        `Test-only dependency bootstrap path escapes its sandbox: ${referencedPath}`
+      );
+    }
+  }
+  return runFreshDependencyBootstrap(args, options);
+}
+
 function runFreshLegacyMutationProcess(args, options = {}) {
   if (!Array.isArray(args) || !isLegacyMutationInvocation(args)) {
     throw new ConsumerDependencyBootstrapError(
@@ -807,7 +854,7 @@ function runFreshLegacyMutationProcess(args, options = {}) {
   }
   const child = spawnSync(
     process.execPath,
-    [path.join(repositoryRoot, 'src', 'index.js'), ...args],
+    [path.join(repositoryRoot, 'src', 'ConsumerDependencyBootstrap.js'), ...args],
     {
       cwd: repositoryRoot,
       encoding: 'utf8',
@@ -839,6 +886,33 @@ function loadFreshLegacyMutationApi() {
   );
 }
 
+const isDirectBootstrapEntrypoint = (
+  typeof process.argv[1] === 'string'
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+);
+if (isDirectBootstrapEntrypoint) {
+  setImmediate(async () => {
+    try {
+      const args = process.argv.slice(2);
+      if (!isLegacyMutationInvocation(args)) {
+        throw new ConsumerDependencyBootstrapError(
+          'Fresh dependency child requires a legacy mutation command'
+        );
+      }
+      if (isNpmLifecycleInvocation()) {
+        throw new ConsumerDependencyBootstrapError(
+          'Legacy consumer mutation must use node src/index.js directly, not npm lifecycle scripts'
+        );
+      }
+      runFreshDependencyBootstrap(args);
+      await import('./cli-implementation.js');
+    } catch (error) {
+      console.error(`Legacy consumer bootstrap failed: ${error.message}`);
+      process.exitCode = 1;
+    }
+  });
+}
+
 export {
   ConsumerDependencyBootstrapError,
   LEGACY_MUTATION_COMMANDS,
@@ -851,8 +925,8 @@ export {
   loadFreshLegacyMutationApi,
   readBootstrapPlan,
   rebuildFreshDependencies,
+  runFreshDependencyBootstrapForTest,
   runFreshLegacyMutationProcess,
-  runFreshDependencyBootstrap,
   safeEnvironment,
   verifyBootstrapInputs
 };

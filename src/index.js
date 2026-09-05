@@ -5,7 +5,7 @@ import {
   isLegacyMutationHelpInvocation,
   isNpmLifecycleInvocation,
   legacyMutationHelpText,
-  runFreshDependencyBootstrap
+  runFreshLegacyMutationProcess
 } from './ConsumerDependencyBootstrap.js';
 
 const args = process.argv.slice(2);
@@ -22,10 +22,11 @@ try {
           'Legacy consumer mutation must use node src/index.js directly, not npm lifecycle scripts'
         );
       }
-      runFreshDependencyBootstrap(args);
+      runFreshLegacyMutationProcess(args, { stdio: 'inherit' });
       failureContext = 'Book formatter CLI failed';
+    } else {
+      await import('./cli-implementation.js');
     }
-    await import('./cli-implementation.js');
   }
 } catch (error) {
   console.error(`${failureContext}: ${error.message}`);
