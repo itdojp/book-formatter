@@ -406,22 +406,11 @@ function isBlockScopedInlineCodeOpening(lines, lineIndex, scope, opening, length
   );
 }
 
-async function addRelativeLinkWarnings(source, blockTokens, environment, sourcePath, warnings) {
-  // markdown-it does not expose source offsets for inline children. Reparse each
-  // reader-visible physical line after masking code spans, and require its link
-  // count to agree with the complete-document parse rather than inventing a line.
-  const { codeLines, readerVisibleScopes } = collectReaderVisibleScopes(blockTokens);
-
+async function maskReaderVisibleScope(lines, scope) {
   const state = { inlineTicks: 0 };
-  let detectedLinks = 0;
-  const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
-  for (let index = 0; index < lines.length; index += 1) {
-    if (codeLines.has(index) || !readerVisibleScopes.has(index)) {
-      state.inlineTicks = 0;
-      continue;
-    }
-    const scope = readerVisibleScopes.get(index);
-    const visibleLine = await transformOutsideInlineCode(
+  const masked = [];
+  for (let index = scope.start; index < scope.end; index += 1) {
+    masked.push(await transformOutsideInlineCode(
       lines[index],
       state,
       async (segment) => segment,
@@ -435,43 +424,49 @@ async function addRelativeLinkWarnings(source, blockTokens, environment, sourceP
           length
         )
       }
-    );
-    const inlineTokens = collectTokens(
-      SOURCE_AUDIT_MARKDOWN.parseInline(visibleLine, environment),
-      index + 1
-    );
-    for (const { token } of inlineTokens) {
-      if (token.type !== 'link_open') continue;
-      const destination = token.attrGet('href');
-      if (
-        destination &&
-        !destinationScheme(destination) &&
-        !destination.startsWith('#') &&
-        !destination.startsWith('//')
-      ) {
-        detectedLinks += 1;
-        addWarning(warnings, 'relative_link_passthrough', sourcePath, index + 1);
-      }
+    ));
+  }
+  return masked.join('\n');
+}
+
+async function addRelativeLinkWarnings(source, blockTokens, environment, sourcePath, warnings) {
+  // markdown-it does not expose source offsets for inline children. Map parser
+  // tokens back to a unique source candidate within each complete inline block.
+  const { readerVisibleScopes } = collectReaderVisibleScopes(blockTokens);
+  let detectedLinks = 0;
+  const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
+  for (const scope of sortedReaderVisibleScopes(readerVisibleScopes)) {
+    const visibleScope = await maskReaderVisibleScope(lines, scope);
+    for (const linkSyntax of selectParsedInlineLinks(visibleScope, environment, sourcePath)) {
+      const preceding = visibleScope.slice(0, linkSyntax.start);
+      const physicalLine = scope.start + 1 + (preceding.match(/\n/gu)?.length || 0);
+      detectedLinks += 1;
+      addWarning(warnings, 'relative_link_passthrough', sourcePath, physicalLine);
     }
   }
   return detectedLinks;
 }
 
-function collectInlineImages(segment) {
-  const images = [];
+function collectInlineDestinations(segment, kind) {
+  const destinations = [];
+  const isImage = kind === 'image';
   let index = 0;
 
   while (index < segment.length - 1) {
-    if (
-      segment[index] !== '!' ||
-      segment[index + 1] !== '[' ||
-      isBackslashEscaped(segment, index)
-    ) {
+    const hasOpening = isImage
+      ? segment[index] === '!' && segment[index + 1] === '['
+      : segment[index] === '[' && !(
+        index > 0 &&
+        segment[index - 1] === '!' &&
+        !isBackslashEscaped(segment, index - 1)
+      );
+    if (!hasOpening || isBackslashEscaped(segment, index)) {
       index += 1;
       continue;
     }
 
-    let cursor = index + 2;
+    const labelStart = index + (isImage ? 2 : 1);
+    let cursor = labelStart;
     let bracketDepth = 1;
     while (cursor < segment.length && bracketDepth > 0) {
       if (segment[cursor] === '\\') {
@@ -482,34 +477,76 @@ function collectInlineImages(segment) {
       if (segment[cursor] === ']') bracketDepth -= 1;
       cursor += 1;
     }
-    if (bracketDepth !== 0 || segment[cursor] !== '(') {
+    if (bracketDepth !== 0) {
+      index += isImage ? 2 : 1;
+      continue;
+    }
+
+    const labelEnd = cursor - 1;
+    if (!isImage && segment[cursor] !== '(') {
+      let candidateEnd = cursor;
+      if (segment[cursor] === '[') {
+        candidateEnd += 1;
+        while (candidateEnd < segment.length && segment[candidateEnd] !== ']') {
+          if (segment[candidateEnd] === '\\') {
+            candidateEnd += Math.min(2, segment.length - candidateEnd);
+          } else {
+            candidateEnd += 1;
+          }
+        }
+        if (segment[candidateEnd] !== ']') {
+          index += 1;
+          continue;
+        }
+        candidateEnd += 1;
+      }
+      destinations.push({
+        start: index,
+        end: candidateEnd,
+        labelStart,
+        labelEnd,
+        source: segment.slice(index, candidateEnd)
+      });
+      index = candidateEnd;
+      continue;
+    }
+    if (segment[cursor] !== '(') {
       index += 2;
       continue;
     }
 
-    const altEnd = cursor - 1;
     const destinationStart = cursor + 1;
     let parenthesisDepth = 1;
     cursor = destinationStart;
+    let angleDestination = false;
+    let firstDestinationCharacter = destinationStart;
+    while (/\s/u.test(segment[firstDestinationCharacter] || '')) {
+      firstDestinationCharacter += 1;
+    }
+    if (segment[firstDestinationCharacter] === '<') angleDestination = true;
     while (cursor < segment.length && parenthesisDepth > 0) {
       if (segment[cursor] === '\\') {
         cursor += Math.min(2, segment.length - cursor);
         continue;
       }
-      if (segment[cursor] === '(') parenthesisDepth += 1;
-      if (segment[cursor] === ')') parenthesisDepth -= 1;
+      if (angleDestination) {
+        if (segment[cursor] === '>') angleDestination = false;
+      } else {
+        if (segment[cursor] === '(') parenthesisDepth += 1;
+        if (segment[cursor] === ')') parenthesisDepth -= 1;
+      }
       cursor += 1;
     }
-    if (parenthesisDepth !== 0) {
-      index += 2;
+    if (parenthesisDepth !== 0 || angleDestination) {
+      index += isImage ? 2 : 1;
       continue;
     }
 
-    images.push({
+    destinations.push({
       start: index,
       end: cursor,
-      altStart: index + 2,
-      altEnd,
+      labelStart,
+      labelEnd,
       destinationStart,
       destinationEnd: cursor - 1,
       source: segment.slice(index, cursor)
@@ -517,7 +554,15 @@ function collectInlineImages(segment) {
     index = cursor;
   }
 
-  return images;
+  return destinations;
+}
+
+function collectInlineImages(segment) {
+  return collectInlineDestinations(segment, 'image');
+}
+
+function collectInlineLinks(segment) {
+  return collectInlineDestinations(segment, 'link');
 }
 
 function parsedInlineImages(source) {
@@ -534,18 +579,7 @@ function imageTokenKey(token) {
   ]);
 }
 
-function selectParsedInlineImages(segment, sourcePath) {
-  const parsedKeys = parsedInlineImages(segment).map(imageTokenKey);
-  if (parsedKeys.length === 0) return [];
-
-  const candidates = collectInlineImages(segment).map((candidate) => {
-    const tokens = parsedInlineImages(candidate.source);
-    return {
-      ...candidate,
-      key: tokens.length === 1 ? imageTokenKey(tokens[0]) : null,
-      parsedDestination: tokens.length === 1 ? tokens[0].attrGet('src') : null
-    };
-  });
+function selectUniqueParsedCandidates(candidates, parsedKeys, sourcePath, kind) {
   const earliest = [];
   let candidateIndex = 0;
   for (const parsedKey of parsedKeys) {
@@ -554,7 +588,7 @@ function selectParsedInlineImages(segment, sourcePath) {
       candidates[candidateIndex].key !== parsedKey
     ) candidateIndex += 1;
     if (candidateIndex === candidates.length) {
-      throw new ZennAdapterError(`Parsed image syntax could not be mapped in ${sourcePath}`);
+      throw new ZennAdapterError(`Parsed ${kind} syntax could not be mapped in ${sourcePath}`);
     }
     earliest.push(candidateIndex);
     candidateIndex += 1;
@@ -567,7 +601,7 @@ function selectParsedInlineImages(segment, sourcePath) {
       candidateIndex -= 1;
     }
     if (candidateIndex < 0) {
-      throw new ZennAdapterError(`Parsed image syntax could not be mapped in ${sourcePath}`);
+      throw new ZennAdapterError(`Parsed ${kind} syntax could not be mapped in ${sourcePath}`);
     }
     latest[parsedIndex] = candidateIndex;
     candidateIndex -= 1;
@@ -575,10 +609,60 @@ function selectParsedInlineImages(segment, sourcePath) {
 
   if (earliest.some((index, parsedIndex) => index !== latest[parsedIndex])) {
     throw new ZennAdapterError(
-      `Parsed image syntax could not be mapped unambiguously in ${sourcePath}`
+      `Parsed ${kind} syntax could not be mapped unambiguously in ${sourcePath}`
     );
   }
   return earliest.map((index) => candidates[index]);
+}
+
+function selectParsedInlineImages(segment, sourcePath) {
+  const parsedKeys = parsedInlineImages(segment).map(imageTokenKey);
+  if (parsedKeys.length === 0) return [];
+
+  const candidates = collectInlineImages(segment).map((candidate) => {
+    const tokens = parsedInlineImages(candidate.source);
+    return {
+      ...candidate,
+      key: tokens.length === 1 ? imageTokenKey(tokens[0]) : null,
+      parsedDestination: tokens.length === 1 ? tokens[0].attrGet('src') : null
+    };
+  });
+  return selectUniqueParsedCandidates(candidates, parsedKeys, sourcePath, 'image');
+}
+
+function parsedInlineLinks(source, environment) {
+  return collectTokens(SOURCE_AUDIT_MARKDOWN.parseInline(source, environment))
+    .map(({ token }) => token)
+    .filter((token) => token.type === 'link_open');
+}
+
+function linkTokenKey(token) {
+  return JSON.stringify([token.attrGet('href'), token.attrGet('title') || '']);
+}
+
+function isRelativeLinkDestination(destination) {
+  return Boolean(
+    destination &&
+    !destinationScheme(destination) &&
+    !destination.startsWith('#') &&
+    !destination.startsWith('//')
+  );
+}
+
+function selectParsedInlineLinks(segment, environment, sourcePath) {
+  const parsedKeys = parsedInlineLinks(segment, environment)
+    .filter((token) => isRelativeLinkDestination(token.attrGet('href')))
+    .map(linkTokenKey);
+  if (parsedKeys.length === 0) return [];
+
+  const candidates = collectInlineLinks(segment).map((candidate) => {
+    const tokens = parsedInlineLinks(candidate.source, environment);
+    return {
+      ...candidate,
+      key: tokens.length === 1 ? linkTokenKey(tokens[0]) : null
+    };
+  });
+  return selectUniqueParsedCandidates(candidates, parsedKeys, sourcePath, 'relative link');
 }
 
 async function convertImagesAndAudit(source, {
@@ -594,7 +678,6 @@ async function convertImagesAndAudit(source, {
   const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
   const sourceBlockTokens = SOURCE_AUDIT_MARKDOWN.parse(lines.join('\n'), {});
   const { readerVisibleScopes } = collectReaderVisibleScopes(sourceBlockTokens);
-  const state = { inlineTicks: 0 };
   const converted = [];
 
   async function rewriteImagesInSegment(segment, parsedSegment = segment) {
@@ -627,7 +710,7 @@ async function convertImagesAndAudit(source, {
       ].map(encodeZennPathComponent).join('/');
       copiedAssets.set(outputRelative, image.source);
       convertedImageDestinations.add(`/${outputUrl}`);
-      const alt = segment.slice(imageSyntax.altStart, imageSyntax.altEnd);
+      const alt = segment.slice(imageSyntax.labelStart, imageSyntax.labelEnd);
       rebuilt += `![${alt}](/${outputUrl})`;
       cursor = imageSyntax.end;
     }
@@ -637,28 +720,10 @@ async function convertImagesAndAudit(source, {
   converted.push(...lines);
   for (const scope of sortedReaderVisibleScopes(readerVisibleScopes)) {
     const sourceLines = lines.slice(scope.start, scope.end);
-    const maskedLines = [];
-    state.inlineTicks = 0;
-    for (let index = scope.start; index < scope.end; index += 1) {
-      maskedLines.push(await transformOutsideInlineCode(
-        lines[index],
-        state,
-        async (segment) => segment,
-        {
-          maskInlineCode: true,
-          isInlineCodeOpening: (opening, length) => isBlockScopedInlineCodeOpening(
-            lines,
-            index,
-            scope,
-            opening,
-            length
-          )
-        }
-      ));
-    }
+    const maskedScope = await maskReaderVisibleScope(lines, scope);
     const rewritten = await rewriteImagesInSegment(
       sourceLines.join('\n'),
-      maskedLines.join('\n')
+      maskedScope
     );
     const rewrittenLines = rewritten.split('\n');
     if (rewrittenLines.length !== sourceLines.length) {

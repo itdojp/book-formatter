@@ -144,6 +144,7 @@ describe('ZennAdapter', () => {
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow name.png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a&b.png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a(b).png'), image);
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/a)b.png'), image);
     await appendWorkflow(
       bookDirectory,
       '\n![処理フロー](../assets/figures/flow.png)\n' +
@@ -151,12 +152,14 @@ describe('ZennAdapter', () => {
         '![空白付き](../assets/figures/flow%20name.png)\n' +
         '![entity](../assets/figures/a&amp;b.png)\n' +
         '![escaped path](../assets/figures/a\\(b\\).png)\n' +
+        '![angle path](<../assets/figures/a)b.png>)\n' +
         '![a\\]b](../assets/figures/flow.png)\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
         '`![inline example](../assets/missing.png)`\n' +
         '\\![escaped example](../assets/missing.png)\n' +
         '[docs](https://example.test "literal ![icon](../assets/missing.png)")\n' +
         '[multiline](https://example.test\n "literal ![icon](../assets/missing.png)")\n' +
+        '[link metadata](https://example.test\n "literal [fake](relative.md)")\n' +
         `${Array.from(
           { length: 50 },
           () => '![repeated](../assets/figures/flow.png)'
@@ -186,6 +189,10 @@ describe('ZennAdapter', () => {
       workflow,
       /!\[escaped path\]\(\/images\/standard-book-example\/figures\/a%28b%29\.png\)/u
     );
+    assert.match(
+      workflow,
+      /!\[angle path\]\(\/images\/standard-book-example\/figures\/a%29b\.png\)/u
+    );
     assert.ok(
       workflow.includes('![a\\]b](/images/standard-book-example/figures/flow.png)')
     );
@@ -202,6 +209,10 @@ describe('ZennAdapter', () => {
     assert.match(
       workflow,
       /\[multiline\]\(https:\/\/example\.test\n "literal !\[icon\]\(\.\.\/assets\/missing\.png\)"\)/u
+    );
+    assert.match(
+      workflow,
+      /\[link metadata\]\(https:\/\/example\.test\n "literal \[fake\]\(relative\.md\)"\)/u
     );
     assert.strictEqual(
       [...workflow.matchAll(
@@ -384,7 +395,7 @@ describe('ZennAdapter', () => {
     assert.deepStrictEqual(warnings.map((warning) => warning.line), [1, 2, 5, 6]);
   });
 
-  test('複数行に分割されたrelative linkは不正なwarning位置を出さずfail closedにする', async () => {
+  test('複数行に分割されたrelative linkも開始物理行へwarningを対応付ける', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-zenn-multiline-link-');
     await fs.writeFile(
@@ -393,9 +404,40 @@ describe('ZennAdapter', () => {
       'utf8'
     );
 
-    await assert.rejects(
-      build(bookDirectory, outputRoot),
-      /Relative link syntax could not be mapped to a physical warning line/
+    const result = await build(bookDirectory, outputRoot);
+    assert.deepStrictEqual(
+      result.manifest.adapter.warnings.filter(
+        (warning) => warning.file === 'manuscript/02-workflow.md'
+      ),
+      [{
+        code: 'relative_link_passthrough',
+        file: 'manuscript/02-workflow.md',
+        line: 1
+      }]
+    );
+  });
+
+  test('reference形式のrelative linkも完全なblock contextからwarningへ対応付ける', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-reference-link-');
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# Warning positions\n' +
+        '[full][target]\n' +
+        '[collapsed][]\n' +
+        '[shortcut]\n\n' +
+        '[target]: ../target.md\n' +
+        '[collapsed]: ../collapsed.md\n' +
+        '[shortcut]: ../shortcut.md\n',
+      'utf8'
+    );
+
+    const result = await build(bookDirectory, outputRoot);
+    assert.deepStrictEqual(
+      result.manifest.adapter.warnings.filter(
+        (warning) => warning.file === 'manuscript/02-workflow.md'
+      ).map((warning) => warning.line),
+      [1, 2, 3]
     );
   });
 
