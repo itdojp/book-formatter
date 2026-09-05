@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { constants as fileSystemConstants } from 'node:fs';
+import { open as openFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import fs from 'fs-extra';
@@ -74,7 +76,7 @@ function removeCanonicalH1(source, sourcePath) {
   const lines = normalized.split('\n');
   if (hadTrailingNewline) lines.pop();
   const h1Tokens = SOURCE_AUDIT_MARKDOWN.parse(normalized, {}).filter(
-    (token) => token.type === 'heading_open' && token.tag === 'h1'
+    (token) => token.type === 'heading_open' && token.tag === 'h1' && token.level === 0
   );
   if (h1Tokens.length !== 1 || !h1Tokens[0].map) {
     throw new ZennAdapterError(
@@ -275,7 +277,42 @@ async function requireZennImage(bookRoot, assetRoot, sourcePath, destination) {
       `Unsupported Zenn image extension ${extension || '(none)'}: ${relativeToBook}`
     );
   }
-  return { source: resolved, relativeToAssets };
+
+  let handle;
+  try {
+    handle = await openFile(
+      resolved,
+      fileSystemConstants.O_RDONLY | fileSystemConstants.O_NOFOLLOW
+    );
+    const openedStat = await handle.stat();
+    if (
+      !openedStat.isFile() ||
+      openedStat.dev !== stat.dev ||
+      openedStat.ino !== stat.ino ||
+      openedStat.size !== stat.size
+    ) {
+      throw new ZennAdapterError(`Image changed during safe open: ${relativeToBook}`);
+    }
+    const contents = await handle.readFile();
+    const completedStat = await handle.stat();
+    if (
+      completedStat.dev !== openedStat.dev ||
+      completedStat.ino !== openedStat.ino ||
+      completedStat.size !== openedStat.size ||
+      completedStat.mtimeMs !== openedStat.mtimeMs ||
+      completedStat.ctimeMs !== openedStat.ctimeMs ||
+      contents.length !== openedStat.size ||
+      contents.length > ZENN_IMAGE_MAX_BYTES
+    ) {
+      throw new ZennAdapterError(`Image changed while being read: ${relativeToBook}`);
+    }
+    return { contents, relativeToAssets };
+  } catch (error) {
+    if (error instanceof ZennAdapterError) throw error;
+    throw new ZennAdapterError(`Image could not be opened safely: ${relativeToBook}`);
+  } finally {
+    if (handle) await handle.close();
+  }
 }
 
 function isBackslashEscaped(source, index) {
@@ -562,7 +599,41 @@ function collectInlineImages(segment) {
 }
 
 function collectInlineLinks(segment) {
-  return collectInlineDestinations(segment, 'link');
+  const candidates = [];
+  const pending = [{ source: segment, offset: 0, depth: 0 }];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    for (const candidate of collectInlineDestinations(current.source, 'link')) {
+      const offsetCandidate = {
+        ...candidate,
+        start: candidate.start + current.offset,
+        end: candidate.end + current.offset,
+        labelStart: candidate.labelStart + current.offset,
+        labelEnd: candidate.labelEnd + current.offset,
+        ...(candidate.destinationStart === undefined
+          ? {}
+          : {
+            destinationStart: candidate.destinationStart + current.offset,
+            destinationEnd: candidate.destinationEnd + current.offset
+          })
+      };
+      candidates.push(offsetCandidate);
+      if (current.depth < 128 && candidate.labelEnd > candidate.labelStart) {
+        pending.push({
+          source: current.source.slice(candidate.labelStart, candidate.labelEnd),
+          offset: current.offset + candidate.labelStart,
+          depth: current.depth + 1
+        });
+      }
+    }
+  }
+  const unique = new Map();
+  for (const candidate of candidates) {
+    unique.set(`${candidate.start}:${candidate.end}`, candidate);
+  }
+  return [...unique.values()].sort((left, right) =>
+    left.start - right.start || left.end - right.end
+  );
 }
 
 function parsedInlineImages(source) {
@@ -640,6 +711,18 @@ function linkTokenKey(token) {
   return JSON.stringify([token.attrGet('href'), token.attrGet('title') || '']);
 }
 
+function parsedRootLink(source, environment) {
+  const inline = SOURCE_AUDIT_MARKDOWN.parseInline(source, environment)[0];
+  const children = inline?.children || [];
+  const linkTokens = children.filter((token) => token.type === 'link_open');
+  if (
+    linkTokens.length !== 1 ||
+    children[0]?.type !== 'link_open' ||
+    children.at(-1)?.type !== 'link_close'
+  ) return null;
+  return linkTokens[0];
+}
+
 function isRelativeLinkDestination(destination) {
   return Boolean(
     destination &&
@@ -656,10 +739,10 @@ function selectParsedInlineLinks(segment, environment, sourcePath) {
   if (parsedKeys.length === 0) return [];
 
   const candidates = collectInlineLinks(segment).map((candidate) => {
-    const tokens = parsedInlineLinks(candidate.source, environment);
+    const token = parsedRootLink(candidate.source, environment);
     return {
       ...candidate,
-      key: tokens.length === 1 ? linkTokenKey(tokens[0]) : null
+      key: token ? linkTokenKey(token) : null
     };
   });
   return selectUniqueParsedCandidates(candidates, parsedKeys, sourcePath, 'relative link');
@@ -708,7 +791,7 @@ async function convertImagesAndAudit(source, {
         zennSlug,
         ...image.relativeToAssets.split(path.sep)
       ].map(encodeZennPathComponent).join('/');
-      copiedAssets.set(outputRelative, image.source);
+      copiedAssets.set(outputRelative, image.contents);
       convertedImageDestinations.add(`/${outputUrl}`);
       const alt = segment.slice(imageSyntax.labelStart, imageSyntax.labelEnd);
       rebuilt += `![${alt}](/${outputUrl})`;
@@ -869,14 +952,23 @@ function sortAndDeduplicateWarnings(warnings) {
 }
 
 async function assertOwnedExistingOutput(outputDirectory) {
-  if (!(await fs.pathExists(outputDirectory))) return;
-  const stat = await fs.lstat(outputDirectory);
+  let stat;
+  try {
+    stat = await fs.lstat(outputDirectory);
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     throw new ZennAdapterError(`Zenn output must be a real directory: ${outputDirectory}`);
   }
+  const expectedIdentity = { dev: stat.dev, ino: stat.ino };
   let manifest;
   try {
-    manifest = JSON.parse(await fs.readFile(path.join(outputDirectory, 'manifest.json'), 'utf8'));
+    const manifestPath = path.join(outputDirectory, 'manifest.json');
+    const manifestStat = await fs.lstat(manifestPath);
+    if (manifestStat.isSymbolicLink() || !manifestStat.isFile()) throw new Error('not a file');
+    manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
   } catch {
     throw new ZennAdapterError(`Refusing to replace output without a valid adapter manifest: ${outputDirectory}`);
   }
@@ -886,6 +978,11 @@ async function assertOwnedExistingOutput(outputDirectory) {
   ) {
     throw new ZennAdapterError(`Refusing to replace output owned by another producer: ${outputDirectory}`);
   }
+  const currentIdentity = await pathObjectIdentity(outputDirectory);
+  if (!samePathIdentity(currentIdentity, expectedIdentity)) {
+    throw new ZennAdapterError(`Zenn output changed during ownership validation: ${outputDirectory}`);
+  }
+  return expectedIdentity;
 }
 
 async function pathIdentity(candidate) {
@@ -893,8 +990,29 @@ async function pathIdentity(candidate) {
   return { dev: stat.dev, ino: stat.ino };
 }
 
+async function pathObjectIdentity(candidate) {
+  const stat = await fs.lstat(candidate);
+  return { dev: stat.dev, ino: stat.ino };
+}
+
+async function pathObjectIdentityIfExists(candidate) {
+  try {
+    return await pathObjectIdentity(candidate);
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 function samePathIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function assertPathObjectIdentity(candidate, expected, context) {
+  const current = await pathObjectIdentityIfExists(candidate);
+  if (!current || !samePathIdentity(current, expected)) {
+    throw new ZennAdapterError(`${context}: ${candidate}`);
+  }
 }
 
 async function assertProtectedRootsUnchanged(protectedRoots, expected) {
@@ -914,11 +1032,27 @@ async function assertProtectedRootsUnchanged(protectedRoots, expected) {
 async function replaceOwnedDirectory({
   stagingDirectory,
   outputDirectory,
+  expectedOutputIdentity,
   protectedRoots,
   revalidateReplacementDirectory
 }) {
   const backupDirectory = `${outputDirectory}.backup-${process.pid}-${randomUUID()}`;
-  const outputExists = await fs.pathExists(outputDirectory);
+  const currentOutputIdentity = await pathObjectIdentityIfExists(outputDirectory);
+  if (expectedOutputIdentity) {
+    if (
+      !currentOutputIdentity ||
+      !samePathIdentity(currentOutputIdentity, expectedOutputIdentity)
+    ) {
+      throw new ZennAdapterError(
+        `Zenn output changed after ownership validation: ${outputDirectory}`
+      );
+    }
+  } else if (currentOutputIdentity) {
+    throw new ZennAdapterError(
+      `Zenn output appeared after ownership validation: ${outputDirectory}`
+    );
+  }
+  const outputExists = Boolean(expectedOutputIdentity);
   const identities = await Promise.all(protectedRoots.map(pathIdentity));
   let outputMoved = false;
   let stagingInstalled = false;
@@ -927,6 +1061,11 @@ async function replaceOwnedDirectory({
     if (outputExists) {
       await fs.rename(outputDirectory, backupDirectory);
       outputMoved = true;
+      await assertPathObjectIdentity(
+        backupDirectory,
+        expectedOutputIdentity,
+        'Zenn output identity changed across backup rename'
+      );
       await assertProtectedRootsUnchanged(protectedRoots, identities);
       await revalidateReplacementDirectory(backupDirectory);
     }
@@ -937,6 +1076,11 @@ async function replaceOwnedDirectory({
     committed = true;
     if (outputMoved) {
       try {
+        await assertPathObjectIdentity(
+          backupDirectory,
+          expectedOutputIdentity,
+          'Zenn backup identity changed before cleanup'
+        );
         await fs.remove(backupDirectory);
       } catch (error) {
         throw new ZennAdapterError(
@@ -1051,10 +1195,10 @@ export async function writeZennProject({
         'utf8'
       );
     }
-    for (const [destination, source] of copiedAssets) {
+    for (const [destination, contents] of copiedAssets) {
       const outputPath = path.join(stagingDirectory, ...destination.split('/'));
       await fs.ensureDir(path.dirname(outputPath));
-      await fs.copyFile(source, outputPath);
+      await fs.writeFile(outputPath, contents);
     }
     await fs.writeFile(
       path.join(bookDirectory, 'config.yaml'),
@@ -1075,7 +1219,7 @@ export async function writeZennProject({
     }
 
     await revalidateOutputDestination();
-    await assertOwnedExistingOutput(outputDirectory);
+    const expectedOutputIdentity = await assertOwnedExistingOutput(outputDirectory);
     const protectedRoots = [
       standardBook.bookRoot,
       standardBook.metadataPath,
@@ -1086,6 +1230,7 @@ export async function writeZennProject({
     await replaceOwnedDirectory({
       stagingDirectory,
       outputDirectory,
+      expectedOutputIdentity,
       protectedRoots,
       revalidateReplacementDirectory
     });

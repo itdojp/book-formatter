@@ -285,6 +285,41 @@ describe('ZennAdapter', () => {
     await assert.rejects(build(symlinkBook, symlinkOutput), /must not contain symbolic links/);
   });
 
+  test('検証後にsymlinkへ差し替えられた画像pathを再openしない', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('symbolic-link race assertion is skipped on Windows');
+      return;
+    }
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-image-race-');
+    const imagePath = path.join(bookDirectory, 'assets/race.png');
+    const otherPath = path.join(bookDirectory, 'other.txt');
+    await fs.writeFile(imagePath, 'validated image bytes');
+    await fs.writeFile(otherPath, 'unrelated readable bytes');
+    await appendWorkflow(bookDirectory, '\n![race](../assets/race.png)\n');
+
+    const originalLstat = fs.lstat;
+    let imageLstatCalls = 0;
+    fs.lstat = async (candidate, ...args) => {
+      const result = await originalLstat(candidate, ...args);
+      if (path.resolve(candidate) === imagePath && ++imageLstatCalls === 3) {
+        await fs.remove(imagePath);
+        await fs.symlink('../other.txt', imagePath);
+      }
+      return result;
+    };
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /Image could not be opened safely/
+      );
+    } finally {
+      fs.lstat = originalLstat;
+    }
+    assert.strictEqual(imageLstatCalls, 3);
+    assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'zenn')), false);
+  });
+
   test('target metadata、title、chapter slug、internal edition境界を拒否する', async () => {
     const missingTarget = await copySampleBook();
     await updateMetadata(missingTarget, (metadata) => delete metadata.targets);
@@ -417,6 +452,27 @@ describe('ZennAdapter', () => {
     );
   });
 
+  test('nested relative linkはparserが採用した内側の開始物理行へ対応付ける', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-nested-link-');
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# Warning positions\n' +
+        '[first](../first.md)\n' +
+        '[outer\n' +
+        '[inner](../target.md)](ignored.md)\n',
+      'utf8'
+    );
+
+    const result = await build(bookDirectory, outputRoot);
+    assert.deepStrictEqual(
+      result.manifest.adapter.warnings.filter(
+        (warning) => warning.file === 'manuscript/02-workflow.md'
+      ).map((warning) => warning.line),
+      [1, 3]
+    );
+  });
+
   test('reference形式のrelative linkも完全なblock contextからwarningへ対応付ける', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-zenn-reference-link-');
@@ -455,6 +511,35 @@ describe('ZennAdapter', () => {
     assert.doesNotMatch(
       await fs.readFile(path.join(bookOutput(indentedH1Result), 'workflow.md'), 'utf8'),
       /^\s{0,3}# Indented canonical heading$/mu
+    );
+
+    const nestedH1Book = await copySampleBook();
+    await fs.writeFile(
+      path.join(nestedH1Book, 'manuscript/02-workflow.md'),
+      '# Canonical heading\n\n> # Quoted heading\n\n- # List heading\n',
+      'utf8'
+    );
+    const nestedH1Result = await build(
+      nestedH1Book,
+      await temporaryDirectory('tmp-zenn-nested-h1-')
+    );
+    const nestedH1Output = await fs.readFile(
+      path.join(bookOutput(nestedH1Result), 'workflow.md'),
+      'utf8'
+    );
+    assert.doesNotMatch(nestedH1Output, /^# Canonical heading$/mu);
+    assert.match(nestedH1Output, /^> # Quoted heading$/mu);
+    assert.match(nestedH1Output, /^- # List heading$/mu);
+
+    const duplicateH1Book = await copySampleBook();
+    await fs.writeFile(
+      path.join(duplicateH1Book, 'manuscript/02-workflow.md'),
+      '# First heading\n\n# Second heading\n',
+      'utf8'
+    );
+    await assert.rejects(
+      build(duplicateH1Book, await temporaryDirectory('tmp-zenn-duplicate-h1-')),
+      /exactly one leading ATX h1/
     );
 
     const frontMatterBook = await copySampleBook();
@@ -532,6 +617,50 @@ describe('ZennAdapter', () => {
     assert.strictEqual(
       await fs.readFile(path.join(first.outputDirectory, 'preserve.txt'), 'utf8'),
       'existing output\n'
+    );
+  });
+
+  test('ownership検証後に差し替えられたoutputをbackup削除しない', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('directory identity race assertion is skipped on Windows');
+      return;
+    }
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-output-race-');
+    const first = await build(bookDirectory, outputRoot);
+    const outputDirectory = first.outputDirectory;
+    const displacedOwnedDirectory = `${outputDirectory}.concurrent-owned`;
+    const originalRename = fs.rename;
+    let injected = false;
+    fs.rename = async (source, destination, ...args) => {
+      if (
+        !injected &&
+        path.resolve(source) === outputDirectory &&
+        destination.startsWith(`${outputDirectory}.backup-`)
+      ) {
+        injected = true;
+        await originalRename(source, displacedOwnedDirectory);
+        await fs.ensureDir(source);
+        await fs.writeFile(path.join(source, 'unrelated.txt'), 'concurrent owner data\n');
+      }
+      return originalRename(source, destination, ...args);
+    };
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /output identity changed across backup rename/
+      );
+    } finally {
+      fs.rename = originalRename;
+    }
+    assert.strictEqual(injected, true);
+    assert.strictEqual(
+      await fs.readFile(path.join(outputDirectory, 'unrelated.txt'), 'utf8'),
+      'concurrent owner data\n'
+    );
+    assert.strictEqual(
+      await fs.pathExists(path.join(displacedOwnedDirectory, 'manifest.json')),
+      true
     );
   });
 
