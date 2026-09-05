@@ -103,6 +103,7 @@ run_without_git_routing() (
     GIT_ALTERNATE_OBJECT_DIRECTORIES \
     GIT_COMMON_DIR \
     GIT_NAMESPACE \
+    GIT_TEMPLATE_DIR \
     GIT_CONFIG_COUNT \
     GIT_CONFIG_PARAMETERS \
     GIT_CONFIG_GLOBAL \
@@ -253,7 +254,7 @@ fi
 LOCAL_SCAFFOLD_COMPLETE=1
 
 if [ "$CREATE" -eq 1 ]; then
-  run_git init --initial-branch=main "$OUTPUT" >/dev/null
+  run_git init --initial-branch=main --template= "$OUTPUT" >/dev/null
   # The scaffold is the complete known worktree. Caller-level global ignore
   # rules must not silently omit generated files from the initial commit.
   run_git -C "$OUTPUT" add --all --force

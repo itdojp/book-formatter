@@ -96,6 +96,10 @@ function installMockGh(root) {
     '  echo "gh host is not pinned to github.com" >&2',
     '  exit 92',
     'fi',
+    'if [ -n "${GIT_TEMPLATE_DIR:-}" ]; then',
+    '  echo "git template injection remains" >&2',
+    '  exit 93',
+    'fi',
     'for name in GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; do',
     '  if [ -n "${!name:-}" ]; then echo "git config injection remains: $name" >&2; exit 93; fi',
     'done',
@@ -515,6 +519,13 @@ test('--create presents one clean main commit to one mocked gh create call', () 
 test('--create ignores caller-owned Git repository routing variables', () => {
   const root = makeTemporaryRoot('git-routing');
   const output = path.join(root, 'outputs', 'sample-book');
+  const templateDirectory = path.join(root, 'malicious-template');
+  mkdirSync(templateDirectory);
+  writeFileSync(
+    path.join(templateDirectory, 'config'),
+    '[url "https://enterprise.example.invalid/redirect/"]\n' +
+      '\tpushInsteadOf = https://github.com/\n',
+  );
   const result = runScaffold(
     root,
     ['itdojp', 'sample-book', '--output', output, '--create'],
@@ -524,6 +535,7 @@ test('--create ignores caller-owned Git repository routing variables', () => {
         GIT_WORK_TREE: path.join(root, 'decoy-worktree'),
         GIT_INDEX_FILE: path.join(root, 'decoy-index'),
         GIT_OBJECT_DIRECTORY: path.join(root, 'decoy-objects'),
+        GIT_TEMPLATE_DIR: templateDirectory,
         GIT_CONFIG_COUNT: '1',
         GIT_CONFIG_KEY_0: 'remote.origin.pushurl',
         GIT_CONFIG_VALUE_0: 'https://enterprise.example.invalid/redirect.git',
@@ -541,6 +553,10 @@ test('--create ignores caller-owned Git repository routing variables', () => {
   assert.equal(existsSync(path.join(root, 'decoy.git')), false);
   assert.equal(existsSync(path.join(root, 'decoy-index')), false);
   assert.equal(existsSync(path.join(root, 'decoy-objects')), false);
+  assert.doesNotMatch(
+    readFileSync(path.join(output, '.git/config'), 'utf8'),
+    /pushInsteadOf|enterprise\.example\.invalid/,
+  );
 });
 
 test('--create pins every gh operation to github.com despite caller GH_HOST', () => {
