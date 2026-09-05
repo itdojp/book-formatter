@@ -231,7 +231,9 @@ LOCAL_SCAFFOLD_COMPLETE=1
 
 if [ "$CREATE" -eq 1 ]; then
   run_git init --initial-branch=main "$OUTPUT" >/dev/null
-  run_git -C "$OUTPUT" add --all
+  # The scaffold is the complete known worktree. Caller-level global ignore
+  # rules must not silently omit generated files from the initial commit.
+  run_git -C "$OUTPUT" add --all --force
   GIT_AUTHOR_NAME="$GIT_IDENTITY_NAME" \
   GIT_AUTHOR_EMAIL="$GIT_IDENTITY_EMAIL" \
   GIT_COMMITTER_NAME="$GIT_IDENTITY_NAME" \

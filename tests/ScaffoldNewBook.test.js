@@ -455,6 +455,31 @@ test('--create pins every gh operation to github.com despite caller GH_HOST', ()
   assert.match(calls[2], /^repo create itdojp\/sample-book /);
 });
 
+test('--create tracks the complete scaffold despite caller global ignores', () => {
+  const root = makeTemporaryRoot('global-ignore');
+  const output = path.join(root, 'outputs', 'sample-book');
+  const excludes = path.join(root, 'global-excludes');
+  const globalConfig = path.join(root, 'global-gitconfig');
+  writeFileSync(excludes, '*\n');
+  writeFileSync(globalConfig, `[core]\n\texcludesFile = ${excludes}\n`);
+
+  const result = runScaffold(
+    root,
+    ['itdojp', 'sample-book', '--output', output, '--create'],
+    { extraEnv: { GIT_CONFIG_GLOBAL: globalConfig } },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const worktreeFiles = relativeFiles(output).filter(
+    (relative) => relative !== '.git' && !relative.startsWith('.git/'),
+  );
+  const trackedFiles = git(output, 'ls-files').split('\n').sort();
+  assert.deepEqual(trackedFiles, worktreeFiles);
+  assert.ok(trackedFiles.includes('docs/_config.yml'));
+  assert.ok(trackedFiles.includes('docs/index.md'));
+  assert.ok(trackedFiles.includes('.github/workflows/book-qa.yml'));
+});
+
 test('--create preflight failures do not create a local destination', async (t) => {
   const fixtures = [
     {
