@@ -664,6 +664,49 @@ describe('ZennAdapter', () => {
     );
   });
 
+  test('identity固定cleanup後に差し替えられたbackupを再帰削除しない', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('directory cleanup race assertion is skipped on Windows');
+      return;
+    }
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-cleanup-race-');
+    const first = await build(bookDirectory, outputRoot);
+    const outputDirectory = first.outputDirectory;
+    const originalRmdir = fs.rmdir;
+    const originalRename = fs.rename;
+    let replacementBackup;
+    let displacedBackup;
+    fs.rmdir = async (candidate, ...args) => {
+      if (!replacementBackup && candidate.startsWith(`${outputDirectory}.backup-`)) {
+        replacementBackup = candidate;
+        displacedBackup = `${candidate}.validated-empty`;
+        await originalRename(candidate, displacedBackup);
+        await fs.ensureDir(candidate);
+        await fs.writeFile(path.join(candidate, 'unrelated.txt'), 'concurrent backup data\n');
+      }
+      return originalRmdir(candidate, ...args);
+    };
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /backup cleanup failed; retained path/
+      );
+    } finally {
+      fs.rmdir = originalRmdir;
+    }
+    assert.ok(replacementBackup);
+    assert.strictEqual(
+      await fs.readFile(path.join(replacementBackup, 'unrelated.txt'), 'utf8'),
+      'concurrent backup data\n'
+    );
+    assert.deepStrictEqual(await fs.readdir(displacedBackup), []);
+    assert.strictEqual(
+      await fs.pathExists(path.join(outputDirectory, 'manifest.json')),
+      true
+    );
+  });
+
   test('schemaはZenn metadataのslug/topic/priceをfail closedで検証する', async () => {
     const cases = [
       [(metadata) => { metadata.targets.zenn.slug = 'short'; }, /must match pattern/],

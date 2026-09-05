@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { constants as fileSystemConstants } from 'node:fs';
 import { open as openFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -22,6 +23,18 @@ const ZENN_BOOK_SLUG = /^[0-9a-z_-]{12,50}$/u;
 const ZENN_CHAPTER_SLUG = /^[0-9a-z_-]{1,50}$/u;
 const ZENN_IMAGE_EXTENSIONS = new Set(['.gif', '.jpeg', '.jpg', '.png', '.webp']);
 const ZENN_IMAGE_MAX_BYTES = 3 * 1024 * 1024;
+const IDENTITY_BOUND_DIRECTORY_CLEANUP = `
+import { lstat, readdir, rm } from 'node:fs/promises';
+const [expectedDev, expectedIno] = process.argv.slice(1);
+const current = await lstat('.');
+if (String(current.dev) !== expectedDev || String(current.ino) !== expectedIno) {
+  process.exit(73);
+}
+for (const entry of (await readdir('.')).sort()) {
+  await rm(entry, { recursive: true, force: false, maxRetries: 0 });
+}
+if ((await readdir('.')).length !== 0) process.exit(74);
+`;
 const HTML_ENTITY = /&(?:#[xX][0-9A-Fa-f]+|#\d+|[A-Za-z][A-Za-z0-9]+);?/gu;
 const SOURCE_AUDIT_MARKDOWN = new MarkdownIt({
   html: true,
@@ -1015,6 +1028,45 @@ async function assertPathObjectIdentity(candidate, expected, context) {
   }
 }
 
+async function emptyDirectoryByHeldIdentity(candidate, expected) {
+  const exitCode = await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        IDENTITY_BOUND_DIRECTORY_CLEANUP,
+        String(expected.dev),
+        String(expected.ino)
+      ],
+      {
+        cwd: candidate,
+        env: {},
+        stdio: 'ignore',
+        windowsHide: true
+      }
+    );
+    const timeout = setTimeout(() => child.kill(), 30_000);
+    child.once('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timeout);
+      resolve(code);
+    });
+  });
+  if (exitCode !== 0) {
+    throw new ZennAdapterError(
+      `Zenn backup cleanup could not bind the validated directory identity (${exitCode})`
+    );
+  }
+  // The recursive work was anchored to the child's held cwd. This final
+  // pathname operation is intentionally non-recursive, so a replacement with
+  // content is retained rather than deleted.
+  await fs.rmdir(candidate);
+}
+
 async function assertProtectedRootsUnchanged(protectedRoots, expected) {
   for (const [index, protectedRoot] of protectedRoots.entries()) {
     let current;
@@ -1076,12 +1128,7 @@ async function replaceOwnedDirectory({
     committed = true;
     if (outputMoved) {
       try {
-        await assertPathObjectIdentity(
-          backupDirectory,
-          expectedOutputIdentity,
-          'Zenn backup identity changed before cleanup'
-        );
-        await fs.remove(backupDirectory);
+        await emptyDirectoryByHeldIdentity(backupDirectory, expectedOutputIdentity);
       } catch (error) {
         throw new ZennAdapterError(
           'New Zenn output was installed, but backup cleanup failed; retained path: ' +
