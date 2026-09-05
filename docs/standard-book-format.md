@@ -58,6 +58,12 @@ standard-book/
 
 `editions[].status`は`draft`、`published`、`archived`のいずれかである。visibilityを有効にする場合は、structure entryとeditionで`free`、`sample`、`paid`、`internal`を明示し、editionの`documents`で対象IDを列挙する。詳しい包含matrixと漏えい検査は[Edition visibilityと有償本文の混入防止](paid-editions.md)を参照する。販売価格や出力adapterの設定はversion 1の必須情報ではない。
 
+Web provider、base path、canonical public URL、deploy outputは、将来の
+`deployment_profiles`案で表す。この案は
+[Web出力のデプロイ契約](web-deployment.md#deploy-profile案未実装)で管理する。
+これは現行schema version 1のfieldではない。`book.yaml`へ先行追加すると
+validatorが拒否する。採用時はschema versionとconsumer migrationを独立Issueで更新する。
+
 ## 検証
 
 Node.jsの対応versionはrepositoryの`package.json#engines`に従う。2026-09-01時点ではNode.js `^20.19.0 || ^22.13.0 || >=24.0.0`である。
