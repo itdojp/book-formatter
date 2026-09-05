@@ -583,6 +583,12 @@ function parseConsumerEntry(rawEntry, index, planDirectory) {
     );
   }
   if (
+    configPathPresent
+    && (typeof rawEntry.configPath !== 'string' || rawEntry.configPath.trim() === '')
+  ) {
+    throw new ConsumerMutationError(`${label}.configPath must be a non-empty path`);
+  }
+  if (
     configHashPresent
     && (typeof rawEntry.configSha256 !== 'string'
       || !/^[0-9a-f]{64}$/.test(rawEntry.configSha256))

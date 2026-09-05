@@ -401,6 +401,28 @@ describe('ConsumerMutationBoundary plan', () => {
       /regular non-symlink file/
     );
   });
+
+  test('configPathのinvalid型と空文字をConsumerMutationErrorで拒否する', async () => {
+    for (const [name, configPath] of [
+      ['number', 123],
+      ['array', ['./book-config.json']],
+      ['empty', ''],
+      ['whitespace', '   ']
+    ]) {
+      const { raw } = await writePlan();
+      raw.consumers[0].configPath = configPath;
+      raw.consumers[0].configSha256 = 'c'.repeat(64);
+      const planPath = path.join(tempDir, `invalid-config-path-${name}.json`);
+      await fs.writeJson(planPath, raw);
+      await assert.rejects(
+        loadConsumerMutationPlan(planPath),
+        (error) => (
+          error.name === 'ConsumerMutationError'
+          && /configPath must be a non-empty path/.test(error.message)
+        )
+      );
+    }
+  });
 });
 
 describe('ConsumerMutationBoundary transaction', () => {
