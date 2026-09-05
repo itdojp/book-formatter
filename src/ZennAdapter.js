@@ -342,74 +342,8 @@ function encodeZennPathComponent(component) {
   );
 }
 
-async function transformOutsideInlineCode(
-  line,
-  state,
-  transform,
-  {
-    maskInlineCode = false,
-    isInlineCodeOpening = () => true
-  } = {}
-) {
-  let output = '';
-  let cursor = 0;
-  while (cursor < line.length) {
-    if (state.inlineTicks) {
-      let close = line.indexOf('`', cursor);
-      while (close !== -1) {
-        let length = 1;
-        while (line[close + length] === '`') length += 1;
-        if (length === state.inlineTicks) break;
-        close = line.indexOf('`', close + length);
-      }
-      if (close === -1) {
-        return output + (maskInlineCode ? ' '.repeat(line.length - cursor) : line.slice(cursor));
-      }
-      output += maskInlineCode
-        ? ' '.repeat(close + state.inlineTicks - cursor)
-        : line.slice(cursor, close + state.inlineTicks);
-      cursor = close + state.inlineTicks;
-      state.inlineTicks = 0;
-      continue;
-    }
-
-    let opening = line.indexOf('`', cursor);
-    while (opening !== -1 && isBackslashEscaped(line, opening)) {
-      opening = line.indexOf('`', opening + 1);
-    }
-    if (opening === -1) return output + await transform(line.slice(cursor));
-    output += await transform(line.slice(cursor, opening));
-    let length = 1;
-    while (line[opening + length] === '`') length += 1;
-    if (!isInlineCodeOpening(opening, length)) {
-      output += await transform('`'.repeat(length));
-      cursor = opening + length;
-      continue;
-    }
-    output += maskInlineCode ? ' '.repeat(length) : '`'.repeat(length);
-    cursor = opening + length;
-    state.inlineTicks = length;
-  }
-  return output;
-}
-
 function addWarning(warnings, code, file, line) {
   warnings.push({ code, file, line });
-}
-
-function hasInlineCodeClose(lines, lineIndex, openingEnd, tickLength, scopeEnd) {
-  for (let index = lineIndex; index < scopeEnd; index += 1) {
-    let cursor = index === lineIndex ? openingEnd : 0;
-    while (cursor < lines[index].length) {
-      const close = lines[index].indexOf('`', cursor);
-      if (close === -1) break;
-      let length = 1;
-      while (lines[index][close + length] === '`') length += 1;
-      if (length === tickLength) return true;
-      cursor = close + length;
-    }
-  }
-  return false;
 }
 
 function collectReaderVisibleScopes(blockTokens) {
@@ -446,37 +380,76 @@ function sortedReaderVisibleScopes(readerVisibleScopes) {
   return scopes;
 }
 
-function isBlockScopedInlineCodeOpening(lines, lineIndex, scope, opening, length) {
-  return hasInlineCodeClose(
-    lines,
-    lineIndex,
-    opening + length,
-    length,
-    scope.end
-  );
+function parsedInlineCodeTokens(source) {
+  return collectTokens(SOURCE_AUDIT_MARKDOWN.parseInline(source, {}))
+    .map(({ token }) => token)
+    .filter((token) => token.type === 'code_inline');
 }
 
-async function maskReaderVisibleScope(lines, scope) {
-  const state = { inlineTicks: 0 };
-  const masked = [];
-  for (let index = scope.start; index < scope.end; index += 1) {
-    masked.push(await transformOutsideInlineCode(
-      lines[index],
-      state,
-      async (segment) => segment,
-      {
-        maskInlineCode: true,
-        isInlineCodeOpening: (opening, length) => isBlockScopedInlineCodeOpening(
-          lines,
-          index,
-          scope,
-          opening,
-          length
-        )
+function inlineCodeTokenKey(token) {
+  return JSON.stringify([token.markup, token.content]);
+}
+
+function collectInlineCodeCandidates(segment) {
+  const candidates = [];
+  let index = 0;
+  while (index < segment.length) {
+    let opening = segment.indexOf('`', index);
+    while (opening !== -1 && isBackslashEscaped(segment, opening)) {
+      opening = segment.indexOf('`', opening + 1);
+    }
+    if (opening === -1) break;
+    let openingLength = 1;
+    while (segment[opening + openingLength] === '`') openingLength += 1;
+
+    let closing = opening + openingLength;
+    let matched = false;
+    while (closing < segment.length) {
+      closing = segment.indexOf('`', closing);
+      if (closing === -1) break;
+      let closingLength = 1;
+      while (segment[closing + closingLength] === '`') closingLength += 1;
+      if (closingLength === openingLength) {
+        const end = closing + closingLength;
+        const source = segment.slice(opening, end);
+        const inline = SOURCE_AUDIT_MARKDOWN.parseInline(source, {})[0];
+        const children = inline?.children || [];
+        if (children.length === 1 && children[0].type === 'code_inline') {
+          candidates.push({
+            start: opening,
+            end,
+            source,
+            key: inlineCodeTokenKey(children[0])
+          });
+          index = end;
+          matched = true;
+          break;
+        }
       }
-    ));
+      closing += closingLength;
+    }
+    if (!matched) index = opening + openingLength;
   }
-  return masked.join('\n');
+  return candidates;
+}
+
+function maskReaderVisibleScope(lines, scope, sourcePath) {
+  const visibleScope = lines.slice(scope.start, scope.end).join('\n');
+  const parsedKeys = parsedInlineCodeTokens(visibleScope).map(inlineCodeTokenKey);
+  if (parsedKeys.length === 0) return visibleScope;
+  const spans = selectUniqueParsedCandidates(
+    collectInlineCodeCandidates(visibleScope),
+    parsedKeys,
+    sourcePath,
+    'inline code'
+  );
+  const characters = visibleScope.split('');
+  for (const span of spans) {
+    for (let index = span.start; index < span.end; index += 1) {
+      if (characters[index] !== '\n') characters[index] = ' ';
+    }
+  }
+  return characters.join('');
 }
 
 async function addRelativeLinkWarnings(source, blockTokens, environment, sourcePath, warnings) {
@@ -486,7 +459,7 @@ async function addRelativeLinkWarnings(source, blockTokens, environment, sourceP
   let detectedLinks = 0;
   const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
   for (const scope of sortedReaderVisibleScopes(readerVisibleScopes)) {
-    const visibleScope = await maskReaderVisibleScope(lines, scope);
+    const visibleScope = maskReaderVisibleScope(lines, scope, sourcePath);
     for (const linkSyntax of selectParsedInlineLinks(visibleScope, environment, sourcePath)) {
       const preceding = visibleScope.slice(0, linkSyntax.start);
       const physicalLine = scope.start + 1 + (preceding.match(/\n/gu)?.length || 0);
@@ -816,7 +789,7 @@ async function convertImagesAndAudit(source, {
   converted.push(...lines);
   for (const scope of sortedReaderVisibleScopes(readerVisibleScopes)) {
     const sourceLines = lines.slice(scope.start, scope.end);
-    const maskedScope = await maskReaderVisibleScope(lines, scope);
+    const maskedScope = maskReaderVisibleScope(lines, scope, sourcePath);
     const rewritten = await rewriteImagesInSegment(
       sourceLines.join('\n'),
       maskedScope
@@ -1067,6 +1040,16 @@ async function emptyDirectoryByHeldIdentity(candidate, expected) {
   await fs.rmdir(candidate);
 }
 
+async function removeDirectoryByExpectedIdentity(candidate, expected, context) {
+  const current = await pathObjectIdentityIfExists(candidate);
+  if (!current) return false;
+  if (!samePathIdentity(current, expected)) {
+    throw new ZennAdapterError(`${context}: ${candidate}`);
+  }
+  await emptyDirectoryByHeldIdentity(candidate, expected);
+  return true;
+}
+
 async function assertProtectedRootsUnchanged(protectedRoots, expected) {
   for (const [index, protectedRoot] of protectedRoots.entries()) {
     let current;
@@ -1084,6 +1067,7 @@ async function assertProtectedRootsUnchanged(protectedRoots, expected) {
 async function replaceOwnedDirectory({
   stagingDirectory,
   outputDirectory,
+  expectedStagingIdentity,
   expectedOutputIdentity,
   protectedRoots,
   revalidateReplacementDirectory
@@ -1121,8 +1105,18 @@ async function replaceOwnedDirectory({
       await assertProtectedRootsUnchanged(protectedRoots, identities);
       await revalidateReplacementDirectory(backupDirectory);
     }
+    await assertPathObjectIdentity(
+      stagingDirectory,
+      expectedStagingIdentity,
+      'Zenn staging identity changed before install'
+    );
     await fs.rename(stagingDirectory, outputDirectory);
     stagingInstalled = true;
+    await assertPathObjectIdentity(
+      outputDirectory,
+      expectedStagingIdentity,
+      'Zenn staging identity changed across install rename'
+    );
     await assertProtectedRootsUnchanged(protectedRoots, identities);
     if (outputMoved) await revalidateReplacementDirectory(backupDirectory);
     committed = true;
@@ -1138,14 +1132,45 @@ async function replaceOwnedDirectory({
     }
   } catch (error) {
     if (!committed) {
-      if (stagingInstalled && await fs.pathExists(outputDirectory)) await fs.remove(outputDirectory);
-      if (outputMoved && await fs.pathExists(backupDirectory)) {
-        await fs.rename(backupDirectory, outputDirectory);
+      let rollbackError = null;
+      if (stagingInstalled) {
+        try {
+          await removeDirectoryByExpectedIdentity(
+            outputDirectory,
+            expectedStagingIdentity,
+            'Installed Zenn output changed before rollback'
+          );
+        } catch (cleanupError) {
+          rollbackError = cleanupError;
+        }
+      }
+      const currentOutput = await pathObjectIdentityIfExists(outputDirectory);
+      if (outputMoved && !rollbackError && !currentOutput) {
+        try {
+          await assertPathObjectIdentity(
+            backupDirectory,
+            expectedOutputIdentity,
+            'Zenn backup identity changed before rollback restore'
+          );
+          await fs.rename(backupDirectory, outputDirectory);
+          await assertPathObjectIdentity(
+            outputDirectory,
+            expectedOutputIdentity,
+            'Zenn backup identity changed across rollback restore'
+          );
+        } catch (restoreError) {
+          rollbackError = restoreError;
+        }
+      }
+      if (rollbackError) {
+        throw new ZennAdapterError(
+          'Zenn replacement failed and rollback retained paths for manual recovery: ' +
+            `output=${outputDirectory}; backup=${backupDirectory}; ` +
+            `${rollbackError.message}; original error: ${error.message}`
+        );
       }
     }
     throw error;
-  } finally {
-    await fs.remove(stagingDirectory);
   }
 }
 
@@ -1227,8 +1252,11 @@ export async function writeZennProject({
   await fs.ensureDir(parent);
   const stagingDirectory = path.join(parent, `.zenn-${process.pid}-${randomUUID()}.tmp`);
   const bookDirectory = path.join(stagingDirectory, 'books', target.slug);
+  let expectedStagingIdentity;
 
   try {
+    await fs.mkdir(stagingDirectory);
+    expectedStagingIdentity = await pathObjectIdentity(stagingDirectory);
     await fs.ensureDir(bookDirectory);
     for (const { entry, body, containsPaidContent } of convertedDocuments) {
       await fs.writeFile(
@@ -1277,12 +1305,26 @@ export async function writeZennProject({
     await replaceOwnedDirectory({
       stagingDirectory,
       outputDirectory,
+      expectedStagingIdentity,
       expectedOutputIdentity,
       protectedRoots,
       revalidateReplacementDirectory
     });
   } catch (error) {
-    await fs.remove(stagingDirectory);
+    if (expectedStagingIdentity) {
+      try {
+        await removeDirectoryByExpectedIdentity(
+          stagingDirectory,
+          expectedStagingIdentity,
+          'Zenn staging identity changed before cleanup'
+        );
+      } catch (cleanupError) {
+        throw new ZennAdapterError(
+          `${error.message}; staging cleanup retained path: ${stagingDirectory}; ` +
+            cleanupError.message
+        );
+      }
+    }
     throw error;
   }
 }

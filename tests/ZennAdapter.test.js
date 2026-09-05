@@ -145,6 +145,7 @@ describe('ZennAdapter', () => {
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a&b.png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a(b).png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a)b.png'), image);
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/a`b`.png'), image);
     await appendWorkflow(
       bookDirectory,
       '\n![処理フロー](../assets/figures/flow.png)\n' +
@@ -153,6 +154,7 @@ describe('ZennAdapter', () => {
         '![entity](../assets/figures/a&amp;b.png)\n' +
         '![escaped path](../assets/figures/a\\(b\\).png)\n' +
         '![angle path](<../assets/figures/a)b.png>)\n' +
+        '![backtick path](../assets/figures/a`b`.png)\n' +
         '![a\\]b](../assets/figures/flow.png)\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
         '`![inline example](../assets/missing.png)`\n' +
@@ -192,6 +194,10 @@ describe('ZennAdapter', () => {
     assert.match(
       workflow,
       /!\[angle path\]\(\/images\/standard-book-example\/figures\/a%29b\.png\)/u
+    );
+    assert.match(
+      workflow,
+      /!\[backtick path\]\(\/images\/standard-book-example\/figures\/a%60b%60\.png\)/u
     );
     assert.ok(
       workflow.includes('![a\\]b](/images/standard-book-example/figures/flow.png)')
@@ -236,6 +242,12 @@ describe('ZennAdapter', () => {
     assert.deepStrictEqual(
       await fs.readFile(
         path.join(result.outputDirectory, 'images/standard-book-example/figures/flow name.png')
+      ),
+      image
+    );
+    assert.deepStrictEqual(
+      await fs.readFile(
+        path.join(result.outputDirectory, 'images/standard-book-example/figures/a`b`.png')
       ),
       image
     );
@@ -632,6 +644,7 @@ describe('ZennAdapter', () => {
     const displacedOwnedDirectory = `${outputDirectory}.concurrent-owned`;
     const originalRename = fs.rename;
     let injected = false;
+    let replacementBackup;
     fs.rename = async (source, destination, ...args) => {
       if (
         !injected &&
@@ -639,6 +652,7 @@ describe('ZennAdapter', () => {
         destination.startsWith(`${outputDirectory}.backup-`)
       ) {
         injected = true;
+        replacementBackup = destination;
         await originalRename(source, displacedOwnedDirectory);
         await fs.ensureDir(source);
         await fs.writeFile(path.join(source, 'unrelated.txt'), 'concurrent owner data\n');
@@ -654,12 +668,70 @@ describe('ZennAdapter', () => {
       fs.rename = originalRename;
     }
     assert.strictEqual(injected, true);
+    assert.ok(replacementBackup);
     assert.strictEqual(
-      await fs.readFile(path.join(outputDirectory, 'unrelated.txt'), 'utf8'),
+      await fs.readFile(path.join(replacementBackup, 'unrelated.txt'), 'utf8'),
       'concurrent owner data\n'
     );
     assert.strictEqual(
       await fs.pathExists(path.join(displacedOwnedDirectory, 'manifest.json')),
+      true
+    );
+  });
+
+  test('install直後に差し替えられたoutputをrollbackで再帰削除しない', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('directory rollback race assertion is skipped on Windows');
+      return;
+    }
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-rollback-race-');
+    const first = await build(bookDirectory, outputRoot);
+    const outputDirectory = first.outputDirectory;
+    const displacedInstalled = `${outputDirectory}.concurrent-installed`;
+    const originalRename = fs.rename;
+    let backupDirectory;
+    let injected = false;
+    fs.rename = async (source, destination, ...args) => {
+      if (
+        path.resolve(source) === outputDirectory &&
+        destination.startsWith(`${outputDirectory}.backup-`)
+      ) {
+        backupDirectory = destination;
+      }
+      const result = await originalRename(source, destination, ...args);
+      if (
+        !injected &&
+        path.resolve(destination) === outputDirectory &&
+        path.basename(source).startsWith('.zenn-')
+      ) {
+        injected = true;
+        await originalRename(destination, displacedInstalled);
+        await fs.ensureDir(destination);
+        await fs.writeFile(path.join(destination, 'unrelated.txt'), 'replacement output data\n');
+      }
+      return result;
+    };
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /rollback retained paths for manual recovery/
+      );
+    } finally {
+      fs.rename = originalRename;
+    }
+    assert.strictEqual(injected, true);
+    assert.ok(backupDirectory);
+    assert.strictEqual(
+      await fs.readFile(path.join(outputDirectory, 'unrelated.txt'), 'utf8'),
+      'replacement output data\n'
+    );
+    assert.strictEqual(
+      await fs.pathExists(path.join(displacedInstalled, 'manifest.json')),
+      true
+    );
+    assert.strictEqual(
+      await fs.pathExists(path.join(backupDirectory, 'manifest.json')),
       true
     );
   });
