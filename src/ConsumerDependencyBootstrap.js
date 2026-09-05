@@ -448,7 +448,7 @@ function isLegacyMutationHelpInvocation(args = process.argv.slice(2)) {
 
 function legacyMutationHelpText(command) {
   const common = [
-    `Usage: book-formatter ${command} --plan <path> [options]`,
+    `Usage: node src/index.js ${command} --plan <path> [options]`,
     '',
     'Required:',
     '  --plan <path>          Audited finite consumer mutation plan',

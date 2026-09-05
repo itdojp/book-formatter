@@ -162,6 +162,10 @@ describe('ConsumerDependencyBootstrap', () => {
     );
     assert.strictEqual(isLegacyMutationInvocation(['build']), false);
     assert.strictEqual(isLegacyMutationInvocation(['--help']), false);
+    assert.match(
+      legacyMutationHelpText('rollout-ux'),
+      /^Usage: node src\/index\.js rollout-ux --plan <path> \[options\]/
+    );
     assert.match(legacyMutationHelpText('rollout-ux'), /-r, --registry <path>/);
     assert.strictEqual(isNpmLifecycleInvocation({}), false);
     assert.strictEqual(isNpmLifecycleInvocation({ npm_lifecycle_event: 'start' }), true);
@@ -233,7 +237,11 @@ describe('ConsumerDependencyBootstrap', () => {
     );
     assert.doesNotMatch(bootstrap, /NODE_TEST_CONTEXT|establishFreshDependencyRuntimeFromFd/);
     assert.strictEqual(packageJson.scripts.start, 'node src/npm-compatibility-cli.js');
-    assert.strictEqual(packageJson.scripts.dev, 'node src/npm-compatibility-cli.js');
+    assert.strictEqual(packageJson.scripts.dev, 'node src/npm-compatibility-cli.js --watch');
+    assert.ok(
+      npmCompatibilityEntrypoint.indexOf('LEGACY_MUTATION_COMMANDS.has(command)')
+      < npmCompatibilityEntrypoint.indexOf('new URL(\'./index.js\', import.meta.url)')
+    );
     assert.ok(
       npmCompatibilityEntrypoint.indexOf('LEGACY_MUTATION_COMMANDS.has(command)')
       < npmCompatibilityEntrypoint.indexOf('import(\'./index.js\')')
@@ -284,6 +292,20 @@ describe('ConsumerDependencyBootstrap', () => {
         /npm lifecycle scripts do not expose legacy consumer mutation commands/
       );
     }
+  });
+
+  test('launcher error context distinguishes bootstrap from ordinary CLI failures', async () => {
+    const launcher = await fs.readFile(path.join(REPOSITORY_ROOT, 'src', 'index.js'), 'utf8');
+    assert.match(launcher, /failureContext = 'Book formatter CLI failed'/);
+    assert.match(launcher, /failureContext = 'Legacy consumer bootstrap failed'/);
+    assert.ok(
+      launcher.indexOf('failureContext = \'Legacy consumer bootstrap failed\'')
+      < launcher.indexOf('runFreshDependencyBootstrap(args)')
+    );
+    assert.ok(
+      launcher.indexOf('runFreshDependencyBootstrap(args)')
+      < launcher.lastIndexOf('failureContext = \'Book formatter CLI failed\'')
+    );
   });
 
   test('plan operationと固定formatter SHAをbuilt-in bootstrapで読む', async () => {
