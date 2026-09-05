@@ -142,11 +142,15 @@ describe('ZennAdapter', () => {
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow.png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow).png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow name.png'), image);
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/a&b.png'), image);
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/a(b).png'), image);
     await appendWorkflow(
       bookDirectory,
       '\n![処理フロー](../assets/figures/flow.png)\n' +
         '![記号付き](../assets/figures/flow%29.png)\n' +
         '![空白付き](../assets/figures/flow%20name.png)\n' +
+        '![entity](../assets/figures/a&amp;b.png)\n' +
+        '![escaped path](../assets/figures/a\\(b\\).png)\n' +
         '![a\\]b](../assets/figures/flow.png)\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
         '`![inline example](../assets/missing.png)`\n' +
@@ -173,6 +177,14 @@ describe('ZennAdapter', () => {
     assert.match(
       workflow,
       /!\[空白付き\]\(\/images\/standard-book-example\/figures\/flow%20name\.png\)/u
+    );
+    assert.match(
+      workflow,
+      /!\[entity\]\(\/images\/standard-book-example\/figures\/a%26b\.png\)/u
+    );
+    assert.match(
+      workflow,
+      /!\[escaped path\]\(\/images\/standard-book-example\/figures\/a%28b%29\.png\)/u
     );
     assert.ok(
       workflow.includes('![a\\]b](/images/standard-book-example/figures/flow.png)')

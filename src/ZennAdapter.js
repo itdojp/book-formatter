@@ -542,7 +542,8 @@ function selectParsedInlineImages(segment, sourcePath) {
     const tokens = parsedInlineImages(candidate.source);
     return {
       ...candidate,
-      key: tokens.length === 1 ? imageTokenKey(tokens[0]) : null
+      key: tokens.length === 1 ? imageTokenKey(tokens[0]) : null,
+      parsedDestination: tokens.length === 1 ? tokens[0].attrGet('src') : null
     };
   });
   const earliest = [];
@@ -601,17 +602,18 @@ async function convertImagesAndAudit(source, {
     let cursor = 0;
     for (const imageSyntax of selectParsedInlineImages(parsedSegment, sourcePath)) {
       rebuilt += segment.slice(cursor, imageSyntax.start);
-      const destination = segment
+      const sourceDestination = segment
         .slice(imageSyntax.destinationStart, imageSyntax.destinationEnd)
         .trim();
-      if (!destination) {
+      if (!sourceDestination || !imageSyntax.parsedDestination) {
         throw new ZennAdapterError(
           `Zenn source image must have a non-empty destination: ${sourcePath}`
         );
       }
-      if (/\s/u.test(destination)) {
+      if (/\s/u.test(sourceDestination)) {
         throw new ZennAdapterError(`Image titles or whitespace paths are not supported in ${sourcePath}`);
       }
+      const destination = imageSyntax.parsedDestination;
       const image = await requireZennImage(bookRoot, assetRoot, sourcePath, destination);
       const outputRelative = path.posix.join(
         'images',
