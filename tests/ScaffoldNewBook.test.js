@@ -90,12 +90,15 @@ function installMockGh(root) {
     '  echo "gh host is not pinned to github.com" >&2',
     '  exit 92',
     'fi',
-    'for name in GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do',
+    'for name in GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; do',
     '  if [ -n "${!name:-}" ]; then echo "git config injection remains: $name" >&2; exit 93; fi',
     'done',
     'while IFS= read -r name; do',
     '  case "$name" in GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*) echo "git config injection remains: $name" >&2; exit 93 ;; esac',
     'done < <(compgen -e)',
+    'test "${GIT_CONFIG_GLOBAL:-}" = /dev/null',
+    'test "${GIT_CONFIG_SYSTEM:-}" = /dev/null',
+    'test "${GIT_CONFIG_NOSYSTEM:-}" = 1',
     '',
     'printf \'%q \' "$@" >> "$GH_MOCK_LOG"',
     'printf \'\\n\' >> "$GH_MOCK_LOG"',
@@ -173,6 +176,9 @@ function installMockGh(root) {
     '    remote_name="$full_name"',
     '    if [ "$mode" = wrong-origin ]; then remote_name=other/repository; fi',
     '    git -C "$source_path" remote add origin "https://github.com/$remote_name.git"',
+    '    effective_push_url="$(git -C "$source_path" remote get-url --push origin)"',
+    '    test "$effective_push_url" = "https://github.com/$remote_name.git"',
+    '    printf \'push-url=%s\\n\' "$effective_push_url" >> "$GH_MOCK_EVIDENCE"',
     '    if [ "$mode" = create-fail ]; then',
     '      echo \'synthetic create/push failure\' >&2',
     '      exit 42',
@@ -304,6 +310,29 @@ test('option-like relative output names remain literal paths', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(existsSync(output), true);
   assert.equal(existsSync(path.join(output, 'docs/_config.yml')), true);
+});
+
+test('CDPATH cannot redirect or corrupt a relative output parent', () => {
+  const root = makeTemporaryRoot('cdpath-output');
+  const callerOutputs = path.join(root, 'caller', 'outputs');
+  const alternateRoot = path.join(root, 'alternate');
+  const alternateOutputs = path.join(alternateRoot, 'outputs');
+  mkdirSync(callerOutputs);
+  mkdirSync(alternateRoot);
+  mkdirSync(alternateOutputs);
+
+  const result = runScaffold(
+    root,
+    ['itdojp', 'sample-book', '--output', 'outputs/sample-book'],
+    { extraEnv: { CDPATH: alternateRoot } },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    existsSync(path.join(callerOutputs, 'sample-book', 'docs/_config.yml')),
+    true,
+  );
+  assert.equal(existsSync(path.join(alternateOutputs, 'sample-book')), false);
 });
 
 test('existing output objects are rejected without mutation', async (t) => {
@@ -494,6 +523,32 @@ test('--create pins every gh operation to github.com despite caller GH_HOST', ()
   assert.match(calls[2], /^repo create itdojp\/sample-book /);
 });
 
+test('--create reads user identity before isolating ordinary Git config', () => {
+  const root = makeTemporaryRoot('global-identity');
+  const output = path.join(root, 'outputs', 'sample-book');
+  const customHome = path.join(root, 'home');
+  mkdirSync(customHome);
+  writeFileSync(
+    path.join(customHome, '.gitconfig'),
+    '[user]\n' +
+      '\tname = Global Scaffold Author\n' +
+      '\temail = global-author@example.invalid\n',
+  );
+
+  const result = runScaffold(
+    root,
+    ['itdojp', 'sample-book', '--output', output, '--create'],
+    { author: false, extraEnv: { HOME: customHome } },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(git(output, 'log', '-1', '--pretty=%an'), 'Global Scaffold Author');
+  assert.equal(
+    git(output, 'log', '-1', '--pretty=%ae'),
+    'global-author@example.invalid',
+  );
+});
+
 test('--create tracks the complete scaffold despite caller global ignores', () => {
   const root = makeTemporaryRoot('global-ignore');
   const output = path.join(root, 'outputs', 'sample-book');
@@ -502,7 +557,12 @@ test('--create tracks the complete scaffold despite caller global ignores', () =
   mkdirSync(customHome);
   const globalConfig = path.join(customHome, '.gitconfig');
   writeFileSync(excludes, '*\n');
-  writeFileSync(globalConfig, `[core]\n\texcludesFile = ${excludes}\n`);
+  writeFileSync(
+    globalConfig,
+    `[core]\n\texcludesFile = ${excludes}\n` +
+      '[remote "origin"]\n' +
+      '\tpushurl = https://enterprise.example.invalid/redirect.git\n',
+  );
 
   const result = runScaffold(
     root,
@@ -519,6 +579,10 @@ test('--create tracks the complete scaffold despite caller global ignores', () =
   assert.ok(trackedFiles.includes('docs/_config.yml'));
   assert.ok(trackedFiles.includes('docs/index.md'));
   assert.ok(trackedFiles.includes('.github/workflows/book-qa.yml'));
+  assert.match(
+    readFileSync(result.evidence, 'utf8'),
+    /push-url=https:\/\/github\.com\/itdojp\/sample-book\.git/,
+  );
 });
 
 test('--create preflight failures do not create a local destination', async (t) => {

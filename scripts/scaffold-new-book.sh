@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # shellcheck source=./lib.sh
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 usage() {
@@ -83,7 +83,7 @@ fi
 if [ ! -d "$OUTPUT_PARENT_INPUT" ]; then
   die "Output parent must already be a directory: $OUTPUT_PARENT_INPUT"
 fi
-OUTPUT_PARENT="$(cd "$OUTPUT_PARENT_INPUT" && pwd -P)"
+OUTPUT_PARENT="$(CDPATH='' cd -- "$OUTPUT_PARENT_INPUT" && pwd -P)"
 OUTPUT="$OUTPUT_PARENT/$OUTPUT_NAME"
 
 if [ -e "$OUTPUT" ] || [ -L "$OUTPUT" ]; then
@@ -119,28 +119,33 @@ run_without_git_routing() (
   "$@"
 )
 
-run_git() {
+run_without_external_git_config() (
+  # Keep repository-local configuration available, but prevent an ordinary
+  # user/system config from rewriting the publication push destination.
+  export GIT_CONFIG_GLOBAL=/dev/null
+  export GIT_CONFIG_SYSTEM=/dev/null
+  export GIT_CONFIG_NOSYSTEM=1
+  "$@"
+)
+
+run_git_with_user_config() {
   run_without_git_routing git "$@"
+}
+
+run_git() {
+  run_without_git_routing run_without_external_git_config git "$@"
 }
 
 run_github_com_gh() {
   # A caller-level GH_HOST must not redirect a public repository operation to
   # an identically named owner on a GitHub Enterprise host.
-  run_without_git_routing env GH_HOST=github.com gh "$@"
+  run_without_git_routing \
+    run_without_external_git_config env GH_HOST=github.com gh "$@"
 }
 
 git_owner_repo_without_routing() {
-  (
-    unset \
-      GIT_DIR \
-      GIT_WORK_TREE \
-      GIT_INDEX_FILE \
-      GIT_OBJECT_DIRECTORY \
-      GIT_ALTERNATE_OBJECT_DIRECTORIES \
-      GIT_COMMON_DIR \
-      GIT_NAMESPACE
-    git_owner_repo_from_remote "$1"
-  )
+  run_without_git_routing \
+    run_without_external_git_config git_owner_repo_from_remote "$1"
 }
 
 GIT_IDENTITY_NAME=""
@@ -152,10 +157,10 @@ if [ "$CREATE" -eq 1 ]; then
   GIT_IDENTITY_NAME="${GIT_AUTHOR_NAME:-}"
   GIT_IDENTITY_EMAIL="${GIT_AUTHOR_EMAIL:-}"
   if [ -z "$GIT_IDENTITY_NAME" ]; then
-    GIT_IDENTITY_NAME="$(run_git -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.name 2>/dev/null || true)"
+    GIT_IDENTITY_NAME="$(run_git_with_user_config -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.name 2>/dev/null || true)"
   fi
   if [ -z "$GIT_IDENTITY_EMAIL" ]; then
-    GIT_IDENTITY_EMAIL="$(run_git -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.email 2>/dev/null || true)"
+    GIT_IDENTITY_EMAIL="$(run_git_with_user_config -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.email 2>/dev/null || true)"
   fi
   if [ -z "$GIT_IDENTITY_NAME" ] || [ -z "$GIT_IDENTITY_EMAIL" ]; then
     die "--create requires a configured Git author name and email"
