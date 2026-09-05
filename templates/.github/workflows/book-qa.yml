@@ -9,7 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pages: read
 
     steps:
       - name: Checkout book
@@ -75,9 +74,6 @@ jobs:
           name: markdown-structure-report
           path: ${{ runner.temp }}/markdown-structure-report.json
           if-no-files-found: ignore
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v6
 
       - name: Build (Jekyll; GitHub Pages compatible)
         uses: actions/jekyll-build-pages@v1

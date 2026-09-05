@@ -310,6 +310,12 @@ test('local scaffold persists and preserves the finite starter/shared mapping', 
   );
   assert.match(navWorkflow, /GITHUB_REPOSITORY_OWNER/);
   assert.doesNotMatch(navWorkflow, /itdojp\.github\.io/);
+  const bookQaWorkflow = readFileSync(
+    path.join(output, '.github/workflows/book-qa.yml'),
+    'utf8',
+  );
+  assert.match(bookQaWorkflow, /actions\/jekyll-build-pages@v1/);
+  assert.doesNotMatch(bookQaWorkflow, /configure-pages|\bpages:\s*(?:read|write)/);
   const pullRequestTemplate = readFileSync(
     path.join(output, '.github/PULL_REQUEST_TEMPLATE.md'),
     'utf8',
