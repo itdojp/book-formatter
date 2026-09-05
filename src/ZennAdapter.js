@@ -46,10 +46,13 @@ function flattenStructure(metadata) {
 
 function collectTokens(tokens, inheritedLine = 1) {
   const collected = [];
+  let currentLine = inheritedLine;
   for (const token of tokens) {
-    const line = token.map ? token.map[0] + 1 : inheritedLine;
+    const line = token.map ? token.map[0] + 1 : currentLine;
+    currentLine = line;
     collected.push({ token, line });
     if (token.children) collected.push(...collectTokens(token.children, line));
+    if (token.type === 'softbreak' || token.type === 'hardbreak') currentLine += 1;
   }
   return collected;
 }

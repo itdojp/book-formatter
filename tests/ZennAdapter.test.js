@@ -306,6 +306,21 @@ describe('ZennAdapter', () => {
     assert.strictEqual(await fs.readFile(path.join(outputDirectory, 'keep.txt'), 'utf8'), 'owner data\n');
   });
 
+  test('複数行paragraphのrelative link warningは各物理行を保持する', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-multiline-warning-');
+    await appendWorkflow(
+      bookDirectory,
+      '\n警告位置の確認です。\n次の[リンク](../first.md)です。\n別の[リンク](../second.md)です。\n'
+    );
+
+    const result = await build(bookDirectory, outputRoot);
+    const warnings = result.manifest.adapter.warnings.filter(
+      (warning) => warning.code === 'relative_link_passthrough'
+    );
+    assert.deepStrictEqual(warnings.map((warning) => warning.line), [14, 47, 48]);
+  });
+
   test('source Front Matter、不正h1、protocol-relative linkをfail closedで拒否する', async () => {
     const frontMatterBook = await copySampleBook();
     await fs.writeFile(
