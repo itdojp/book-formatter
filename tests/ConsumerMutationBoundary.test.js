@@ -1049,7 +1049,9 @@ describe('ConsumerMutationBoundary transaction', () => {
   });
 
   test('rollbackは欠落した親directoryを再作成し大きなtracked blobを復元する', async () => {
-    const largeContent = Buffer.alloc(2 * 1024 * 1024, 0x61);
+    // Exceed the buffered Git-output ceiling to prove rollback streams blobs
+    // instead of merely moving the execFileSync limit.
+    const largeContent = Buffer.alloc((64 * 1024 * 1024) + 1, 0x61);
     const relativePath = 'managed/nested/large.bin';
     const fixture = await createLinkedConsumer(tempDir, {
       files: { [relativePath]: largeContent }

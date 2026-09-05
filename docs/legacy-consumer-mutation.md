@@ -32,6 +32,11 @@ boundaryも、実bootstrapが返した同じprocess capabilityがなければfai
 capabilityはplanのraw bytesと正規化した意味内容に拘束され、transactionはcaller-owned objectを
 継続利用せず、attested bytesから作ったimmutable snapshotだけを使用します。
 
+rollbackは監査済みGit blobを固定長のchild-process出力bufferへ保持せず、同一filesystem上の
+排他的な一時fileへ直接materializeし、Git object digestを再検証してから置換します。mutationが
+tracked fileの親directoryを削除していても、各階層をsymlink/non-directory検査しながら1段ずつ
+再作成します。`git clean`はquiet modeで実行し、削除対象件数に比例する標準出力を蓄積しません。
+
 mutation commandに`npm start`を使用してはいけません。npm lifecycleはlauncherより前に
 既存`node_modules/.bin`を`PATH`へ追加し、project npm設定を読むためです。監査済みNode.js
 executableで`node src/index.js ...`を直接実行します。`npm start` / `npm run dev`は専用の
@@ -41,11 +46,13 @@ executableで`node src/index.js ...`を直接実行します。`npm start` / `np
 mutation手順でnpm自体を起動してはいけません。
 
 programmatic利用では、built-in-onlyの`ConsumerDependencyBootstrap.js`から
-`loadFreshLegacyMutationApi(args)`を呼び、その返却値に含まれるmoduleと
-`loadConsumerMutationPlan()`でattested bytesから読み直したplan、および
-`freshDependencyAttestation`だけを使用します。`BookGenerator.js`、`UxRollout.js`、
-`ConsumerMutationBoundary.js`の直接importはbootstrap entrypointではなく、fresh dependency
-保証を提供しません。plain objectをcapabilityとして渡してもmutation boundaryは拒否します。
+`runFreshLegacyMutationProcess(args)`を呼びます。この関数は固定された`src/index.js`を専用の
+Node.js child processで起動し、parent processのmodule cacheを共有しません。返却値は終了statusと
+標準出力・標準エラーだけで、module constructorやin-process capabilityを返しません。
+`loadFreshLegacyMutationApi()`はfail closedであり、同一process内のmodule cacheをfresh runtimeとして
+再利用しません。`BookGenerator.js`、`UxRollout.js`、`ConsumerMutationBoundary.js`の直接importは
+bootstrap entrypointではなく、fresh dependency保証を提供しません。plain objectをcapabilityとして
+渡してもmutation boundaryは拒否します。
 
 dependency再構成にはregistry accessが必要です。offline、DNS、proxy、registry rate limit、
 integrity mismatchなどで`npm ci`が失敗した場合、launcherはpartial `node_modules/`を削除し、

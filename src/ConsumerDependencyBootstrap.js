@@ -782,24 +782,61 @@ function runFreshDependencyBootstrap(args, options = {}) {
   return currentRuntimeAttestation;
 }
 
-async function loadFreshLegacyMutationApi(args) {
-  const freshDependencyAttestation = runFreshDependencyBootstrap(args);
-  const [
-    { BookGenerator },
-    { ConsumerMutationBoundary, loadConsumerMutationPlan },
-    { UxRollout }
-  ] = await Promise.all([
-    import('./BookGenerator.js'),
-    import('./ConsumerMutationBoundary.js'),
-    import('./UxRollout.js')
-  ]);
+function runFreshLegacyMutationProcess(args, options = {}) {
+  if (!Array.isArray(args) || !isLegacyMutationInvocation(args)) {
+    throw new ConsumerDependencyBootstrapError(
+      'Programmatic legacy mutation requires a supported mutation command'
+    );
+  }
+  const repositoryRoot = resolveRepositoryRoot(options.repositoryRoot || MODULE_ROOT);
+  if (path.resolve(options.cwd || process.cwd()) !== repositoryRoot) {
+    throw new ConsumerDependencyBootstrapError(
+      `Programmatic legacy mutation must run from the formatter root: ${repositoryRoot}`
+    );
+  }
+  const plan = readBootstrapPlan(args, repositoryRoot);
+  // The parent may already have imported formatter modules or dependencies.
+  // It only verifies built-in inputs and starts a dedicated process; the child
+  // performs the install and imports the mutation runtime with an empty cache.
+  verifyBootstrapInputs(repositoryRoot, plan.formatterSha);
+  const stdio = options.stdio || 'pipe';
+  if (!['inherit', 'pipe'].includes(stdio)) {
+    throw new ConsumerDependencyBootstrapError(
+      'Programmatic legacy mutation stdio must be inherit or pipe'
+    );
+  }
+  const child = spawnSync(
+    process.execPath,
+    [path.join(repositoryRoot, 'src', 'index.js'), ...args],
+    {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      env: safeEnvironment(),
+      maxBuffer: MAX_GIT_OUTPUT,
+      stdio
+    }
+  );
+  if (child.error || child.status !== 0) {
+    const detail = String(child.stderr || child.error?.message || '').trim();
+    throw new ConsumerDependencyBootstrapError(
+      `Fresh legacy mutation child failed with status ${child.status ?? 'unknown'}`
+      + `${detail ? `: ${detail}` : ''}`,
+      { cause: child.error }
+    );
+  }
   return Object.freeze({
-    BookGenerator,
-    ConsumerMutationBoundary,
-    UxRollout,
-    loadConsumerMutationPlan,
-    freshDependencyAttestation
+    status: child.status,
+    signal: child.signal,
+    stdout: child.stdout || '',
+    stderr: child.stderr || ''
   });
+}
+
+function loadFreshLegacyMutationApi() {
+  throw new ConsumerDependencyBootstrapError(
+    'In-process legacy mutation API loading is not supported; '
+    + 'use runFreshLegacyMutationProcess()'
+  );
 }
 
 export {
@@ -814,6 +851,7 @@ export {
   loadFreshLegacyMutationApi,
   readBootstrapPlan,
   rebuildFreshDependencies,
+  runFreshLegacyMutationProcess,
   runFreshDependencyBootstrap,
   safeEnvironment,
   verifyBootstrapInputs

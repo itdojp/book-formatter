@@ -120,7 +120,11 @@ function gitOutput(repoRoot, args, options = {}) {
       encoding: options.encoding || 'utf8',
       input: options.input,
       maxBuffer: MAX_GIT_OUTPUT,
-      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      stdio: [
+        options.input === undefined ? 'ignore' : 'pipe',
+        options.ignoreStdout ? 'ignore' : 'pipe',
+        'pipe'
+      ],
       env: bootstrapSafeEnvironment({
         GIT_NO_REPLACE_OBJECTS: '1',
         GIT_OPTIONAL_LOCKS: '0'
@@ -134,6 +138,73 @@ function gitOutput(repoRoot, args, options = {}) {
       `git ${args.join(' ')} failed for ${repoRoot}: ${detail}`,
       { cause: error }
     );
+  }
+}
+
+function hashFileAsGitBlob(filePath, algorithm) {
+  const stat = fs.lstatSync(filePath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new ConsumerMutationError(`Rollback temporary blob is not a regular file: ${filePath}`);
+  }
+  const hash = crypto
+    .createHash(algorithm)
+    .update(Buffer.from(`blob ${stat.size}\0`));
+  const fileDescriptor = fs.openSync(filePath, 'r');
+  const chunk = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(fileDescriptor, chunk, 0, chunk.length, null);
+      if (bytesRead > 0) hash.update(chunk.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    fs.closeSync(fileDescriptor);
+  }
+  return hash.digest('hex');
+}
+
+function materializeGitBlobToTemporaryFile(repoRoot, entry, parent, algorithm) {
+  const temporaryPath = path.join(
+    parent,
+    `.book-formatter-rollback-${process.pid}-${crypto.randomBytes(16).toString('hex')}`
+  );
+  let fileDescriptor;
+  try {
+    fileDescriptor = fs.openSync(temporaryPath, 'wx', 0o600);
+    const result = spawnSync(
+      'git',
+      [...AUDITED_GIT_OPTIONS, '-C', repoRoot, 'cat-file', 'blob', entry.expectedHash],
+      {
+        env: bootstrapSafeEnvironment({
+          GIT_NO_REPLACE_OBJECTS: '1',
+          GIT_OPTIONAL_LOCKS: '0'
+        }),
+        maxBuffer: MAX_GIT_OUTPUT,
+        stdio: ['ignore', fileDescriptor, 'pipe']
+      }
+    );
+    fs.fsyncSync(fileDescriptor);
+    fs.closeSync(fileDescriptor);
+    fileDescriptor = undefined;
+    if (result.error || result.status !== 0) {
+      const detail = Buffer.isBuffer(result.stderr)
+        ? result.stderr.toString('utf8').trim()
+        : String(result.stderr || result.error?.message || '').trim();
+      throw new ConsumerMutationError(
+        `git cat-file blob failed for ${repoRoot}: ${detail || `status ${result.status}`}`,
+        { cause: result.error }
+      );
+    }
+    if (hashFileAsGitBlob(temporaryPath, algorithm) !== entry.expectedHash) {
+      throw new ConsumerMutationError(
+        `Rollback Git blob digest mismatch: ${entry.relativePath}`
+      );
+    }
+    return temporaryPath;
+  } catch (error) {
+    if (fileDescriptor !== undefined) fs.closeSync(fileDescriptor);
+    fs.rmSync(temporaryPath, { force: true });
+    throw error;
   }
 }
 
@@ -283,6 +354,10 @@ function rawTrackedDifferences(repoRoot, revision) {
 
 function restoreRawTrackedFiles(repoRoot, revision, relativePaths) {
   if (relativePaths.length === 0) return;
+  const algorithm = gitOutput(repoRoot, ['rev-parse', '--show-object-format']).trim();
+  if (!['sha1', 'sha256'].includes(algorithm)) {
+    throw new ConsumerMutationError(`Unsupported Git object format: ${algorithm}`);
+  }
   const entries = new Map(
     trackedTreeEntries(repoRoot, revision)
       .filter(({ type }) => type === 'blob')
@@ -295,11 +370,6 @@ function restoreRawTrackedFiles(repoRoot, revision, relativePaths) {
       throw new ConsumerMutationError(`Rollback path is not a tracked blob: ${relativePath}`);
     }
     const absolutePath = path.join(repoRoot, relativePath);
-    const content = gitOutput(
-      repoRoot,
-      ['cat-file', 'blob', entry.expectedHash],
-      { encoding: 'buffer' }
-    );
 
     let parent = repoRoot;
     for (const segment of relativePath.split('/').slice(0, -1)) {
@@ -322,14 +392,27 @@ function restoreRawTrackedFiles(repoRoot, revision, relativePaths) {
       }
     }
 
+    const temporaryPath = materializeGitBlobToTemporaryFile(
+      repoRoot,
+      entry,
+      parent,
+      algorithm
+    );
+
     // Unlink first so a hostile hard link cannot propagate writes outside the
     // consumer. Materialize the audited blob without checkout/smudge filters.
-    fs.rmSync(absolutePath, { force: true, recursive: true });
-    if (entry.mode === '120000') {
-      fs.symlinkSync(content, absolutePath);
-    } else {
-      fs.writeFileSync(absolutePath, content);
-      fs.chmodSync(absolutePath, entry.mode === '100755' ? 0o755 : 0o644);
+    try {
+      fs.rmSync(absolutePath, { force: true, recursive: true });
+      if (entry.mode === '120000') {
+        const target = fs.readFileSync(temporaryPath);
+        fs.rmSync(temporaryPath, { force: true });
+        fs.symlinkSync(target, absolutePath);
+      } else {
+        fs.chmodSync(temporaryPath, entry.mode === '100755' ? 0o755 : 0o644);
+        fs.renameSync(temporaryPath, absolutePath);
+      }
+    } finally {
+      fs.rmSync(temporaryPath, { force: true });
     }
   }
 }
@@ -921,7 +1004,7 @@ class ConsumerMutationBoundary {
     // raw blobs directly below.
     gitOutput(consumerRoot, ['reset', '--soft', baseSha]);
     gitOutput(consumerRoot, ['read-tree', '--reset', baseSha]);
-    gitOutput(consumerRoot, ['clean', '-fdx', '--']);
+    gitOutput(consumerRoot, ['clean', '-fdx', '-q', '--'], { ignoreStdout: true });
     restoreRawTrackedFiles(
       consumerRoot,
       baseSha,

@@ -8,8 +8,10 @@ import {
   isLegacyMutationInvocation,
   isNpmLifecycleInvocation,
   legacyMutationHelpText,
+  loadFreshLegacyMutationApi,
   readBootstrapPlan,
   rebuildFreshDependencies,
+  runFreshLegacyMutationProcess,
   runFreshDependencyBootstrap,
   safeEnvironment,
   verifyBootstrapInputs
@@ -73,6 +75,28 @@ async function createFixture(tempRoot, { invalidLock = false } = {}) {
       ''
     ].join('\n')
   );
+  await fs.ensureDir(path.join(repositoryRoot, 'src'));
+  await fs.copyFile(
+    path.join(REPOSITORY_ROOT, 'src', 'ConsumerDependencyBootstrap.js'),
+    path.join(repositoryRoot, 'src', 'ConsumerDependencyBootstrap.js')
+  );
+  await fs.copyFile(
+    path.join(REPOSITORY_ROOT, 'src', 'index.js'),
+    path.join(repositoryRoot, 'src', 'index.js')
+  );
+  await fs.writeFile(
+    path.join(repositoryRoot, 'src', 'cli-implementation.js'),
+    [
+      'import fs from "node:fs";',
+      'import path from "node:path";',
+      'import { assertFreshDependencyRuntimePresent } from "./ConsumerDependencyBootstrap.js";',
+      'assertFreshDependencyRuntimePresent(process.cwd());',
+      'const dependency = await import("fs-extra");',
+      'fs.writeFileSync(path.join(process.cwd(), "runtime-output.json"),',
+      '  JSON.stringify({ identity: dependency.identity }));',
+      ''
+    ].join('\n')
+  );
   await fs.writeFile(
     path.join(repositoryRoot, '.gitignore'),
     [
@@ -133,7 +157,8 @@ async function installMaliciousDependency(repositoryRoot) {
     path.join(dependencyRoot, 'index.js'),
     [
       'import fs from "node:fs";',
-      'fs.writeFileSync("malicious-import-marker", "executed");',
+      'import { fileURLToPath } from "node:url";',
+      'fs.writeFileSync(fileURLToPath(new URL("../../malicious-import-marker", import.meta.url)), "executed");',
       'export const identity = "modified-ignored-dependency";',
       ''
     ].join('\n')
@@ -231,6 +256,9 @@ describe('ConsumerDependencyBootstrap', () => {
       [...bootstrap.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)]
         .every((match) => match[1].startsWith('./'))
     );
+    assert.match(bootstrap, /runFreshLegacyMutationProcess/);
+    assert.match(bootstrap, /In-process legacy mutation API loading is not supported/);
+    assert.doesNotMatch(bootstrap, /Promise\.all\(\[\s*import\('\.\/BookGenerator\.js'/);
     assert.ok(
       implementation.indexOf('assertFreshDependencyRuntimePresent(process.cwd())')
       < implementation.indexOf('import(\'commander\')')
@@ -532,6 +560,48 @@ describe('ConsumerDependencyBootstrap', () => {
       (await fs.readdir(fixture.repositoryRoot))
         .filter((name) => name.startsWith('.book-formatter-bootstrap-')),
       []
+    );
+  });
+
+  test('programmatic mutationはpreloaded module cacheを共有しないchildで実行する', async () => {
+    const fixture = await createFixture(tempRoot);
+    await installMaliciousDependency(fixture.repositoryRoot);
+    const dependencyUrl = pathToFileURL(path.join(
+      fixture.repositoryRoot,
+      'node_modules',
+      'fs-extra',
+      'index.js'
+    )).href;
+    const preloaded = await import(dependencyUrl);
+    assert.strictEqual(preloaded.identity, 'modified-ignored-dependency');
+    await fs.remove(path.join(fixture.repositoryRoot, 'malicious-import-marker'));
+
+    assert.throws(
+      () => loadFreshLegacyMutationApi(),
+      /In-process legacy mutation API loading is not supported/
+    );
+
+    const result = runFreshLegacyMutationProcess(
+      ['update-book', '--plan', fixture.planPath, '--dry-run'],
+      {
+        repositoryRoot: fixture.repositoryRoot,
+        cwd: fixture.repositoryRoot,
+        stdio: 'pipe'
+      }
+    );
+
+    assert.strictEqual(result.status, 0);
+    assert.deepStrictEqual(
+      await fs.readJson(path.join(fixture.repositoryRoot, 'runtime-output.json')),
+      { identity: 'fresh-lockfile-install' }
+    );
+    assert.strictEqual(
+      await fs.pathExists(path.join(fixture.repositoryRoot, 'malicious-import-marker')),
+      false
+    );
+    assert.strictEqual(
+      await fs.pathExists(path.join(fixture.repositoryRoot, 'install-script-marker')),
+      false
     );
   });
 
