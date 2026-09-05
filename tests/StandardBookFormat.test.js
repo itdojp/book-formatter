@@ -153,6 +153,15 @@ describe('StandardBookValidator', () => {
     await assert.doesNotReject(validateStandardBook(bookDirectory));
   });
 
+  test('targetsは後方互換なoptional extensionとして扱う', async () => {
+    const bookDirectory = await copySampleBook();
+    await updateMetadata(bookDirectory, (metadata) => {
+      delete metadata.targets;
+    });
+
+    await assert.doesNotReject(validateStandardBook(bookDirectory));
+  });
+
   test('book.yamlの重複keyをfail-closedで拒否する', async () => {
     const bookDirectory = await copySampleBook();
     const metadataPath = path.join(bookDirectory, 'book.yaml');
