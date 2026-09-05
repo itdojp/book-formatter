@@ -262,7 +262,7 @@ if [ "$CREATE" -eq 1 ]; then
     else
       log ERROR "The local repository is retained but its state requires inspection: $OUTPUT"
     fi
-    log ERROR "Before retrying, inspect: gh repo view $OWNER/$REPO"
+    log ERROR "Before retrying, inspect: GH_HOST=github.com gh repo view $OWNER/$REPO"
     log ERROR "Also inspect: git -C '$OUTPUT' remote -v"
     exit 1
   fi

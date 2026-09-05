@@ -522,7 +522,10 @@ test('a partial gh create failure retains the clean committed local repository',
     'https://github.com/itdojp/sample-book.git',
   );
   assert.match(result.stderr, /clean local repository is retained/);
-  assert.match(result.stderr, /gh repo view itdojp\/sample-book/);
+  assert.match(
+    result.stderr,
+    /GH_HOST=github\.com gh repo view itdojp\/sample-book/,
+  );
   assert.match(result.stderr, /git -C .* remote -v/);
   const calls = readFileSync(result.log, 'utf8').trim().split('\n');
   assert.equal(

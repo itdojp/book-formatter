@@ -223,7 +223,7 @@ GitHub repositoryの作成と初回pushまで行う場合:
 作成またはpushが途中失敗した場合、cleanなlocal repositoryは`--output`に保持されます。次を確認するまで同じ処理を再実行したり、local出力を削除したりしないでください。
 
 ```bash
-gh repo view itdojp/sample-book
+GH_HOST=github.com gh repo view itdojp/sample-book
 git -C ../generated-books/sample-book remote -v
 git -C ../generated-books/sample-book status --short --branch
 ```
