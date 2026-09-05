@@ -90,7 +90,39 @@ if [ -e "$OUTPUT" ] || [ -L "$OUTPUT" ]; then
   die "Output path already exists; refusing to overwrite: $OUTPUT"
 fi
 
-require_cmd cp mkdir sed
+require_cmd cp env mkdir sed
+
+# Do not let caller-owned repository routing variables redirect local Git or
+# the Git subprocesses started by `gh repo create` outside the new output.
+run_without_git_routing() {
+  env \
+    -u GIT_DIR \
+    -u GIT_WORK_TREE \
+    -u GIT_INDEX_FILE \
+    -u GIT_OBJECT_DIRECTORY \
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    -u GIT_COMMON_DIR \
+    -u GIT_NAMESPACE \
+    "$@"
+}
+
+run_git() {
+  run_without_git_routing git "$@"
+}
+
+git_owner_repo_without_routing() {
+  (
+    unset \
+      GIT_DIR \
+      GIT_WORK_TREE \
+      GIT_INDEX_FILE \
+      GIT_OBJECT_DIRECTORY \
+      GIT_ALTERNATE_OBJECT_DIRECTORIES \
+      GIT_COMMON_DIR \
+      GIT_NAMESPACE
+    git_owner_repo_from_remote "$1"
+  )
+}
 
 GIT_IDENTITY_NAME=""
 GIT_IDENTITY_EMAIL=""
@@ -101,10 +133,10 @@ if [ "$CREATE" -eq 1 ]; then
   GIT_IDENTITY_NAME="${GIT_AUTHOR_NAME:-}"
   GIT_IDENTITY_EMAIL="${GIT_AUTHOR_EMAIL:-}"
   if [ -z "$GIT_IDENTITY_NAME" ]; then
-    GIT_IDENTITY_NAME="$(git -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.name 2>/dev/null || true)"
+    GIT_IDENTITY_NAME="$(run_git -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.name 2>/dev/null || true)"
   fi
   if [ -z "$GIT_IDENTITY_EMAIL" ]; then
-    GIT_IDENTITY_EMAIL="$(git -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.email 2>/dev/null || true)"
+    GIT_IDENTITY_EMAIL="$(run_git -C "$BOOK_FORMATTER_REPO_ROOT" config --get user.email 2>/dev/null || true)"
   fi
   if [ -z "$GIT_IDENTITY_NAME" ] || [ -z "$GIT_IDENTITY_EMAIL" ]; then
     die "--create requires a configured Git author name and email"
@@ -192,34 +224,34 @@ fi
 LOCAL_SCAFFOLD_COMPLETE=1
 
 if [ "$CREATE" -eq 1 ]; then
-  git init --initial-branch=main "$OUTPUT" >/dev/null
-  git -C "$OUTPUT" add --all
+  run_git init --initial-branch=main "$OUTPUT" >/dev/null
+  run_git -C "$OUTPUT" add --all
   GIT_AUTHOR_NAME="$GIT_IDENTITY_NAME" \
   GIT_AUTHOR_EMAIL="$GIT_IDENTITY_EMAIL" \
   GIT_COMMITTER_NAME="$GIT_IDENTITY_NAME" \
   GIT_COMMITTER_EMAIL="$GIT_IDENTITY_EMAIL" \
-    git -C "$OUTPUT" \
+    run_git -C "$OUTPUT" \
       -c core.hooksPath=/dev/null \
       -c commit.gpgSign=false \
       commit -m "chore: initialize book scaffold" >/dev/null
 
-  if [ "$(git -C "$OUTPUT" branch --show-current)" != "main" ] || \
-     ! git -C "$OUTPUT" rev-parse --verify HEAD >/dev/null 2>&1 || \
-     [ -n "$(git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all)" ] || \
-     git -C "$OUTPUT" remote get-url origin >/dev/null 2>&1; then
+  if [ "$(run_git -C "$OUTPUT" branch --show-current)" != "main" ] || \
+     ! run_git -C "$OUTPUT" rev-parse --verify HEAD >/dev/null 2>&1 || \
+     [ -n "$(run_git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all)" ] || \
+     run_git -C "$OUTPUT" remote get-url origin >/dev/null 2>&1; then
     die "Local repository preflight failed; retained for inspection: $OUTPUT"
   fi
 
   # Repository creation is non-idempotent. Do not retry automatically: a
   # network failure can occur after the remote has already been created.
-  if ! gh repo create "$OWNER/$REPO" \
+  if ! run_without_git_routing gh repo create "$OWNER/$REPO" \
       --public \
       --source "$OUTPUT" \
       --remote origin \
       --push; then
     log ERROR "GitHub repository creation or initial push failed"
-    if [ "$(git -C "$OUTPUT" branch --show-current 2>/dev/null || true)" = "main" ] && \
-       [ -z "$(git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all 2>/dev/null || true)" ]; then
+    if [ "$(run_git -C "$OUTPUT" branch --show-current 2>/dev/null || true)" = "main" ] && \
+       [ -z "$(run_git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all 2>/dev/null || true)" ]; then
       log ERROR "The clean local repository is retained at: $OUTPUT"
     else
       log ERROR "The local repository is retained but its state requires inspection: $OUTPUT"
@@ -229,10 +261,10 @@ if [ "$CREATE" -eq 1 ]; then
     exit 1
   fi
 
-  REMOTE_OWNER_REPO="$(git_owner_repo_from_remote "$OUTPUT" 2>/dev/null || true)"
+  REMOTE_OWNER_REPO="$(git_owner_repo_without_routing "$OUTPUT" 2>/dev/null || true)"
   if [ "$REMOTE_OWNER_REPO" != "$OWNER/$REPO" ] || \
-     [ "$(git -C "$OUTPUT" branch --show-current)" != "main" ] || \
-     [ -n "$(git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all)" ]; then
+     [ "$(run_git -C "$OUTPUT" branch --show-current)" != "main" ] || \
+     [ -n "$(run_git -C "$OUTPUT" status --porcelain=v1 --untracked-files=all)" ]; then
     die "Remote command returned success but the local repository contract is incomplete: $OUTPUT"
   fi
 fi

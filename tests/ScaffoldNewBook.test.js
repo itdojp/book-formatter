@@ -180,7 +180,11 @@ function installMockGh(root) {
   return bin;
 }
 
-function runScaffold(root, args, { ghMode = '', author = true } = {}) {
+function runScaffold(
+  root,
+  args,
+  { ghMode = '', author = true, extraEnv = {} } = {},
+) {
   const log = path.join(root, 'gh.log');
   const evidence = path.join(root, 'gh-evidence.txt');
   writeFileSync(log, '');
@@ -191,6 +195,7 @@ function runScaffold(root, args, { ghMode = '', author = true } = {}) {
     GH_MOCK_LOG: log,
     GH_MOCK_EVIDENCE: evidence,
     GH_MOCK_MODE: ghMode,
+    ...extraEnv,
   };
   if (author) {
     env.GIT_AUTHOR_NAME = 'Scaffold Test';
@@ -391,6 +396,34 @@ test('--create presents one clean main commit to one mocked gh create call', () 
   assert.match(calls[1], /^api --silent repos\/itdojp\/sample-book /);
   assert.match(calls[2], /^repo create itdojp\/sample-book --public --source /);
   assert.match(calls[2], / --remote origin --push$/);
+});
+
+test('--create ignores caller-owned Git repository routing variables', () => {
+  const root = makeTemporaryRoot('git-routing');
+  const output = path.join(root, 'outputs', 'sample-book');
+  const result = runScaffold(
+    root,
+    ['itdojp', 'sample-book', '--output', output, '--create'],
+    {
+      extraEnv: {
+        GIT_DIR: path.join(root, 'decoy.git'),
+        GIT_WORK_TREE: path.join(root, 'decoy-worktree'),
+        GIT_INDEX_FILE: path.join(root, 'decoy-index'),
+        GIT_OBJECT_DIRECTORY: path.join(root, 'decoy-objects'),
+      },
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(git(output, 'branch', '--show-current'), 'main');
+  assert.equal(git(output, 'rev-list', '--count', 'HEAD'), '1');
+  assert.equal(
+    git(output, 'remote', 'get-url', 'origin'),
+    'https://github.com/itdojp/sample-book.git',
+  );
+  assert.equal(existsSync(path.join(root, 'decoy.git')), false);
+  assert.equal(existsSync(path.join(root, 'decoy-index')), false);
+  assert.equal(existsSync(path.join(root, 'decoy-objects')), false);
 });
 
 test('--create preflight failures do not create a local destination', async (t) => {
