@@ -350,7 +350,15 @@
           "maxItems": 20,
           "uniqueItems": true,
           "items": {
-            "$ref": "#/definitions/relativePath"
+            "allOf": [
+              {
+                "$ref": "#/definitions/relativePath"
+              },
+              {
+                "type": "string",
+                "pattern": "\\.[Pp][Dd][Ff]$"
+              }
+            ]
           }
         }
       }

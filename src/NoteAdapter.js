@@ -92,7 +92,8 @@ function createUniqueLabel(existingLabels, prefix, index, normalize = (value) =>
 
 function createDocumentLabelNamespace(source, documentId) {
   const environment = {};
-  SOURCE_MARKDOWN.parse(String(source), environment);
+  const normalizedSource = String(source).replace(/\r\n?/g, '\n');
+  const tokens = SOURCE_MARKDOWN.parse(normalizedSource, environment);
 
   const referenceLabels = Object.keys(environment.references || {}).sort(compareCodeUnits);
   const existingReferences = new Set(referenceLabels);
@@ -116,7 +117,16 @@ function createDocumentLabelNamespace(source, documentId) {
     createUniqueLabel(existingFootnotes, `note-${documentId}-fn`, index + 1)
   ]));
 
-  return { references, footnotes };
+  return {
+    references,
+    footnotes,
+    referenceDefinitions: collectReferenceDefinitions(
+      normalizedSource,
+      environment.references || {},
+      references
+    ),
+    footnoteDefinitions: collectFootnoteDefinitions(normalizedSource, tokens)
+  };
 }
 
 function sourceLineOffsets(source) {
@@ -147,6 +157,14 @@ function mergeProtectedRanges(ranges) {
     }
   }
   return merged;
+}
+
+function isParsedProtectedAngleSyntax(source) {
+  const children = SOURCE_MARKDOWN.parseInline(source, {})[0]?.children || [];
+  return children.some((token) =>
+    token.type === 'html_inline' ||
+    (token.type === 'link_open' && token.markup === 'autolink')
+  );
 }
 
 function collectProtectedMarkdownRanges(source) {
@@ -181,9 +199,12 @@ function collectProtectedMarkdownRanges(source) {
       const closing = source.indexOf('>', cursor + 1);
       const newline = source.indexOf('\n', cursor + 1);
       if (closing !== -1 && (newline === -1 || closing < newline)) {
-        inlineRanges.push({ start: cursor, end: closing + 1 });
-        cursor = closing + 1;
-        continue;
+        const candidate = source.slice(cursor, closing + 1);
+        if (isParsedProtectedAngleSyntax(candidate)) {
+          inlineRanges.push({ start: cursor, end: closing + 1 });
+          cursor = closing + 1;
+          continue;
+        }
       }
     }
     if (source[cursor] !== '`' || isBackslashEscaped(source, cursor)) {
@@ -267,9 +288,112 @@ function isReferenceDefinitionStart(source, opening, closing) {
   return /^ {0,3}$/u.test(source.slice(lineStart, opening));
 }
 
+function parsedReferenceDefinitionRange(lines, start, normalizedLabel, expectedReference) {
+  let limit = start + 1;
+  while (limit < lines.length && lines[limit].trim()) limit += 1;
+  for (let end = start + 1; end <= limit; end += 1) {
+    const environment = {};
+    const tokens = SOURCE_MARKDOWN.parse(`${lines.slice(start, end).join('\n')}\n`, environment);
+    const parsed = environment.references?.[normalizedLabel];
+    if (
+      tokens.length === 0 &&
+      parsed?.href === expectedReference.href &&
+      parsed?.title === expectedReference.title
+    ) return { start, end };
+  }
+  return null;
+}
+
+function escapedReferenceDestination(destination) {
+  return String(destination)
+    .replace(/</gu, '%3C')
+    .replace(/>/gu, '%3E')
+    .replace(/\\/gu, '%5C');
+}
+
+function escapedReferenceTitle(title) {
+  return String(title).replace(/\\/gu, '\\\\').replace(/"/gu, '\\"').replace(/\s+/gu, ' ');
+}
+
+function collectReferenceDefinitions(source, parsedReferences, referenceLabels) {
+  const { lines } = normalizedLines(source);
+  const definitions = new Map();
+  for (const [index, line] of lines.entries()) {
+    const opening = line.search(/\S/u);
+    if (opening < 0 || opening > 3 || line[opening] !== '[') continue;
+    const closing = findClosingBracket(line, opening);
+    if (closing === -1 || line[closing + 1] !== ':') continue;
+    const normalizedLabel = SOURCE_MARKDOWN.utils.normalizeReference(
+      line.slice(opening + 1, closing)
+    );
+    if (
+      definitions.has(normalizedLabel) ||
+      !Object.hasOwn(parsedReferences, normalizedLabel)
+    ) continue;
+    const parsed = parsedReferences[normalizedLabel];
+    const range = parsedReferenceDefinitionRange(lines, index, normalizedLabel, parsed);
+    if (!range) continue;
+    const generatedLabel = referenceLabels.get(normalizedLabel);
+    let text = `[${generatedLabel}]: <${escapedReferenceDestination(parsed.href)}>`;
+    if (parsed.title) text += ` "${escapedReferenceTitle(parsed.title)}"`;
+    definitions.set(normalizedLabel, {
+      text,
+      sourceLines: [index + 1],
+      visibilityLines: Array.from(
+        { length: range.end - range.start },
+        (_value, offset) => range.start + offset + 1
+      )
+    });
+  }
+  return definitions;
+}
+
+function collectFootnoteDefinitions(source, tokens) {
+  const { lines } = normalizedLines(source);
+  const definitions = new Map();
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== 'footnote_open' || !token.meta?.label) continue;
+    const mapped = [];
+    let cursor = index + 1;
+    for (; cursor < tokens.length && tokens[cursor].type !== 'footnote_close'; cursor += 1) {
+      if (tokens[cursor].map) mapped.push(tokens[cursor].map);
+    }
+    if (mapped.length === 0) continue;
+    const start = Math.min(...mapped.map((range) => range[0]));
+    const end = Math.max(...mapped.map((range) => range[1]));
+    definitions.set(token.meta.label, {
+      text: lines.slice(start, end).join('\n'),
+      sourceLines: Array.from({ length: end - start }, (_value, offset) => start + offset + 1),
+      visibilityLines: Array.from(
+        { length: end - start },
+        (_value, offset) => start + offset + 1
+      )
+    });
+    index = cursor;
+  }
+  return definitions;
+}
+
+function emptyLabelState() {
+  return {
+    usedReferences: new Set(),
+    definedReferences: new Set(),
+    usedFootnotes: new Set(),
+    definedFootnotes: new Set()
+  };
+}
+
+function mergeLabelState(target, source) {
+  for (const key of Object.keys(target)) {
+    for (const label of source[key]) target[key].add(label);
+  }
+}
+
 function namespaceReferenceLabels(projection, namespace) {
+  const labelState = emptyLabelState();
   if (!projection.text || (namespace.references.size === 0 && namespace.footnotes.size === 0)) {
-    return projection;
+    return { ...projection, labelState };
   }
   const source = projection.text;
   const protectedRanges = collectProtectedMarkdownRanges(source);
@@ -303,8 +427,13 @@ function namespaceReferenceLabels(projection, namespace) {
     }
     const firstLabel = source.slice(cursor + 1, firstEnd);
     if (firstLabel.startsWith('^')) {
-      const footnote = namespace.footnotes.get(firstLabel.slice(1));
+      const originalLabel = firstLabel.slice(1);
+      const footnote = namespace.footnotes.get(originalLabel);
       if (footnote) {
+        const state = isReferenceDefinitionStart(source, cursor, firstEnd)
+          ? labelState.definedFootnotes
+          : labelState.usedFootnotes;
+        state.add(originalLabel);
         addLabelReplacement(replacements, source, cursor + 2, firstEnd, footnote);
       }
       cursor = firstEnd + 1;
@@ -331,6 +460,9 @@ function namespaceReferenceLabels(projection, namespace) {
         SOURCE_MARKDOWN.utils.normalizeReference(effectiveLabel)
       );
       if (replacement) {
+        labelState.usedReferences.add(
+          SOURCE_MARKDOWN.utils.normalizeReference(effectiveLabel)
+        );
         addLabelReplacement(replacements, source, firstEnd + 2, secondEnd, replacement);
       }
       cursor = secondEnd + 1;
@@ -342,8 +474,14 @@ function namespaceReferenceLabels(projection, namespace) {
     );
     if (replacement) {
       if (isReferenceDefinitionStart(source, cursor, firstEnd)) {
+        labelState.definedReferences.add(
+          SOURCE_MARKDOWN.utils.normalizeReference(firstLabel)
+        );
         addLabelReplacement(replacements, source, cursor + 1, firstEnd, replacement);
       } else {
+        labelState.usedReferences.add(
+          SOURCE_MARKDOWN.utils.normalizeReference(firstLabel)
+        );
         addLabelReplacement(replacements, source, firstEnd + 1, firstEnd + 1, `[${replacement}]`);
       }
     }
@@ -354,7 +492,110 @@ function namespaceReferenceLabels(projection, namespace) {
   for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
     text = text.slice(0, replacement.start) + replacement.replacement + text.slice(replacement.end);
   }
-  return { text, sourceLines: projection.sourceLines };
+  return { text, sourceLines: projection.sourceLines, labelState };
+}
+
+function missingLabels(used, defined) {
+  return [...used]
+    .filter((label) => !defined.has(label))
+    .sort(compareCodeUnits);
+}
+
+function assertDefinitionVisible(definition, allowedLines, sourcePath, fragmentName, kind, label) {
+  if (!definition) {
+    throw new NoteAdapterError(
+      `note ${fragmentName} has an unresolved ${kind} definition dependency: ${sourcePath} [${label}]`
+    );
+  }
+  if (definition.visibilityLines.some((line) => !allowedLines.has(line))) {
+    throw new NoteAdapterError(
+      `note ${fragmentName} ${kind} definition is outside its visible source: ${sourcePath} [${label}]`
+    );
+  }
+}
+
+function appendProjectionBlock(projection, block) {
+  const separatorLine = block.sourceLines[0] ?? projection.sourceLines.at(-1) ?? 1;
+  return {
+    ...projection,
+    text: projection.text ? `${projection.text}\n\n${block.text}` : block.text,
+    sourceLines: projection.text
+      ? [...projection.sourceLines, separatorLine, ...block.sourceLines]
+      : [...block.sourceLines]
+  };
+}
+
+function completeDocumentReferences(
+  projection,
+  namespace,
+  allowedLines,
+  sourcePath,
+  fragmentName
+) {
+  let completed = namespaceReferenceLabels(projection, namespace);
+  const labelState = completed.labelState;
+  const appendedReferences = new Set();
+  const appendedFootnotes = new Set();
+  const maximumPasses = namespace.references.size + namespace.footnotes.size + 1;
+
+  for (let pass = 0; pass < maximumPasses; pass += 1) {
+    const references = missingLabels(
+      labelState.usedReferences,
+      labelState.definedReferences
+    );
+    const footnotes = missingLabels(labelState.usedFootnotes, labelState.definedFootnotes);
+    if (references.length === 0 && footnotes.length === 0) return completed;
+
+    let appended = false;
+    for (const label of references) {
+      const definition = namespace.referenceDefinitions.get(label);
+      assertDefinitionVisible(
+        definition,
+        allowedLines,
+        sourcePath,
+        fragmentName,
+        'reference',
+        label
+      );
+      if (appendedReferences.has(label)) {
+        throw new NoteAdapterError(
+          `note ${fragmentName} has a cyclic reference definition dependency: ${sourcePath} [${label}]`
+        );
+      }
+      completed = appendProjectionBlock(completed, definition);
+      labelState.definedReferences.add(label);
+      appendedReferences.add(label);
+      appended = true;
+    }
+
+    for (const label of footnotes) {
+      const definition = namespace.footnoteDefinitions.get(label);
+      assertDefinitionVisible(
+        definition,
+        allowedLines,
+        sourcePath,
+        fragmentName,
+        'footnote',
+        label
+      );
+      if (appendedFootnotes.has(label)) {
+        throw new NoteAdapterError(
+          `note ${fragmentName} has a cyclic footnote definition dependency: ${sourcePath} [${label}]`
+        );
+      }
+      const namespacedDefinition = namespaceReferenceLabels(definition, namespace);
+      completed = appendProjectionBlock(completed, namespacedDefinition);
+      mergeLabelState(labelState, namespacedDefinition.labelState);
+      appendedFootnotes.add(label);
+      appended = true;
+    }
+
+    if (!appended) break;
+  }
+
+  throw new NoteAdapterError(
+    `note ${fragmentName} reference completion did not converge: ${sourcePath}`
+  );
 }
 
 function escapedGeneratedTitle(title, context) {
@@ -482,7 +723,7 @@ function convertStandardCallouts(projection, sourcePath, warnings) {
   for (const [index, line] of lines.entries()) {
     const sourceLine = projection.sourceLines[index] ?? index + 1;
     if (fence) {
-      output.push(callout ? `> ${line}`.trimEnd() : line);
+      output.push(callout ? `> ${line}` : line);
       sourceLines.push(sourceLine);
       if (isStandardFenceClose(line, fence)) fence = null;
       continue;
@@ -976,7 +1217,8 @@ export async function writeNotePackage({
       entry.path,
       paidReport.sourceDigest
     );
-    const labelNamespace = createDocumentLabelNamespace(source, entry.id);
+    const freeLabelNamespace = createDocumentLabelNamespace(source, `${entry.id}-free`);
+    const paidLabelNamespace = createDocumentLabelNamespace(source, `${entry.id}-paid`);
     const paidVisibleLines = visibleSourceLines(source, paidReport, entry.path);
     const freeVisibleLines = visibleSourceLines(source, freeReport, entry.path);
     const { lines: sourceLines } = normalizedLines(source);
@@ -997,9 +1239,12 @@ export async function writeNotePackage({
     const freeProjected = projectSourceLines(source, freeReport, entry.path);
     if (freeProjected.text) {
       const body = convertStandardCallouts(
-        namespaceReferenceLabels(
+        completeDocumentReferences(
           removeLeadingCanonicalH1(freeProjected, entry.path),
-          labelNamespace
+          freeLabelNamespace,
+          freeVisibleLines,
+          entry.path,
+          'free-sample fragment'
         ),
         entry.path,
         warnings
@@ -1032,9 +1277,12 @@ export async function writeNotePackage({
     );
     if (paidProjected.text) {
       const body = convertStandardCallouts(
-        namespaceReferenceLabels(
+        completeDocumentReferences(
           removeLeadingCanonicalH1(paidProjected, entry.path),
-          labelNamespace
+          paidLabelNamespace,
+          paidVisibleLines,
+          entry.path,
+          'paid-body fragment'
         ),
         entry.path,
         warnings

@@ -187,25 +187,28 @@ describe('NoteAdapter', () => {
     await fs.writeFile(
       path.join(bookDirectory, 'manuscript/02-workflow.md'),
       '# 第2章 正本から出力する流れ\n\n' +
-        ':::paid\n' +
         '    paid code\n' +
         '\n' +
         'paid hard break  \n' +
+        'next paid line\n\n' +
+        ':::note\n' +
+        '```text\n' +
+        'literal code  \n' +
+        '```\n' +
         ':::\n',
       'utf8'
     );
-    await updateMetadata(bookDirectory, (metadata) => {
-      metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
-    });
 
     const result = await build(bookDirectory, await temporaryDirectory('tmp-note-whitespace-'));
     const output = packageDirectory(result);
     const paidMarkdown = await fs.readFile(path.join(output, '02-paid-body.md'), 'utf8');
     const paidHtml = await fs.readFile(path.join(output, '02-paid-body.html'), 'utf8');
 
-    assert.match(paidMarkdown, /\n {4}paid code\n\npaid hard break {2}\n/u);
+    assert.match(paidMarkdown, /\n {4}paid code\n\npaid hard break {2}\nnext paid line/u);
+    assert.match(paidMarkdown, /> literal code {2}\n/u);
     assert.match(paidHtml, /<pre><code>paid code\n<\/code><\/pre>/u);
-    assert.match(paidHtml, /<p>paid hard break<\/p>/u);
+    assert.match(paidHtml, /paid hard break<br>\nnext paid line/u);
+    assert.match(paidHtml, /literal code {2}\n/u);
   });
 
   test('文書間で重複するreferenceとfootnoteをnamespaceしcode literalを保持する', async () => {
@@ -214,6 +217,7 @@ describe('NoteAdapter', () => {
       path.join(bookDirectory, 'frontmatter/preface.md'),
       '# はじめに\n\n' +
         '[first][shared] [shared][] [^note]\n\n' +
+        'x < [shared] > y\n\n' +
         'Text [shared]: remains visible.\n\n' +
         '`[shared] [^note]`\n\n' +
         '```text\n[shared] [^note]\n```\n\n' +
@@ -237,20 +241,21 @@ describe('NoteAdapter', () => {
     const markdown = await fs.readFile(path.join(output, '01-free-sample.md'), 'utf8');
     const html = await fs.readFile(path.join(output, '01-free-sample.html'), 'utf8');
 
-    assert.match(markdown, /\[first\]\[note-preface-ref-1\]/u);
-    assert.match(markdown, /\[shared\]\[note-preface-ref-1\]/u);
-    assert.match(markdown, /Text \[shared\]\[note-preface-ref-1\]: remains visible\./u);
-    assert.match(markdown, /\[\^note-preface-fn-1\]/u);
-    assert.match(markdown, /\[note-preface-ref-1\]: https:\/\/first\.example\/reference/u);
-    assert.match(markdown, /\[\^note-preface-fn-1\]: first footnote/u);
-    assert.match(markdown, /\[second\]\[note-introduction-ref-1\]/u);
-    assert.match(markdown, /\[shared\]\[note-introduction-ref-1\]/u);
-    assert.match(markdown, /\[\^note-introduction-fn-1\]/u);
+    assert.match(markdown, /\[first\]\[note-preface-free-ref-1\]/u);
+    assert.match(markdown, /\[shared\]\[note-preface-free-ref-1\]/u);
+    assert.match(markdown, /x < \[shared\]\[note-preface-free-ref-1\] > y/u);
+    assert.match(markdown, /Text \[shared\]\[note-preface-free-ref-1\]: remains visible\./u);
+    assert.match(markdown, /\[\^note-preface-free-fn-1\]/u);
+    assert.match(markdown, /\[note-preface-free-ref-1\]: https:\/\/first\.example\/reference/u);
+    assert.match(markdown, /\[\^note-preface-free-fn-1\]: first footnote/u);
+    assert.match(markdown, /\[second\]\[note-introduction-free-ref-1\]/u);
+    assert.match(markdown, /\[shared\]\[note-introduction-free-ref-1\]/u);
+    assert.match(markdown, /\[\^note-introduction-free-fn-1\]/u);
     assert.match(
       markdown,
-      /\[note-introduction-ref-1\]: https:\/\/second\.example\/reference/u
+      /\[note-introduction-free-ref-1\]: https:\/\/second\.example\/reference/u
     );
-    assert.match(markdown, /\[\^note-introduction-fn-1\]: second footnote/u);
+    assert.match(markdown, /\[\^note-introduction-free-fn-1\]: second footnote/u);
     assert.match(markdown, /`\[shared\] \[\^note\]`/u);
     assert.match(markdown, /```text\n\[shared\] \[\^note\]\n```/u);
     assert.match(markdown, /<span data-label="\[shared\]">metadata<\/span>/u);
@@ -260,6 +265,7 @@ describe('NoteAdapter', () => {
 
     assert.match(html, /href="https:\/\/first\.example\/reference"/u);
     assert.match(html, /href="https:\/\/second\.example\/reference"/u);
+    assert.match(html, /x &lt; <a href="https:\/\/first\.example\/reference">shared<\/a> &gt; y/u);
     assert.match(html, /id="fnref-preface-1"/u);
     assert.match(html, /id="fn-preface-1"/u);
     assert.match(html, /id="fnref-introduction-1"/u);
@@ -267,6 +273,75 @@ describe('NoteAdapter', () => {
     assert.doesNotMatch(html, />note-(?:preface|introduction)-ref-/u);
     assert.strictEqual(new Set([...html.matchAll(/id="(fn(?:ref)?-[^"]+)"/gu)]
       .map((match) => match[1])).size, 4);
+  });
+
+  test('freeとpaid fragmentへ可視なreferenceとfootnote定義を補完する', async () => {
+    const bookDirectory = await copySampleBook();
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# 第2章 正本から出力する流れ\n\n' +
+        'free [shared] [^note]\n\n' +
+        '[shared]: <https://shared.example/a%20b>\n' +
+        '  "Shared title"\n' +
+        '[z-nested]: https://shared.example/nested\n' +
+        '[^note]: shared footnote with [z-nested]\n\n' +
+        ':::paid\n' +
+        'paid [shared] [^note]\n' +
+        ':::\n',
+      'utf8'
+    );
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+    });
+
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-shared-defs-'));
+    const output = packageDirectory(result);
+    const freeMarkdown = await fs.readFile(path.join(output, '01-free-sample.md'), 'utf8');
+    const paidMarkdown = await fs.readFile(path.join(output, '02-paid-body.md'), 'utf8');
+    const freeHtml = await fs.readFile(path.join(output, '01-free-sample.html'), 'utf8');
+    const paidHtml = await fs.readFile(path.join(output, '02-paid-body.html'), 'utf8');
+
+    assert.match(freeMarkdown, /free \[shared\]\[note-workflow-free-ref-1\] \[\^note-workflow-free-fn-1\]/u);
+    assert.match(freeMarkdown, /\[note-workflow-free-ref-1\]: <https:\/\/shared\.example\/a%20b>\n {2}"Shared title"/u);
+    assert.match(freeMarkdown, /\[\^note-workflow-free-fn-1\]: shared footnote with \[z-nested\]\[note-workflow-free-ref-2\]/u);
+    assert.match(paidMarkdown, /paid \[shared\]\[note-workflow-paid-ref-1\] \[\^note-workflow-paid-fn-1\]/u);
+    assert.match(paidMarkdown, /\[note-workflow-paid-ref-1\]: <https:\/\/shared\.example\/a%20b> "Shared title"/u);
+    assert.match(paidMarkdown, /\[\^note-workflow-paid-fn-1\]: shared footnote with \[z-nested\]\[note-workflow-paid-ref-2\]/u);
+    assert.match(paidMarkdown, /\[note-workflow-paid-ref-2\]: <https:\/\/shared\.example\/nested>/u);
+    assert.doesNotMatch(paidMarkdown, /%2520/u);
+    assert.match(freeHtml, /href="https:\/\/shared\.example\/a%20b" title="Shared title"/u);
+    assert.match(paidHtml, /href="https:\/\/shared\.example\/a%20b" title="Shared title"/u);
+    assert.match(freeHtml, /id="fn-workflow-1"/u);
+    assert.match(paidHtml, /id="fn-workflow-1"/u);
+  });
+
+  test('free fragmentから不可視なreferenceまたはfootnote定義への依存を拒否する', async () => {
+    const cases = [
+      {
+        body: 'free [hidden]\n\n:::paid\n\n[hidden]: https://hidden.example/reference\npaid body\n\n:::\n',
+        expected: /free-sample fragment reference definition is outside its visible source/
+      },
+      {
+        body: 'free [^hidden]\n\n:::paid\n\n[^hidden]: hidden footnote\npaid body\n\n:::\n',
+        expected: /free-sample fragment footnote definition is outside its visible source/
+      }
+    ];
+    for (const [index, item] of cases.entries()) {
+      const bookDirectory = await copySampleBook();
+      await fs.writeFile(
+        path.join(bookDirectory, 'manuscript/02-workflow.md'),
+        `# 第2章 正本から出力する流れ\n\n${item.body}`,
+        'utf8'
+      );
+      await updateMetadata(bookDirectory, (metadata) => {
+        metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+      });
+      await assert.rejects(
+        build(bookDirectory, await temporaryDirectory(`tmp-note-hidden-def-${index}-`)),
+        item.expected,
+        `hidden definition case ${index} must fail closed`
+      );
+    }
   });
 
   test('生成titleは可視single-lineに制限しMarkdown punctuationをescapeする', async () => {
@@ -445,7 +520,8 @@ describe('NoteAdapter', () => {
       [(metadata) => { metadata.targets.note.hashtags = []; }, /must NOT have fewer than 1 items/],
       [(metadata) => { metadata.targets.note.hashtags = ['invalid-tag']; }, /must match pattern/],
       [(metadata) => { metadata.targets.note.hashtags = ['a'.repeat(31)]; }, /must NOT have more than 30 characters/],
-      [(metadata) => { metadata.targets.note.attachment_candidates = ['../book.pdf']; }, /must match pattern/]
+      [(metadata) => { metadata.targets.note.attachment_candidates = ['../book.pdf']; }, /must match pattern/],
+      [(metadata) => { metadata.targets.note.attachment_candidates = ['assets/not-pdf.txt']; }, /must match pattern/]
     ];
     for (const [index, [mutate, expected]] of cases.entries()) {
       const bookDirectory = await copySampleBook();

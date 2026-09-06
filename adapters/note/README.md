@@ -62,7 +62,7 @@ build対象editionは`visibility: paid`でなければならない。free sample
 
 `note-publish-manifest.yaml`は価格、hashtag、fragment、paid lineの段落境界、画像/PDF候補、redacted warningを記録する。本文や絶対pathは格納しない。`manifest.json`は共通adapter manifestである。
 
-複数文書を1つのfragmentへ連結するときは、reference linkとnamed footnoteのlabelを文書ID別にnamespaceする。表示文字列とinline/fenced codeは変更せず、HTML比較fragmentのfootnote IDも文書ID別に分離する。生成見出しとchecklistへ使う書籍・構造titleは可視な単一行に限定し、Markdown punctuationをescapeする。
+複数文書を1つのfragmentへ連結するときは、reference linkとnamed footnoteのlabelを文書／fragment別にnamespaceする。各fragmentで参照する可視な定義は必要に応じて複製し、free fragmentからpaid/internal定義への依存はfail closedで拒否する。表示文字列とinline/fenced codeは変更せず、HTML比較fragmentのfootnote IDも文書ID別に分離する。生成見出しとchecklistへ使う書籍・構造titleは可視な単一行に限定し、Markdown punctuationをescapeする。
 
 ```bash
 npm start build -- \
