@@ -75,6 +75,55 @@ process.stdout.write(JSON.stringify({
   size: String(written.size)
 }));
 `;
+const IDENTITY_BOUND_DIRECTORY_INSPECT = `
+import { lstat } from 'node:fs/promises';
+const [expectedDev, expectedIno, name] = process.argv.slice(1);
+if (!name || name === '.' || name === '..' || /[\\/]/u.test(name)) process.exit(64);
+const parent = await lstat('.');
+if (String(parent.dev) !== expectedDev || String(parent.ino) !== expectedIno) process.exit(73);
+const child = await lstat(name);
+if (!child.isDirectory() || child.isSymbolicLink()) process.exit(74);
+process.stdout.write(JSON.stringify({ dev: String(child.dev), ino: String(child.ino) }));
+`;
+const IDENTITY_BOUND_FILE_READ = `
+import { constants } from 'node:fs';
+import { lstat, open } from 'node:fs/promises';
+const [expectedDev, expectedIno, name, maximumSize] = process.argv.slice(1);
+if (!name || name === '.' || name === '..' || /[\\/]/u.test(name)) process.exit(64);
+const parent = await lstat('.');
+if (String(parent.dev) !== expectedDev || String(parent.ino) !== expectedIno) process.exit(73);
+const pathStat = await lstat(name);
+if (!pathStat.isFile() || pathStat.isSymbolicLink()) process.exit(74);
+if (pathStat.size > Number(maximumSize)) process.exit(75);
+const handle = await open(name, constants.O_RDONLY | constants.O_NOFOLLOW);
+try {
+  const opened = await handle.stat();
+  if (
+    !opened.isFile() ||
+    opened.dev !== pathStat.dev ||
+    opened.ino !== pathStat.ino ||
+    opened.size !== pathStat.size
+  ) process.exit(76);
+  const contents = await handle.readFile();
+  const completed = await handle.stat();
+  const current = await lstat(name);
+  if (
+    completed.dev !== opened.dev ||
+    completed.ino !== opened.ino ||
+    completed.size !== opened.size ||
+    completed.mtimeMs !== opened.mtimeMs ||
+    completed.ctimeMs !== opened.ctimeMs ||
+    current.isSymbolicLink() ||
+    current.dev !== opened.dev ||
+    current.ino !== opened.ino ||
+    contents.length !== opened.size ||
+    contents.length > Number(maximumSize)
+  ) process.exit(76);
+  process.stdout.write(contents);
+} finally {
+  await handle.close();
+}
+`;
 const HTML_ENTITY = /&(?:#[xX][0-9A-Fa-f]+|#\d+|[A-Za-z][A-Za-z0-9]+);?/gu;
 const SOURCE_AUDIT_MARKDOWN = new MarkdownIt({
   html: true,
@@ -100,15 +149,15 @@ function flattenStructure(metadata) {
   ];
 }
 
-function collectTokens(tokens, inheritedLine = 1) {
+function collectTokens(tokens, inheritedLine = 1, { skipImageChildren = false } = {}) {
   const collected = [];
   let currentLine = inheritedLine;
   for (const token of tokens) {
     const line = token.map ? token.map[0] + 1 : currentLine;
     currentLine = line;
     collected.push({ token, line });
-    if (token.children && token.type !== 'image') {
-      collected.push(...collectTokens(token.children, line));
+    if (token.children && !(skipImageChildren && token.type === 'image')) {
+      collected.push(...collectTokens(token.children, line, { skipImageChildren }));
     }
     if (token.type === 'softbreak' || token.type === 'hardbreak') currentLine += 1;
   }
@@ -276,7 +325,13 @@ function decodeRelativeDestination(destination, sourcePath) {
   return decoded;
 }
 
-async function requireZennImage(bookRoot, assetRoot, sourcePath, destination) {
+async function requireZennImage(
+  bookRoot,
+  assetRoot,
+  assetRootIdentity,
+  sourcePath,
+  destination
+) {
   if (destination.startsWith('/') || destination.startsWith('#')) {
     throw new ZennAdapterError(`Zenn source image must be relative in ${sourcePath}`);
   }
@@ -297,26 +352,6 @@ async function requireZennImage(bookRoot, assetRoot, sourcePath, destination) {
     throw new ZennAdapterError(`Image resolves outside the book root: ${sourcePath}`);
   }
 
-  let current = bookRoot;
-  for (const component of relativeToBook.split(path.sep)) {
-    current = path.join(current, component);
-    let stat;
-    try {
-      stat = await fs.lstat(current);
-    } catch {
-      throw new ZennAdapterError(`Image does not exist: ${relativeToBook}`);
-    }
-    if (stat.isSymbolicLink()) {
-      throw new ZennAdapterError(`Image path must not contain symbolic links: ${relativeToBook}`);
-    }
-  }
-
-  const stat = await fs.lstat(resolved);
-  if (!stat.isFile()) throw new ZennAdapterError(`Image must be a regular file: ${relativeToBook}`);
-  if (stat.size > ZENN_IMAGE_MAX_BYTES) {
-    throw new ZennAdapterError(`Zenn image exceeds 3MB: ${relativeToBook}`);
-  }
-
   const relativeToAssets = path.relative(assetRoot, resolved);
   if (
     !relativeToAssets ||
@@ -333,41 +368,12 @@ async function requireZennImage(bookRoot, assetRoot, sourcePath, destination) {
     );
   }
 
-  let handle;
-  try {
-    handle = await openFile(
-      resolved,
-      fileSystemConstants.O_RDONLY | fileSystemConstants.O_NOFOLLOW
-    );
-    const openedStat = await handle.stat();
-    if (
-      !openedStat.isFile() ||
-      openedStat.dev !== stat.dev ||
-      openedStat.ino !== stat.ino ||
-      openedStat.size !== stat.size
-    ) {
-      throw new ZennAdapterError(`Image changed during safe open: ${relativeToBook}`);
-    }
-    const contents = await handle.readFile();
-    const completedStat = await handle.stat();
-    if (
-      completedStat.dev !== openedStat.dev ||
-      completedStat.ino !== openedStat.ino ||
-      completedStat.size !== openedStat.size ||
-      completedStat.mtimeMs !== openedStat.mtimeMs ||
-      completedStat.ctimeMs !== openedStat.ctimeMs ||
-      contents.length !== openedStat.size ||
-      contents.length > ZENN_IMAGE_MAX_BYTES
-    ) {
-      throw new ZennAdapterError(`Image changed while being read: ${relativeToBook}`);
-    }
-    return { contents, relativeToAssets };
-  } catch (error) {
-    if (error instanceof ZennAdapterError) throw error;
-    throw new ZennAdapterError(`Image could not be opened safely: ${relativeToBook}`);
-  } finally {
-    if (handle) await handle.close();
-  }
+  const contents = await readFileFromHeldTree(
+    assetRoot,
+    assetRootIdentity,
+    relativeToAssets
+  );
+  return { contents, relativeToAssets };
 }
 
 function isBackslashEscaped(source, index) {
@@ -458,13 +464,23 @@ function indexBacktickRuns(segment) {
   return { runs, nextSameLength };
 }
 
-function collectInlineCodeCandidates(segment) {
+function collectInlineCodeCandidates(segment, excludedSpans = []) {
   const candidates = [];
   const { runs, nextSameLength } = indexBacktickRuns(segment);
+  const excludedRuns = new Set();
+  let spanIndex = 0;
+  const orderedSpans = [...excludedSpans].sort((left, right) => left.start - right.start);
+  for (const [index, run] of runs.entries()) {
+    while (spanIndex < orderedSpans.length && orderedSpans[spanIndex].end <= run.start) {
+      spanIndex += 1;
+    }
+    const span = orderedSpans[spanIndex];
+    if (span && run.start >= span.start && run.end <= span.end) excludedRuns.add(index);
+  }
   let runIndex = 0;
   while (runIndex < runs.length) {
     const opening = runs[runIndex];
-    if (!opening.canOpen) {
+    if (!opening.canOpen || excludedRuns.has(runIndex)) {
       runIndex += 1;
       continue;
     }
@@ -472,6 +488,10 @@ function collectInlineCodeCandidates(segment) {
     let closingIndex = nextSameLength[runIndex];
     let matched = false;
     while (closingIndex !== -1) {
+      if (excludedRuns.has(closingIndex)) {
+        closingIndex = nextSameLength[closingIndex];
+        continue;
+      }
       const closing = runs[closingIndex];
       const source = segment.slice(opening.start, closing.end);
       const inline = SOURCE_AUDIT_MARKDOWN.parseInline(source, {})[0];
@@ -498,11 +518,9 @@ function maskReaderVisibleScope(lines, scope, sourcePath) {
   const visibleScope = lines.slice(scope.start, scope.end).join('\n');
   const parsedKeys = parsedInlineCodeTokens(visibleScope).map(inlineCodeTokenKey);
   if (parsedKeys.length === 0) return visibleScope;
+  const metadataSpans = standaloneInlineDestinationSpans(visibleScope);
   const spans = selectUniqueParsedCandidates(
-    excludeCandidatesWithinSpans(
-      collectInlineCodeCandidates(visibleScope),
-      standaloneInlineDestinationSpans(visibleScope)
-    ),
+    collectInlineCodeCandidates(visibleScope, metadataSpans),
     parsedKeys,
     sourcePath,
     'inline code'
@@ -860,7 +878,11 @@ function standaloneImageSyntaxSpans(segment) {
 }
 
 function parsedInlineLinks(source, environment) {
-  return collectTokens(SOURCE_AUDIT_MARKDOWN.parseInline(source, environment))
+  return collectTokens(
+    SOURCE_AUDIT_MARKDOWN.parseInline(source, environment),
+    1,
+    { skipImageChildren: true }
+  )
     .map(({ token }) => token)
     .filter((token) => token.type === 'link_open');
 }
@@ -909,7 +931,13 @@ async function convertImagesAndAudit(source, {
   copiedAssets
 }) {
   const assetRoot = path.resolve(bookRoot, metadata.source.assets);
+  const assetRootStat = await fs.lstat(assetRoot);
+  if (assetRootStat.isSymbolicLink() || !assetRootStat.isDirectory()) {
+    throw new ZennAdapterError(`Zenn asset root must remain a real directory: ${assetRoot}`);
+  }
+  const assetRootIdentity = { dev: assetRootStat.dev, ino: assetRootStat.ino };
   const convertedImageDestinations = new Set();
+  const resolvedImages = new Map();
   const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
   const sourceBlockTokens = SOURCE_AUDIT_MARKDOWN.parse(lines.join('\n'), {});
   const { readerVisibleScopes } = collectReaderVisibleScopes(sourceBlockTokens);
@@ -933,7 +961,18 @@ async function convertImagesAndAudit(source, {
         throw new ZennAdapterError(`Image titles or whitespace paths are not supported in ${sourcePath}`);
       }
       const destination = imageSyntax.parsedDestination;
-      const image = await requireZennImage(bookRoot, assetRoot, sourcePath, destination);
+      const imageKey = `${sourcePath}\0${destination}`;
+      let image = resolvedImages.get(imageKey);
+      if (!image) {
+        image = await requireZennImage(
+          bookRoot,
+          assetRoot,
+          assetRootIdentity,
+          sourcePath,
+          destination
+        );
+        resolvedImages.set(imageKey, image);
+      }
       const outputRelative = path.posix.join(
         'images',
         zennSlug,
@@ -971,7 +1010,7 @@ async function convertImagesAndAudit(source, {
   const result = converted.join('\n');
   const environment = {};
   const blockTokens = SOURCE_AUDIT_MARKDOWN.parse(result, environment);
-  const tokens = collectTokens(blockTokens);
+  const tokens = collectTokens(blockTokens, 1, { skipImageChildren: true });
   let relativeLinks = 0;
   for (const { token, line } of tokens) {
     if (token.type === 'html_block' || token.type === 'html_inline') {
@@ -1161,7 +1200,15 @@ function samePathIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
-async function runIdentityBoundOperation({ script, cwd, args, input, context }) {
+async function runIdentityBoundOperation({
+  script,
+  cwd,
+  args,
+  input,
+  context,
+  binaryOutput = false,
+  codeMessages = {}
+}) {
   const result = await new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
@@ -1188,14 +1235,16 @@ async function runIdentityBoundOperation({ script, cwd, args, input, context }) 
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      resolve({ code, output: Buffer.concat(output).toString('utf8') });
+      resolve({ code, output: Buffer.concat(output) });
     });
     child.stdin.end(input);
   });
   if (result.code !== 0) {
-    throw new ZennAdapterError(`${context} (${result.code ?? 'terminated'})`);
+    throw new ZennAdapterError(
+      codeMessages[result.code] || `${context} (${result.code ?? 'terminated'})`
+    );
   }
-  return result.output;
+  return binaryOutput ? result.output : result.output.toString('utf8');
 }
 
 async function createDirectoryInHeldParent(parent, parentIdentity, name) {
@@ -1216,6 +1265,66 @@ async function createDirectoryInHeldParent(parent, parentIdentity, name) {
     throw new ZennAdapterError('Zenn staging directory identity response was invalid');
   }
   return { dev: Number(identity.dev), ino: Number(identity.ino) };
+}
+
+async function inspectDirectoryInHeldParent(parent, parentIdentity, name, relativePath) {
+  const output = await runIdentityBoundOperation({
+    script: IDENTITY_BOUND_DIRECTORY_INSPECT,
+    cwd: parent,
+    args: [String(parentIdentity.dev), String(parentIdentity.ino), name],
+    input: '',
+    context: `Image path could not be traversed safely: ${relativePath}`,
+    codeMessages: {
+      74: `Image path must not contain symbolic links: ${relativePath}`
+    }
+  });
+  let identity;
+  try {
+    identity = JSON.parse(output);
+  } catch {
+    throw new ZennAdapterError(`Image directory identity response was invalid: ${relativePath}`);
+  }
+  if (!/^\d+$/u.test(identity?.dev || '') || !/^\d+$/u.test(identity?.ino || '')) {
+    throw new ZennAdapterError(`Image directory identity response was invalid: ${relativePath}`);
+  }
+  return { dev: Number(identity.dev), ino: Number(identity.ino) };
+}
+
+async function readFileInHeldDirectory(parent, parentIdentity, name, relativePath) {
+  return runIdentityBoundOperation({
+    script: IDENTITY_BOUND_FILE_READ,
+    cwd: parent,
+    args: [
+      String(parentIdentity.dev),
+      String(parentIdentity.ino),
+      name,
+      String(ZENN_IMAGE_MAX_BYTES)
+    ],
+    input: '',
+    context: `Image could not be opened safely: ${relativePath}`,
+    binaryOutput: true,
+    codeMessages: {
+      74: `Image path must not contain symbolic links: ${relativePath}`,
+      75: `Zenn image exceeds 3MB: ${relativePath}`,
+      76: `Image changed while being read: ${relativePath}`
+    }
+  });
+}
+
+async function readFileFromHeldTree(root, rootIdentity, relativePath) {
+  const components = relativePath.split(path.sep);
+  const name = components.pop();
+  let current = { path: root, identity: rootIdentity };
+  for (const component of components) {
+    const identity = await inspectDirectoryInHeldParent(
+      current.path,
+      current.identity,
+      component,
+      relativePath
+    );
+    current = { path: path.join(current.path, component), identity };
+  }
+  return readFileInHeldDirectory(current.path, current.identity, name, relativePath);
 }
 
 async function writeFileInHeldDirectory(directory, directoryIdentity, name, contents) {

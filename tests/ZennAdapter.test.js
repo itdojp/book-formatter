@@ -146,6 +146,7 @@ describe('ZennAdapter', () => {
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a(b).png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a)b.png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a`b`.png'), image);
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/a`b.png'), image);
     await fs.writeFile(
       path.join(bookDirectory, 'assets/figures/a[docs](target.md).png'),
       image
@@ -161,9 +162,11 @@ describe('ZennAdapter', () => {
         '![angle whitespace](<../assets/figures/flow name.png>)\n' +
         '![backtick path](../assets/figures/a`b`.png)\n' +
         'inline destination twin: `b`\n' +
+        '![single backtick path](../assets/figures/a`b.png) and `b`\n' +
         '[docs](target.md) ![link-like path](../assets/figures/a[docs](target.md).png)\n' +
         '![a\\]b](../assets/figures/flow.png)\n' +
         '![[reference](http://example.test)](../assets/figures/flow.png)\n' +
+        '![code alt `]`](../assets/figures/flow.png)\n' +
         '![metadata twin](../assets/figures/flow.png) ' +
         '[same metadata](https://example.test "literal ![metadata twin](../assets/figures/flow.png)")\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
@@ -216,6 +219,10 @@ describe('ZennAdapter', () => {
     assert.match(workflow, /inline destination twin: `b`/u);
     assert.match(
       workflow,
+      /!\[single backtick path\]\(\/images\/standard-book-example\/figures\/a%60b\.png\) and `b`/u
+    );
+    assert.match(
+      workflow,
       /\[docs\]\(target\.md\) !\[link-like path\]\(\/images\/standard-book-example\/figures\/a%5Bdocs%5D%28target\.md%29\.png\)/u
     );
     assert.ok(
@@ -225,6 +232,9 @@ describe('ZennAdapter', () => {
       workflow.includes(
         '![[reference](http://example.test)](/images/standard-book-example/figures/flow.png)'
       )
+    );
+    assert.ok(
+      workflow.includes('![code alt `]`](/images/standard-book-example/figures/flow.png)')
     );
     assert.ok(
       workflow.includes(
@@ -327,38 +337,49 @@ describe('ZennAdapter', () => {
     await assert.rejects(build(symlinkBook, symlinkOutput), /must not contain symbolic links/);
   });
 
-  test('検証後にsymlinkへ差し替えられた画像pathを再openしない', async (context) => {
+  test('保持したasset rootからの走査中に差し替えられた中間symlinkを追従しない', async (context) => {
     if (process.platform === 'win32') {
       context.diagnostic('symbolic-link race assertion is skipped on Windows');
       return;
     }
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-zenn-image-race-');
-    const imagePath = path.join(bookDirectory, 'assets/race.png');
-    const otherPath = path.join(bookDirectory, 'other.txt');
-    await fs.writeFile(imagePath, 'validated image bytes');
-    await fs.writeFile(otherPath, 'unrelated readable bytes');
-    await appendWorkflow(bookDirectory, '\n![race](../assets/race.png)\n');
+    const assetRoot = path.join(bookDirectory, 'assets');
+    const figures = path.join(assetRoot, 'figures');
+    const displacedFigures = path.join(assetRoot, 'figures.displaced');
+    const outside = await temporaryDirectory('tmp-zenn-image-race-outside-');
+    await fs.ensureDir(figures);
+    await fs.writeFile(path.join(figures, 'race.png'), 'validated image bytes');
+    await fs.writeFile(path.join(outside, 'race.png'), 'unrelated readable bytes');
+    await appendWorkflow(bookDirectory, '\n![race](../assets/figures/race.png)\n');
 
     const originalLstat = fs.lstat;
-    let imageLstatCalls = 0;
+    let assetRootLstatCalls = 0;
     fs.lstat = async (candidate, ...args) => {
       const result = await originalLstat(candidate, ...args);
-      if (path.resolve(candidate) === imagePath && ++imageLstatCalls === 3) {
-        await fs.remove(imagePath);
-        await fs.symlink('../other.txt', imagePath);
+      if (path.resolve(candidate) === assetRoot && ++assetRootLstatCalls === 3) {
+        await fs.rename(figures, displacedFigures);
+        await fs.symlink(outside, figures, 'dir');
       }
       return result;
     };
     try {
       await assert.rejects(
         build(bookDirectory, outputRoot),
-        /Image could not be opened safely/
+        /Image path must not contain symbolic links/
       );
     } finally {
       fs.lstat = originalLstat;
     }
-    assert.strictEqual(imageLstatCalls, 3);
+    assert.ok(assetRootLstatCalls >= 3);
+    assert.strictEqual(
+      await fs.readFile(path.join(outside, 'race.png'), 'utf8'),
+      'unrelated readable bytes'
+    );
+    assert.strictEqual(
+      await fs.readFile(path.join(displacedFigures, 'race.png'), 'utf8'),
+      'validated image bytes'
+    );
     assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'zenn')), false);
   });
 
