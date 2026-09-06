@@ -216,15 +216,15 @@ describe('NoteAdapter', () => {
         'preface'
       ];
       metadata.editions.find((edition) => edition.id === 'paid').documents = [
-        'introduction',
-        'afterword',
         'preface',
-        'workflow'
+        'introduction',
+        'workflow',
+        'afterword'
       ];
     });
     await assert.rejects(
       build(nonPrefixBook, await temporaryDirectory('tmp-note-reordered-non-prefix-')),
-      /Free-sample content must be a single prefix before the note paid line/
+      /Free-sample documents must match the leading document order of the paid edition/
     );
   });
 

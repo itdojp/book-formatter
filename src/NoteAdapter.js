@@ -1277,16 +1277,30 @@ export async function writeNotePackage({
   };
   await revalidateMetadataSnapshot();
 
+  const paidDocumentOrder = visibilityReport.documents
+    .filter((report) => report.decision === 'include')
+    .map((report) => report.id);
+  const sampleDocumentOrder = sampleReport.documents
+    .filter((report) => report.decision === 'include')
+    .map((report) => report.id);
+  if (
+    sampleDocumentOrder.length > paidDocumentOrder.length ||
+    sampleDocumentOrder.some((documentId, index) => paidDocumentOrder[index] !== documentId)
+  ) {
+    throw new NoteAdapterError(
+      'Free-sample documents must match the leading document order of the paid edition.'
+    );
+  }
+
   const entryById = new Map(
     flattenStructure(standardBook.metadata).map((entry) => [entry.id, entry])
   );
-  const entries = visibilityReport.documents
-    .filter((report) => report.decision === 'include')
-    .map((report) => {
-      const entry = entryById.get(report.id);
+  const entries = paidDocumentOrder
+    .map((documentId) => {
+      const entry = entryById.get(documentId);
       if (!entry) {
         throw new NoteAdapterError(
-          `Visibility report references unknown structure entry: ${report.id}`
+          `Visibility report references unknown structure entry: ${documentId}`
         );
       }
       return entry;
