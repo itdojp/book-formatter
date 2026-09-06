@@ -1277,7 +1277,20 @@ export async function writeNotePackage({
   };
   await revalidateMetadataSnapshot();
 
-  const entries = flattenStructure(standardBook.metadata);
+  const entryById = new Map(
+    flattenStructure(standardBook.metadata).map((entry) => [entry.id, entry])
+  );
+  const entries = visibilityReport.documents
+    .filter((report) => report.decision === 'include')
+    .map((report) => {
+      const entry = entryById.get(report.id);
+      if (!entry) {
+        throw new NoteAdapterError(
+          `Visibility report references unknown structure entry: ${report.id}`
+        );
+      }
+      return entry;
+    });
   const paidReports = new Map(visibilityReport.documents.map((report) => [report.id, report]));
   const sampleReports = new Map(sampleReport.documents.map((report) => [report.id, report]));
   const warnings = [];

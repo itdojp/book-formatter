@@ -182,6 +182,52 @@ describe('NoteAdapter', () => {
     );
   });
 
+  test('editionの宣言順でfragmentを構成しfree sampleのprefix関係を検証する', async () => {
+    const reorderedBook = await copySampleBook();
+    await updateMetadata(reorderedBook, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents = [
+        'introduction',
+        'preface'
+      ];
+      metadata.editions.find((edition) => edition.id === 'paid').documents = [
+        'introduction',
+        'preface',
+        'workflow',
+        'afterword'
+      ];
+    });
+    const reordered = await build(
+      reorderedBook,
+      await temporaryDirectory('tmp-note-reordered-')
+    );
+    const freeMarkdown = await fs.readFile(
+      path.join(packageDirectory(reordered), '01-free-sample.md'),
+      'utf8'
+    );
+    assert.ok(
+      freeMarkdown.indexOf('## 標準書籍フォーマットとは') <
+        freeMarkdown.indexOf('## はじめに')
+    );
+
+    const nonPrefixBook = await copySampleBook();
+    await updateMetadata(nonPrefixBook, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents = [
+        'introduction',
+        'preface'
+      ];
+      metadata.editions.find((edition) => edition.id === 'paid').documents = [
+        'introduction',
+        'afterword',
+        'preface',
+        'workflow'
+      ];
+    });
+    await assert.rejects(
+      build(nonPrefixBook, await temporaryDirectory('tmp-note-reordered-non-prefix-')),
+      /Free-sample content must be a single prefix before the note paid line/
+    );
+  });
+
   test('fragment先頭のcode indentと末尾のMarkdown空白を保持する', async () => {
     const bookDirectory = await copySampleBook();
     await fs.writeFile(
