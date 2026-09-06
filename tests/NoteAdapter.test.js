@@ -216,13 +216,15 @@ describe('NoteAdapter', () => {
     await fs.writeFile(
       path.join(bookDirectory, 'frontmatter/preface.md'),
       '# はじめに\n\n' +
-        '[first][shared] [shared][] [^note]\n\n' +
+        '[first][shared] [shared][] [quoted][z-quoted] [^note]\n\n' +
         'x < [shared] > y\n\n' +
         'Text [shared]: remains visible.\n\n' +
         '`[shared] [^note]`\n\n' +
         '```text\n[shared] [^note]\n```\n\n' +
-        '<span data-label="[shared]">metadata</span>\n\n' +
+        '<span data-test="1 > 0" data-label="[shared]">metadata</span>\n\n' +
+        '<span\n data-label="[shared]">multiline metadata</span>\n\n' +
         '[shared]: https://first.example/reference\n' +
+        '> [z-quoted]: https://first.example/quoted\n' +
         '[^note]: first footnote\n',
       'utf8'
     );
@@ -243,10 +245,12 @@ describe('NoteAdapter', () => {
 
     assert.match(markdown, /\[first\]\[note-preface-free-ref-1\]/u);
     assert.match(markdown, /\[shared\]\[note-preface-free-ref-1\]/u);
+    assert.match(markdown, /\[quoted\]\[note-preface-free-ref-2\]/u);
     assert.match(markdown, /x < \[shared\]\[note-preface-free-ref-1\] > y/u);
     assert.match(markdown, /Text \[shared\]\[note-preface-free-ref-1\]: remains visible\./u);
     assert.match(markdown, /\[\^note-preface-free-fn-1\]/u);
     assert.match(markdown, /\[note-preface-free-ref-1\]: https:\/\/first\.example\/reference/u);
+    assert.match(markdown, /> \[note-preface-free-ref-2\]: https:\/\/first\.example\/quoted/u);
     assert.match(markdown, /\[\^note-preface-free-fn-1\]: first footnote/u);
     assert.match(markdown, /\[second\]\[note-introduction-free-ref-1\]/u);
     assert.match(markdown, /\[shared\]\[note-introduction-free-ref-1\]/u);
@@ -258,12 +262,14 @@ describe('NoteAdapter', () => {
     assert.match(markdown, /\[\^note-introduction-free-fn-1\]: second footnote/u);
     assert.match(markdown, /`\[shared\] \[\^note\]`/u);
     assert.match(markdown, /```text\n\[shared\] \[\^note\]\n```/u);
-    assert.match(markdown, /<span data-label="\[shared\]">metadata<\/span>/u);
+    assert.match(markdown, /<span data-test="1 > 0" data-label="\[shared\]">metadata<\/span>/u);
+    assert.match(markdown, /<span\n data-label="\[shared\]">multiline metadata<\/span>/u);
     assert.match(markdown, /\[inline\]\(https:\/\/second\.example\/\[shared\]\)/u);
     assert.doesNotMatch(markdown, /^\[shared\]:/mu);
     assert.doesNotMatch(markdown, /^\[\^note\]:/mu);
 
     assert.match(html, /href="https:\/\/first\.example\/reference"/u);
+    assert.match(html, /href="https:\/\/first\.example\/quoted"/u);
     assert.match(html, /href="https:\/\/second\.example\/reference"/u);
     assert.match(html, /x &lt; <a href="https:\/\/first\.example\/reference">shared<\/a> &gt; y/u);
     assert.match(html, /id="fnref-preface-1"/u);
@@ -281,13 +287,13 @@ describe('NoteAdapter', () => {
       path.join(bookDirectory, 'manuscript/02-workflow.md'),
       '# 第2章 正本から出力する流れ\n\n' +
         'free [shared] [^note]\n\n' +
+        ':::paid\n' +
+        'paid [shared] [^note]\n' +
+        ':::\n\n' +
         '[shared]: <https://shared.example/a%20b>\n' +
         '  "Shared title"\n' +
         '[z-nested]: https://shared.example/nested\n' +
-        '[^note]: shared footnote with [z-nested]\n\n' +
-        ':::paid\n' +
-        'paid [shared] [^note]\n' +
-        ':::\n',
+        '[^note]: shared footnote with [z-nested]\n',
       'utf8'
     );
     await updateMetadata(bookDirectory, (metadata) => {

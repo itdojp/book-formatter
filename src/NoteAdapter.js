@@ -4,6 +4,9 @@ import path from 'node:path';
 import fs from 'fs-extra';
 import MarkdownIt from 'markdown-it';
 import markdownItFootnote from 'markdown-it-footnote';
+import markdownAutolinkRule from 'markdown-it/lib/rules_inline/autolink.mjs';
+import markdownHtmlInlineRule from 'markdown-it/lib/rules_inline/html_inline.mjs';
+import markdownReferenceRule from 'markdown-it/lib/rules_block/reference.mjs';
 import YAML from 'yaml';
 
 import { createAdapterSafeIO } from './AdapterSafeIO.js';
@@ -22,13 +25,28 @@ const NOTE_IMAGE_EXTENSIONS = new Set(['.gif', '.heic', '.jpeg', '.jpg', '.png']
 const NOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 const NOTE_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 const SAFE_IO = createAdapterSafeIO({ adapterName: 'note', target: 'note' });
+const REFERENCE_DEFINITION_RANGES = Symbol('note-reference-definition-ranges');
+
+function captureReferenceDefinitionRanges(markdown) {
+  markdown.block.ruler.at('reference', (state, startLine, endLine, silent) => {
+    const existingLabels = new Set(Object.keys(state.env.references || {}));
+    const accepted = markdownReferenceRule(state, startLine, endLine, silent);
+    if (!accepted || silent) return accepted;
+    const ranges = state.env[REFERENCE_DEFINITION_RANGES] || new Map();
+    state.env[REFERENCE_DEFINITION_RANGES] = ranges;
+    for (const label of Object.keys(state.env.references || {})) {
+      if (!existingLabels.has(label)) ranges.set(label, { start: startLine, end: state.line });
+    }
+    return accepted;
+  });
+}
 
 const SOURCE_MARKDOWN = new MarkdownIt({
   html: true,
   linkify: false,
   typographer: false,
   maxNesting: 128
-}).use(markdownItFootnote);
+}).use(markdownItFootnote).use(captureReferenceDefinitionRanges);
 
 const HTML_FRAGMENT_MARKDOWN = new MarkdownIt({
   html: false,
@@ -123,7 +141,8 @@ function createDocumentLabelNamespace(source, documentId) {
     referenceDefinitions: collectReferenceDefinitions(
       normalizedSource,
       environment.references || {},
-      references
+      references,
+      environment[REFERENCE_DEFINITION_RANGES] || new Map()
     ),
     footnoteDefinitions: collectFootnoteDefinitions(normalizedSource, tokens)
   };
@@ -159,12 +178,13 @@ function mergeProtectedRanges(ranges) {
   return merged;
 }
 
-function isParsedProtectedAngleSyntax(source) {
-  const children = SOURCE_MARKDOWN.parseInline(source, {})[0]?.children || [];
-  return children.some((token) =>
-    token.type === 'html_inline' ||
-    (token.type === 'link_open' && token.markup === 'autolink')
-  );
+function parsedProtectedAngleEnd(source, start) {
+  const state = new SOURCE_MARKDOWN.inline.State(source, SOURCE_MARKDOWN, {}, []);
+  state.pos = start;
+  if (markdownAutolinkRule(state, true)) return state.pos;
+  state.pos = start;
+  if (markdownHtmlInlineRule(state, true)) return state.pos;
+  return -1;
 }
 
 function collectProtectedMarkdownRanges(source) {
@@ -196,15 +216,11 @@ function collectProtectedMarkdownRanges(source) {
       continue;
     }
     if (source[cursor] === '<' && !isBackslashEscaped(source, cursor)) {
-      const closing = source.indexOf('>', cursor + 1);
-      const newline = source.indexOf('\n', cursor + 1);
-      if (closing !== -1 && (newline === -1 || closing < newline)) {
-        const candidate = source.slice(cursor, closing + 1);
-        if (isParsedProtectedAngleSyntax(candidate)) {
-          inlineRanges.push({ start: cursor, end: closing + 1 });
-          cursor = closing + 1;
-          continue;
-        }
+      const end = parsedProtectedAngleEnd(source, cursor);
+      if (end !== -1) {
+        inlineRanges.push({ start: cursor, end });
+        cursor = end;
+        continue;
       }
     }
     if (source[cursor] !== '`' || isBackslashEscaped(source, cursor)) {
@@ -282,28 +298,6 @@ function addLabelReplacement(replacements, source, start, end, replacement) {
   replacements.push({ start, end, replacement });
 }
 
-function isReferenceDefinitionStart(source, opening, closing) {
-  if (source[closing + 1] !== ':') return false;
-  const lineStart = source.lastIndexOf('\n', opening - 1) + 1;
-  return /^ {0,3}$/u.test(source.slice(lineStart, opening));
-}
-
-function parsedReferenceDefinitionRange(lines, start, normalizedLabel, expectedReference) {
-  let limit = start + 1;
-  while (limit < lines.length && lines[limit].trim()) limit += 1;
-  for (let end = start + 1; end <= limit; end += 1) {
-    const environment = {};
-    const tokens = SOURCE_MARKDOWN.parse(`${lines.slice(start, end).join('\n')}\n`, environment);
-    const parsed = environment.references?.[normalizedLabel];
-    if (
-      tokens.length === 0 &&
-      parsed?.href === expectedReference.href &&
-      parsed?.title === expectedReference.title
-    ) return { start, end };
-  }
-  return null;
-}
-
 function escapedReferenceDestination(destination) {
   return String(destination)
     .replace(/</gu, '%3C')
@@ -315,30 +309,18 @@ function escapedReferenceTitle(title) {
   return String(title).replace(/\\/gu, '\\\\').replace(/"/gu, '\\"').replace(/\s+/gu, ' ');
 }
 
-function collectReferenceDefinitions(source, parsedReferences, referenceLabels) {
-  const { lines } = normalizedLines(source);
+function collectReferenceDefinitions(source, parsedReferences, referenceLabels, definitionRanges) {
   const definitions = new Map();
-  for (const [index, line] of lines.entries()) {
-    const opening = line.search(/\S/u);
-    if (opening < 0 || opening > 3 || line[opening] !== '[') continue;
-    const closing = findClosingBracket(line, opening);
-    if (closing === -1 || line[closing + 1] !== ':') continue;
-    const normalizedLabel = SOURCE_MARKDOWN.utils.normalizeReference(
-      line.slice(opening + 1, closing)
-    );
-    if (
-      definitions.has(normalizedLabel) ||
-      !Object.hasOwn(parsedReferences, normalizedLabel)
-    ) continue;
-    const parsed = parsedReferences[normalizedLabel];
-    const range = parsedReferenceDefinitionRange(lines, index, normalizedLabel, parsed);
+  for (const normalizedLabel of Object.keys(parsedReferences).sort(compareCodeUnits)) {
+    const range = definitionRanges.get(normalizedLabel);
     if (!range) continue;
+    const parsed = parsedReferences[normalizedLabel];
     const generatedLabel = referenceLabels.get(normalizedLabel);
     let text = `[${generatedLabel}]: <${escapedReferenceDestination(parsed.href)}>`;
     if (parsed.title) text += ` "${escapedReferenceTitle(parsed.title)}"`;
     definitions.set(normalizedLabel, {
       text,
-      sourceLines: [index + 1],
+      sourceLines: [range.start + 1],
       visibilityLines: Array.from(
         { length: range.end - range.start },
         (_value, offset) => range.start + offset + 1
@@ -390,12 +372,46 @@ function mergeLabelState(target, source) {
   }
 }
 
+function projectedSourceLineAtOffset(offsets, sourceLines, offset) {
+  let low = 0;
+  let high = offsets.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (offsets[middle] <= offset) low = middle;
+    else high = middle - 1;
+  }
+  return sourceLines[low] ?? low + 1;
+}
+
+function isKnownDefinitionStart(
+  source,
+  projection,
+  lineOffsets,
+  namespace,
+  opening,
+  closing,
+  kind,
+  label
+) {
+  if (source[closing + 1] !== ':') return false;
+  const definition = kind === 'footnote'
+    ? namespace.footnoteDefinitions.get(label)
+    : namespace.referenceDefinitions.get(label);
+  if (!definition) return false;
+  return definition.sourceLines[0] === projectedSourceLineAtOffset(
+    lineOffsets,
+    projection.sourceLines,
+    opening
+  );
+}
+
 function namespaceReferenceLabels(projection, namespace) {
   const labelState = emptyLabelState();
   if (!projection.text || (namespace.references.size === 0 && namespace.footnotes.size === 0)) {
     return { ...projection, labelState };
   }
   const source = projection.text;
+  const lineOffsets = sourceLineOffsets(source);
   const protectedRanges = collectProtectedMarkdownRanges(source);
   const replacements = [];
   let protectedIndex = 0;
@@ -430,7 +446,16 @@ function namespaceReferenceLabels(projection, namespace) {
       const originalLabel = firstLabel.slice(1);
       const footnote = namespace.footnotes.get(originalLabel);
       if (footnote) {
-        const state = isReferenceDefinitionStart(source, cursor, firstEnd)
+        const state = isKnownDefinitionStart(
+          source,
+          projection,
+          lineOffsets,
+          namespace,
+          cursor,
+          firstEnd,
+          'footnote',
+          originalLabel
+        )
           ? labelState.definedFootnotes
           : labelState.usedFootnotes;
         state.add(originalLabel);
@@ -473,14 +498,24 @@ function namespaceReferenceLabels(projection, namespace) {
       SOURCE_MARKDOWN.utils.normalizeReference(firstLabel)
     );
     if (replacement) {
-      if (isReferenceDefinitionStart(source, cursor, firstEnd)) {
+      const normalizedLabel = SOURCE_MARKDOWN.utils.normalizeReference(firstLabel);
+      if (isKnownDefinitionStart(
+        source,
+        projection,
+        lineOffsets,
+        namespace,
+        cursor,
+        firstEnd,
+        'reference',
+        normalizedLabel
+      )) {
         labelState.definedReferences.add(
-          SOURCE_MARKDOWN.utils.normalizeReference(firstLabel)
+          normalizedLabel
         );
         addLabelReplacement(replacements, source, cursor + 1, firstEnd, replacement);
       } else {
         labelState.usedReferences.add(
-          SOURCE_MARKDOWN.utils.normalizeReference(firstLabel)
+          normalizedLabel
         );
         addLabelReplacement(replacements, source, firstEnd + 1, firstEnd + 1, `[${replacement}]`);
       }
@@ -596,6 +631,16 @@ function completeDocumentReferences(
   throw new NoteAdapterError(
     `note ${fragmentName} reference completion did not converge: ${sourcePath}`
   );
+}
+
+function definitionSourceLines(namespace) {
+  const lines = new Set();
+  for (const definitions of [namespace.referenceDefinitions, namespace.footnoteDefinitions]) {
+    for (const definition of definitions.values()) {
+      for (const line of definition.visibilityLines) lines.add(line);
+    }
+  }
+  return lines;
 }
 
 function escapedGeneratedTitle(title, context) {
@@ -1219,12 +1264,17 @@ export async function writeNotePackage({
     );
     const freeLabelNamespace = createDocumentLabelNamespace(source, `${entry.id}-free`);
     const paidLabelNamespace = createDocumentLabelNamespace(source, `${entry.id}-paid`);
+    const semanticDefinitionLines = definitionSourceLines(freeLabelNamespace);
     const paidVisibleLines = visibleSourceLines(source, paidReport, entry.path);
     const freeVisibleLines = visibleSourceLines(source, freeReport, entry.path);
     const { lines: sourceLines } = normalizedLines(source);
     for (const [index, line] of sourceLines.entries()) {
       const lineNumber = index + 1;
-      if (!line.trim() || !paidVisibleLines.has(lineNumber)) continue;
+      if (
+        !line.trim() ||
+        !paidVisibleLines.has(lineNumber) ||
+        semanticDefinitionLines.has(lineNumber)
+      ) continue;
       if (freeVisibleLines.has(lineNumber)) {
         if (paidBoundaryStarted) {
           throw new NoteAdapterError(
