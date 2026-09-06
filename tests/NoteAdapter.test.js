@@ -1,0 +1,382 @@
+import { afterEach, describe, test } from 'node:test';
+import assert from 'node:assert';
+import path from 'node:path';
+
+import fs from 'fs-extra';
+import YAML from 'yaml';
+
+import {
+  AdapterBuildError,
+  buildStandardBookAdapter
+} from '../src/AdapterBuild.js';
+
+const REPOSITORY_ROOT = process.cwd();
+const SAMPLE_BOOK = path.join(REPOSITORY_ROOT, 'examples/standard-book');
+const temporaryDirectories = [];
+
+async function temporaryDirectory(prefix) {
+  const directory = await fs.mkdtemp(path.join(REPOSITORY_ROOT, `tests/${prefix}`));
+  temporaryDirectories.push(directory);
+  return directory;
+}
+
+async function copySampleBook() {
+  const directory = await temporaryDirectory('tmp-note-book-');
+  await fs.copy(SAMPLE_BOOK, directory);
+  return directory;
+}
+
+async function updateMetadata(bookDirectory, mutate) {
+  const metadataPath = path.join(bookDirectory, 'book.yaml');
+  const metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'), { uniqueKeys: true });
+  mutate(metadata);
+  await fs.writeFile(metadataPath, YAML.stringify(metadata));
+}
+
+async function appendWorkflow(bookDirectory, markdown) {
+  await fs.appendFile(path.join(bookDirectory, 'manuscript/02-workflow.md'), markdown, 'utf8');
+}
+
+async function build(bookDirectory, outputRoot, editionId = 'paid', dryRun = false) {
+  return buildStandardBookAdapter({
+    bookDirectory,
+    target: 'note',
+    editionId,
+    outputRoot,
+    dryRun
+  });
+}
+
+function packageDirectory(result) {
+  return path.join(result.outputDirectory, 'standard-book-example');
+}
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.remove(directory)));
+});
+
+describe('NoteAdapter', () => {
+  test('paid editionを無料・有料fragmentと手動公開packageへ決定的に分離する', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-note-output-');
+    const first = await build(bookDirectory, outputRoot);
+    const output = packageDirectory(first);
+    const freeMarkdown = await fs.readFile(path.join(output, '01-free-sample.md'), 'utf8');
+    const paidMarkdown = await fs.readFile(path.join(output, '02-paid-body.md'), 'utf8');
+    const freeHtml = await fs.readFile(path.join(output, '01-free-sample.html'), 'utf8');
+    const paidHtml = await fs.readFile(path.join(output, '02-paid-body.html'), 'utf8');
+    const noteManifest = YAML.parse(
+      await fs.readFile(path.join(output, 'note-publish-manifest.yaml'), 'utf8'),
+      { uniqueKeys: true }
+    );
+    const checklist = await fs.readFile(path.join(output, 'publish-checklist.md'), 'utf8');
+    const commonManifest = await fs.readFile(first.manifestPath, 'utf8');
+    const firstNoteManifest = await fs.readFile(
+      path.join(output, 'note-publish-manifest.yaml'),
+      'utf8'
+    );
+
+    assert.strictEqual(first.manifest.adapter.implementation, 'note-v1');
+    assert.strictEqual(first.manifest.adapter.project_format, 'note-manual-package');
+    assert.strictEqual(first.manifest.adapter.manual_operation_required, true);
+    assert.deepStrictEqual(noteManifest.paid_line, {
+      placement: 'between-paragraphs',
+      after: '01-free-sample.md',
+      before: '02-paid-body.md'
+    });
+    assert.deepStrictEqual(noteManifest.fragments.free_sample.document_ids, [
+      'preface',
+      'introduction'
+    ]);
+    assert.deepStrictEqual(noteManifest.fragments.paid_body.document_ids, [
+      'workflow',
+      'afterword'
+    ]);
+    assert.deepStrictEqual(noteManifest.warnings, [
+      {
+        code: 'relative_link_requires_manual_review',
+        file: 'manuscript/02-workflow.md',
+        line: 15
+      },
+      {
+        code: 'callout_degraded_to_blockquote',
+        file: 'manuscript/02-workflow.md',
+        line: 31
+      },
+      {
+        code: 'callout_degraded_to_blockquote',
+        file: 'manuscript/02-workflow.md',
+        line: 35
+      },
+      {
+        code: 'callout_degraded_to_blockquote',
+        file: 'manuscript/02-workflow.md',
+        line: 39
+      }
+    ]);
+    assert.match(freeMarkdown, /^## はじめに$/mu);
+    assert.match(freeMarkdown, /^## 標準書籍フォーマットとは$/mu);
+    assert.doesNotMatch(freeMarkdown, /有償edition候補|内部向け候補/u);
+    assert.match(paidMarkdown, /^## 正本から出力する流れ$/mu);
+    assert.match(paidMarkdown, /この範囲は有償edition候補です/u);
+    assert.doesNotMatch(paidMarkdown, /この範囲は内部向け候補です/u);
+    assert.doesNotMatch(`${freeMarkdown}${paidMarkdown}`, /:::paid|:::internal/u);
+    assert.match(paidMarkdown, /> \*\*NOTE\*\*/u);
+    assert.match(paidHtml, /<blockquote>/u);
+    assert.doesNotMatch(`${freeHtml}${paidHtml}`, /:::paid|:::internal/u);
+    assert.match(checklist, /noteへ自動投稿しません/u);
+    assert.match(checklist, /シークレットモード/u);
+    assert.ok(!commonManifest.includes(bookDirectory));
+    assert.ok(!commonManifest.includes('内部向け候補'));
+
+    await fs.writeFile(path.join(first.outputDirectory, 'stale.txt'), 'stale\n');
+    const second = await build(bookDirectory, outputRoot);
+    assert.strictEqual(await fs.pathExists(path.join(second.outputDirectory, 'stale.txt')), false);
+    assert.strictEqual(await fs.readFile(second.manifestPath, 'utf8'), commonManifest);
+    assert.strictEqual(
+      await fs.readFile(path.join(packageDirectory(second), 'note-publish-manifest.yaml'), 'utf8'),
+      firstNoteManifest
+    );
+  });
+
+  test('sample内のpaid blockをfreeから除外しpaid側だけへ配置する', async () => {
+    const bookDirectory = await copySampleBook();
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# 第2章 正本から出力する流れ\n\n' +
+        'adapterによる変換は後続Issueで扱います。\n\n' +
+        ':::paid\n' +
+        'この範囲は有償edition候補です。\n' +
+        ':::\n',
+      'utf8'
+    );
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+    });
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-regions-'));
+    const freeMarkdown = await fs.readFile(
+      path.join(packageDirectory(result), '01-free-sample.md'),
+      'utf8'
+    );
+    const paidMarkdown = await fs.readFile(
+      path.join(packageDirectory(result), '02-paid-body.md'),
+      'utf8'
+    );
+
+    assert.match(freeMarkdown, /adapterによる変換は後続Issueで扱います/u);
+    assert.doesNotMatch(freeMarkdown, /この範囲は有償edition候補です/u);
+    assert.match(paidMarkdown, /この範囲は有償edition候補です/u);
+    assert.doesNotMatch(paidMarkdown, /adapterによる変換は後続Issueで扱います/u);
+  });
+
+  test('無料範囲が有料範囲の後へ再出現する非単調構成を拒否する', async () => {
+    const bookDirectory = await copySampleBook();
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+    });
+    await appendWorkflow(bookDirectory, '\n有料block後に再出現する無料本文です。\n');
+
+    await assert.rejects(
+      build(bookDirectory, await temporaryDirectory('tmp-note-non-monotonic-')),
+      /Free-sample content must be a single prefix before the note paid line/
+    );
+  });
+
+  test('画像とPDFを候補としてcopyし外部・非対応画像をredacted warningにする', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-note-assets-');
+    await fs.ensureDir(path.join(bookDirectory, 'assets/figures'));
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow.png'), 'png bytes');
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/vector.svg'), '<svg></svg>');
+    await fs.writeFile(path.join(bookDirectory, 'assets/guide.pdf'), '%PDF-1.4\n');
+    await appendWorkflow(
+      bookDirectory,
+      '\n![flow](../assets/figures/flow.png)\n' +
+        '![vector](../assets/figures/vector.svg)\n' +
+        '![external](https://assets.example/image.png)\n'
+    );
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.targets.note.attachment_candidates = ['assets/guide.pdf'];
+    });
+
+    const result = await build(bookDirectory, outputRoot);
+    const noteManifest = YAML.parse(
+      await fs.readFile(
+        path.join(packageDirectory(result), 'note-publish-manifest.yaml'),
+        'utf8'
+      ),
+      { uniqueKeys: true }
+    );
+    assert.deepStrictEqual(noteManifest.image_candidates, [{
+      source: 'assets/figures/flow.png',
+      destination: 'assets/figures/flow.png',
+      documents: ['manuscript/02-workflow.md']
+    }]);
+    assert.deepStrictEqual(noteManifest.attachment_candidates, [{
+      source: 'assets/guide.pdf',
+      destination: 'assets/guide.pdf'
+    }]);
+    assert.deepStrictEqual(
+      noteManifest.warnings.filter((warning) => warning.file === 'manuscript/02-workflow.md')
+        .map((warning) => warning.code),
+      [
+        'relative_link_requires_manual_review',
+        'callout_degraded_to_blockquote',
+        'callout_degraded_to_blockquote',
+        'callout_degraded_to_blockquote',
+        'image_requires_manual_upload',
+        'unsupported_image_requires_manual_conversion',
+        'external_or_root_image_requires_manual_upload'
+      ]
+    );
+    assert.deepStrictEqual(
+      await fs.readFile(path.join(packageDirectory(result), 'assets/figures/flow.png')),
+      Buffer.from('png bytes')
+    );
+    assert.deepStrictEqual(
+      await fs.readFile(path.join(packageDirectory(result), 'assets/guide.pdf')),
+      Buffer.from('%PDF-1.4\n')
+    );
+    const html = await fs.readFile(path.join(packageDirectory(result), '02-paid-body.html'), 'utf8');
+    assert.match(html, /src="assets\/figures\/flow\.png"/u);
+    assert.match(html, /\[画像を手動挿入: vector\]/u);
+    assert.ok(!JSON.stringify(noteManifest).includes(bookDirectory));
+  });
+
+  test('画像・添付のroot外、symlink、過大fileをfail closedで拒否する', async (context) => {
+    const outsideBook = await copySampleBook();
+    await appendWorkflow(outsideBook, '\n![outside](../../outside.png)\n');
+    await assert.rejects(
+      build(outsideBook, await temporaryDirectory('tmp-note-outside-')),
+      /must be below the declared assets directory/
+    );
+
+    const largeAttachmentBook = await copySampleBook();
+    const largePath = path.join(largeAttachmentBook, 'assets/large.pdf');
+    await fs.writeFile(largePath, '%PDF');
+    await fs.truncate(largePath, 50 * 1024 * 1024 + 1);
+    await updateMetadata(largeAttachmentBook, (metadata) => {
+      metadata.targets.note.attachment_candidates = ['assets/large.pdf'];
+    });
+    await assert.rejects(
+      build(largeAttachmentBook, await temporaryDirectory('tmp-note-large-')),
+      /exceeds 50MB/
+    );
+
+    if (process.platform === 'win32') {
+      context.diagnostic('symbolic-link assertion is skipped on Windows');
+      return;
+    }
+    const symlinkBook = await copySampleBook();
+    await fs.writeFile(path.join(symlinkBook, 'assets/real.pdf'), '%PDF');
+    await fs.symlink('real.pdf', path.join(symlinkBook, 'assets/link.pdf'));
+    await updateMetadata(symlinkBook, (metadata) => {
+      metadata.targets.note.attachment_candidates = ['assets/link.pdf'];
+    });
+    await assert.rejects(
+      build(symlinkBook, await temporaryDirectory('tmp-note-symlink-')),
+      /must not contain symbolic links/
+    );
+  });
+
+  test('paid対象・sample部分集合・metadata有限契約をfail closedで検証する', async () => {
+    await assert.rejects(
+      build(await copySampleBook(), await temporaryDirectory('tmp-note-free-'), 'free'),
+      /requires a paid edition/
+    );
+
+    const missingTarget = await copySampleBook();
+    await updateMetadata(missingTarget, (metadata) => delete metadata.targets.note);
+    await assert.rejects(
+      build(missingTarget, await temporaryDirectory('tmp-note-no-target-')),
+      (error) => error instanceof AdapterBuildError && /targets\.note/.test(error.message)
+    );
+
+    const wrongSample = await copySampleBook();
+    await updateMetadata(wrongSample, (metadata) => {
+      metadata.targets.note.free_sample_edition = 'internal';
+    });
+    await assert.rejects(
+      build(wrongSample, await temporaryDirectory('tmp-note-wrong-sample-')),
+      /distinct free or sample/
+    );
+
+    const notSubset = await copySampleBook();
+    await updateMetadata(notSubset, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'paid').documents =
+        metadata.editions.find((edition) => edition.id === 'paid').documents
+          .filter((documentId) => documentId !== 'preface');
+    });
+    await assert.rejects(
+      build(notSubset, await temporaryDirectory('tmp-note-not-subset-')),
+      /Free-sample documents must be included in the paid edition: preface/
+    );
+  });
+
+  test('schemaはnote slug、price、hashtag、添付pathをfail closedで検証する', async () => {
+    const cases = [
+      [(metadata) => { metadata.targets.note.slug = 'Invalid_Slug'; }, /must match pattern/],
+      [(metadata) => { metadata.targets.note.price = 99; }, /must be >= 100/],
+      [(metadata) => { metadata.targets.note.price = 50001; }, /must be <= 50000/],
+      [(metadata) => { metadata.targets.note.hashtags = []; }, /must NOT have fewer than 1 items/],
+      [(metadata) => { metadata.targets.note.hashtags = ['invalid-tag']; }, /must match pattern/],
+      [(metadata) => { metadata.targets.note.hashtags = ['a'.repeat(31)]; }, /must NOT have more than 30 characters/],
+      [(metadata) => { metadata.targets.note.attachment_candidates = ['../book.pdf']; }, /must match pattern/]
+    ];
+    for (const [index, [mutate, expected]] of cases.entries()) {
+      const bookDirectory = await copySampleBook();
+      await updateMetadata(bookDirectory, mutate);
+      await assert.rejects(
+        build(bookDirectory, await temporaryDirectory(`tmp-note-schema-${index}-`)),
+        expected
+      );
+    }
+  });
+
+  test('dry-runはpackageを書かずunknown ownerを置換しない', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-note-dry-');
+    const dry = await build(bookDirectory, outputRoot, 'paid', true);
+    assert.strictEqual(dry.written, false);
+    assert.strictEqual(await fs.pathExists(dry.outputDirectory), false);
+    assert.strictEqual(dry.manifest.adapter.implementation, 'note-v1');
+
+    await fs.ensureDir(dry.outputDirectory);
+    await fs.writeFile(path.join(dry.outputDirectory, 'unrelated.txt'), 'keep\n');
+    await assert.rejects(build(bookDirectory, outputRoot), /valid adapter manifest/);
+    assert.strictEqual(
+      await fs.readFile(path.join(dry.outputDirectory, 'unrelated.txt'), 'utf8'),
+      'keep\n'
+    );
+  });
+
+  test('可視性検査後に変更されたsourceを出力前に拒否する', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('source race assertion is skipped on Windows');
+      return;
+    }
+    const bookDirectory = await copySampleBook();
+    const sourcePath = path.join(bookDirectory, 'manuscript/02-workflow.md');
+    const outputRoot = await temporaryDirectory('tmp-note-source-race-');
+    const originalReadFile = fs.readFile;
+    let changed = false;
+    fs.readFile = async (candidate, ...args) => {
+      const contents = await originalReadFile(candidate, ...args);
+      if (!changed && path.resolve(candidate) === sourcePath) {
+        changed = true;
+        await fs.writeFile(sourcePath, '# changed\n\npaid replacement\n');
+      }
+      return contents;
+    };
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /(?:changed after visibility validation|Visibility reports disagree on source digest)/
+      );
+    } finally {
+      fs.readFile = originalReadFile;
+    }
+    assert.strictEqual(changed, true);
+    assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'note')), false);
+  });
+});
