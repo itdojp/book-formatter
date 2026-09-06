@@ -1333,6 +1333,14 @@ export async function checkBookVisibility(bookDirectory, editionId, options = {}
   if (!editionId) throw new VisibilityValidationError('Edition ID is required.');
 
   const standardBook = await validateStandardBook(bookDirectory);
+  if (
+    options.expectedMetadataDigest &&
+    standardBook.metadataDigest !== options.expectedMetadataDigest
+  ) {
+    throw new VisibilityValidationError(
+      'book.yaml changed after the adapter metadata snapshot was validated.'
+    );
+  }
   const { bookRoot, metadata } = standardBook;
   const edition = metadata.editions.find((candidate) => candidate.id === editionId);
   if (!edition) throw new VisibilityValidationError(`Unknown edition: ${editionId}`);
@@ -1441,6 +1449,7 @@ export async function checkBookVisibility(bookDirectory, editionId, options = {}
       path: entry.path,
       visibility: entry.visibility || 'unknown',
       decision: included ? 'include' : 'exclude-document',
+      sourceDigest: digest(content),
       protectedRegions
     });
   }

@@ -15,6 +15,11 @@ import {
   WebMdbookAdapterError,
   writeWebMdbookProject
 } from './WebMdbookAdapter.js';
+import {
+  ZENN_IMPLEMENTATION,
+  ZennAdapterError,
+  writeZennProject
+} from './ZennAdapter.js';
 
 export const ADAPTER_MANIFEST_VERSION = 1;
 
@@ -285,7 +290,11 @@ function createManifest(metadata, target, edition, visibilityReport) {
     kind: 'book-formatter.adapter-build',
     adapter: {
       target,
-      implementation: target === 'web-mdbook' ? WEB_MDBOOK_IMPLEMENTATION : 'skeleton',
+      implementation: target === 'web-mdbook'
+        ? WEB_MDBOOK_IMPLEMENTATION
+        : target === 'zenn'
+          ? ZENN_IMPLEMENTATION
+          : 'skeleton',
       ...(target === 'web-mdbook'
         ? {
           project_format: 'mdbook',
@@ -354,7 +363,9 @@ export async function buildStandardBookAdapter(options) {
   );
   if (!edition) throw new AdapterBuildError(`Unknown edition: ${editionId}`);
 
-  const visibilityReport = await checkBookVisibility(standardBook.bookRoot, editionId);
+  const visibilityReport = await checkBookVisibility(standardBook.bookRoot, editionId, {
+    expectedMetadataDigest: standardBook.metadataDigest
+  });
   if (!visibilityReport.summary.safe) {
     throw new AdapterBuildError(
       `Visibility check failed for edition ${editionId}: ` +
@@ -399,6 +410,30 @@ export async function buildStandardBookAdapter(options) {
       });
     } catch (error) {
       if (error instanceof WebMdbookAdapterError) throw new AdapterBuildError(error.message);
+      throw error;
+    }
+  } else if (target === 'zenn') {
+    try {
+      await writeZennProject({
+        standardBook,
+        edition,
+        visibilityReport,
+        outputDirectory,
+        manifest,
+        revalidateOutputDestination,
+        revalidateReplacementDirectory,
+        verifyArtifact: (artifactPath) => checkBookVisibility(
+          standardBook.bookRoot,
+          edition.id,
+          {
+            artifactPath,
+            expectedMetadataDigest: standardBook.metadataDigest
+          }
+        ),
+        validateOnly: dryRun
+      });
+    } catch (error) {
+      if (error instanceof ZennAdapterError) throw new AdapterBuildError(error.message);
       throw error;
     }
   } else if (!dryRun) {

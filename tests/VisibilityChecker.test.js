@@ -89,6 +89,7 @@ describe('VisibilityChecker', () => {
     assert.ok(!serialized.includes(PAID_BLOCK_TEXT));
     assert.ok(!serialized.includes(INTERNAL_BLOCK_TEXT));
     assert.match(serialized, /[a-f0-9]{64}/);
+    assert.ok(report.documents.every((document) => /^[a-f0-9]{64}$/u.test(document.sourceDigest)));
   });
 
   test('free/sample/paid editionのdocument-level混入を拒否する', async () => {

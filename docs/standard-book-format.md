@@ -54,6 +54,19 @@ standard-book/
 | `license` | SPDX identifierまたは明示的なproject license表現 |
 | `version` | 正本のSemantic Version |
 
+`targets`はoptionalなtarget固有metadataである。未指定でも標準書籍として有効だが、対応targetをbuildするときはそのtargetのfieldを要求する。現在実装済みの`targets.zenn`は、Zennのstable slug、公開summary、topics、paid priceを管理する。生成済み`config.yaml`、credential、account、公開状態は保存しない。
+
+```yaml
+targets:
+  zenn:
+    slug: standard-book-example
+    summary: 標準書籍フォーマットと出力手順を確認する最小例
+    topics: [markdown, publishing]
+    price: 500
+```
+
+`targets.zenn`の機械契約とfree/paidの扱いは[`zenn` adapter](../adapters/zenn/README.md)を参照する。これは既存version 1 metadataへ追加できるoptional extensionであり、target未使用のconsumerを変更しない。
+
 `structure.frontmatter`、`structure.chapters`、`structure.backmatter`の配列順が正本の読書順である。各要素の`id`と`path`は書籍内で一意でなければならない。chapterは1件以上必要であり、各pathは対応する`source` directory配下の実在するMarkdown fileを指す。
 
 `editions[].status`は`draft`、`published`、`archived`のいずれかである。visibilityを有効にする場合は、structure entryとeditionで`free`、`sample`、`paid`、`internal`を明示し、editionの`documents`で対象IDを列挙する。詳しい包含matrixと漏えい検査は[Edition visibilityと有償本文の混入防止](paid-editions.md)を参照する。販売価格や出力adapterの設定はversion 1の必須情報ではない。
@@ -105,4 +118,4 @@ node -e "JSON.parse(require('fs').readFileSync('shared/schema/book.schema.json',
 
 ## version変更
 
-`schema_version`はmetadataの読み手が解釈可能な契約を選ぶための識別子である。field追加、意味変更、必須条件変更を行う場合は、互換性を評価してschemaとvalidatorを同じPRで更新する。visibility fieldは既存version 1との互換性を保つoptional extensionであり、`check-visibility`を実行する書籍では明示必須とする。既存のversion 1書籍を無言で別の意味に読み替えてはならない。
+`schema_version`はmetadataの読み手が解釈可能な契約を選ぶための識別子である。field追加、意味変更、必須条件変更を行う場合は、互換性を評価してschemaとvalidatorを同じPRで更新する。visibilityと`targets` fieldは既存version 1との互換性を保つoptional extensionであり、利用するchecker / adapterでは必要な下位fieldを明示必須とする。既存のversion 1書籍を無言で別の意味に読み替えてはならない。

@@ -10,13 +10,15 @@
 | --- | --- | --- | --- | --- |
 | `web-mdbook` | 新規標準Web出力 | `web-mdbook-v1` | 新規書籍のWeb出力で使用 | [#95](https://github.com/itdojp/book-formatter/issues/95) |
 | `web-jekyll-legacy` | 既存Jekyll / GitHub Pages互換 | skeleton / legacy support contract | 既存consumerの互換保守に限定 | [#96](https://github.com/itdojp/book-formatter/issues/96) |
-| `zenn` | Zenn book | skeleton | adapter実装後に選択 | [#98](https://github.com/itdojp/book-formatter/issues/98) |
+| `zenn` | Zenn book | `zenn-v1` | Zenn CLI / GitHub連携へ渡す生成project | [#98](https://github.com/itdojp/book-formatter/issues/98) |
 | `note` | note投稿用成果物 | skeleton | adapter実装後に選択 | [#99](https://github.com/itdojp/book-formatter/issues/99) |
 | `kindle` | EPUB / Kindle | skeleton | adapter実装後に選択 | [#100](https://github.com/itdojp/book-formatter/issues/100) |
 | `booth` | BOOTH販売package | skeleton | adapter実装後に選択 | [#101](https://github.com/itdojp/book-formatter/issues/101) |
 | `pdf` | screen / print PDF | skeleton | adapter実装後に選択 | [#100](https://github.com/itdojp/book-formatter/issues/100) |
 
 `implementation: skeleton`のmanifestは、入力schema、edition visibility、target選択を検証したbuild planである。target固有成果物の生成、公開可能性、deploy成功を示さない。
+
+`zenn-v1`は`books/<slug>/`、`images/<slug>/`、`manifest.json`を生成するが、`published: false`を固定し、投稿・公開・販売設定を行わない。詳細は[`zenn` adapter contract](../adapters/zenn/README.md)を参照する。
 
 ## Web出力の判断
 

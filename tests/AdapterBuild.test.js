@@ -66,10 +66,14 @@ describe('AdapterBuild', () => {
         'utf8'
       );
       assert.match(readme, new RegExp(`^# ${target} adapter`, 'm'));
+      const implementations = {
+        'web-mdbook': 'web-mdbook-v1',
+        zenn: 'zenn-v1'
+      };
       assert.match(
         readme,
-        target === 'web-mdbook'
-          ? /実装状態: implemented \(`web-mdbook-v1`\)/
+        implementations[target]
+          ? new RegExp('実装状態: implemented \\(`' + implementations[target] + '`\\)')
           : /実装状態: skeleton/
       );
     }
@@ -146,6 +150,41 @@ describe('AdapterBuild', () => {
     assert.strictEqual(await fs.pathExists(first.manifestPath), false);
   });
 
+  test('初回検証後に変更されたbook.yamlをvisibility結果と混在させない', async () => {
+    const bookDirectory = await copySampleBook();
+    const metadataPath = path.join(bookDirectory, 'book.yaml');
+    const originalReadFile = fs.readFile;
+    let metadataReads = 0;
+    fs.readFile = async (candidate, ...args) => {
+      const contents = await originalReadFile(candidate, ...args);
+      if (path.resolve(candidate) === metadataPath) {
+        metadataReads += 1;
+        if (metadataReads === 1) {
+          await fs.writeFile(
+            metadataPath,
+            String(contents).replace('slug: standard-book-example', 'slug: changed-book-example'),
+            'utf8'
+          );
+        }
+      }
+      return contents;
+    };
+    try {
+      await assert.rejects(
+        buildStandardBookAdapter({
+          bookDirectory,
+          target: 'zenn',
+          editionId: 'free',
+          dryRun: true
+        }),
+        /book\.yaml changed after the adapter metadata snapshot was validated/u
+      );
+    } finally {
+      fs.readFile = originalReadFile;
+    }
+    assert.ok(metadataReads >= 2);
+  });
+
   test('通常buildはtarget配下へmanifestだけを原子的かつ決定的に出力する', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await createTemporaryDirectory('tmp-adapter-output-');
@@ -153,24 +192,24 @@ describe('AdapterBuild', () => {
 
     const first = await buildStandardBookAdapter({
       bookDirectory,
-      target: 'zenn',
+      target: 'note',
       editionId: 'free',
       outputRoot
     });
     const firstContent = await fs.readFile(first.manifestPath, 'utf8');
     const second = await buildStandardBookAdapter({
       bookDirectory,
-      target: 'zenn',
+      target: 'note',
       editionId: 'free',
       outputRoot
     });
     const secondContent = await fs.readFile(second.manifestPath, 'utf8');
 
     assert.strictEqual(first.written, true);
-    assert.strictEqual(first.manifestPath, path.join(outputRoot, 'zenn', 'manifest.json'));
+    assert.strictEqual(first.manifestPath, path.join(outputRoot, 'note', 'manifest.json'));
     assert.strictEqual(secondContent, firstContent);
     assert.deepStrictEqual(JSON.parse(firstContent), first.manifest);
-    assert.deepStrictEqual(await fs.readdir(path.join(outputRoot, 'zenn')), ['manifest.json']);
+    assert.deepStrictEqual(await fs.readdir(path.join(outputRoot, 'note')), ['manifest.json']);
     assert.strictEqual(await fs.readFile(path.join(outputRoot, 'preserve.txt'), 'utf8'), 'keep\n');
     assert.ok(!firstContent.includes(bookDirectory));
 
@@ -321,6 +360,12 @@ describe('AdapterBuild', () => {
     assert.strictEqual(built.status, 0, built.stderr);
     assert.strictEqual(
       await fs.pathExists(path.join(outputRoot, 'zenn', 'manifest.json')),
+      true
+    );
+    assert.strictEqual(
+      await fs.pathExists(
+        path.join(outputRoot, 'zenn', 'books', 'standard-book-example', 'config.yaml')
+      ),
       true
     );
 

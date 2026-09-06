@@ -81,3 +81,11 @@ editions:
       - internal-notes
 license: CC-BY-NC-SA-4.0
 version: 0.1.0
+targets:
+  zenn:
+    slug: standard-book-example
+    summary: 標準書籍フォーマットと出力手順を確認する最小例
+    topics:
+      - markdown
+      - publishing
+    price: 500

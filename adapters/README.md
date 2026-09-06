@@ -1,6 +1,6 @@
 # Adapter開発契約
 
-`adapters/` は、標準書籍フォーマットを出力先ごとの成果物へ変換する責務を分離するための入口です。Issue #94で共通CLIとmanifest契約を実装し、#95で`web-mdbook`を最初の実adapterにしました。`web-jekyll-legacy`は既存consumerの互換境界を文書化したlegacy support targetであり、build実装はskeletonのままです。その他のtargetもskeletonです。
+`adapters/` は、標準書籍フォーマットを出力先ごとの成果物へ変換する責務を分離するための入口です。Issue #94で共通CLIとmanifest契約を実装し、#95で`web-mdbook`、#98で`zenn`を実adapterにしました。`web-jekyll-legacy`は既存consumerの互換境界を文書化したlegacy support targetであり、build実装はskeletonのままです。その他のtargetもskeletonです。
 
 新規書籍とlegacy consumerのtarget選択は[出力target方針](../docs/output-targets.md)を参照してください。
 
@@ -10,7 +10,7 @@
 |---|---|---|---|
 | `web-mdbook` | 標準Web / mdBook | `web-mdbook-v1` | [#95](https://github.com/itdojp/book-formatter/issues/95) |
 | `web-jekyll-legacy` | 既存Jekyll / GitHub Pages互換 | skeleton / legacy support contract | [#96](https://github.com/itdojp/book-formatter/issues/96) |
-| `zenn` | Zenn book | skeleton | [#98](https://github.com/itdojp/book-formatter/issues/98) |
+| `zenn` | Zenn book | `zenn-v1` | [#98](https://github.com/itdojp/book-formatter/issues/98) |
 | `note` | note投稿用成果物 | skeleton | [#99](https://github.com/itdojp/book-formatter/issues/99) |
 | `kindle` | EPUB / Kindle | skeleton | [#100](https://github.com/itdojp/book-formatter/issues/100) |
 | `booth` | BOOTH販売パッケージ | skeleton | [#101](https://github.com/itdojp/book-formatter/issues/101) |
@@ -28,7 +28,7 @@ npm start build -- \
   --edition free \
   --dry-run
 
-# <book>/dist/zenn/manifest.json だけを出力する
+# <book>/dist/zenn/へZenn book projectを出力する
 npm start build -- \
   --book examples/standard-book \
   --target zenn \
@@ -43,6 +43,11 @@ npm start build -- \
 ```
 
 `book-formatter` CLIの `stdout` はversioned JSON manifestです。進捗とエラーは `stderr` に出力します。npm経由ではnpm自身のscript headerも表示されます。`--dry-run` は出力先も検証しますが、directoryやfileを作成しません。
+
+実装済みtargetの詳細な生成物とtarget固有metadataは、それぞれのREADMEを参照してください。
+
+- [`web-mdbook`](web-mdbook/README.md)
+- [`zenn`](zenn/README.md)
 
 ## 共通処理順序
 

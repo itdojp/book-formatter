@@ -210,6 +210,16 @@
       "description": "Semantic version of the canonical book source.",
       "type": "string",
       "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"
+    },
+    "targets": {
+      "description": "Optional target-specific publication metadata. Adapter output remains generated and unpublished.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "zenn": {
+          "$ref": "#/definitions/zennTarget"
+        }
+      }
     }
   },
   "definitions": {
@@ -259,6 +269,42 @@
     },
     "chapterEntry": {
       "$ref": "#/definitions/structureEntry"
+    },
+    "zennTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "summary", "topics"],
+      "properties": {
+        "slug": {
+          "description": "Stable Zenn book slug.",
+          "type": "string",
+          "pattern": "^[0-9a-z_-]{12,50}$"
+        },
+        "summary": {
+          "description": "Public Zenn book summary.",
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "topics": {
+          "description": "One to five Zenn topics. Each topic is at most 18 characters and contains no ASCII punctuation or whitespace.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 18,
+            "pattern": "^[^\\u0000-\\u002F\\u003A-\\u0040\\u005B-\\u0060\\u007B-\\u007F]+$"
+          }
+        },
+        "price": {
+          "description": "Paid Zenn book price in JPY. Free adapter output writes price 0 instead.",
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 5000,
+          "multipleOf": 100
+        }
+      }
     }
   }
 }
