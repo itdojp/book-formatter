@@ -645,6 +645,7 @@ function collectInlineDestinations(segment, kind) {
     let parenthesisDepth = 1;
     cursor = destinationStart;
     let angleDestination = false;
+    let quotedTitleDelimiter = null;
     let firstDestinationCharacter = destinationStart;
     while (/\s/u.test(segment[firstDestinationCharacter] || '')) {
       firstDestinationCharacter += 1;
@@ -655,15 +656,30 @@ function collectInlineDestinations(segment, kind) {
         cursor += Math.min(2, segment.length - cursor);
         continue;
       }
+      if (quotedTitleDelimiter) {
+        if (segment[cursor] === quotedTitleDelimiter) quotedTitleDelimiter = null;
+        cursor += 1;
+        continue;
+      }
       if (angleDestination) {
         if (segment[cursor] === '>') angleDestination = false;
       } else {
+        if (
+          parenthesisDepth === 1 &&
+          (segment[cursor] === '"' || segment[cursor] === '\'') &&
+          cursor > destinationStart &&
+          /\s/u.test(segment[cursor - 1])
+        ) {
+          quotedTitleDelimiter = segment[cursor];
+          cursor += 1;
+          continue;
+        }
         if (segment[cursor] === '(') parenthesisDepth += 1;
         if (segment[cursor] === ')') parenthesisDepth -= 1;
       }
       cursor += 1;
     }
-    if (parenthesisDepth !== 0 || angleDestination) {
+    if (parenthesisDepth !== 0 || angleDestination || quotedTitleDelimiter) {
       index += isImage ? 2 : 1;
       continue;
     }

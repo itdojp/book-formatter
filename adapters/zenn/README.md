@@ -58,6 +58,8 @@ targets:
 5. 生成artifactに対してvisibility検査を再実行する。
 6. 既存出力が同じ`zenn` adapter所有であることを確認し、原子的に置換する。
 
+出力親directoryは、実行userが単独で管理し、build中に他processがentryをrenameしない場所を指定してください。stagingはheld parent、予測困難なUUID名、mode 0700、排他的作成、`O_DIRECTORY | O_NOFOLLOW` handle、および`dev/ino`照合で保護しますが、親directoryを任意に変更できるhostile same-UID processとの隔離はportable Node.js/POSIXの保証範囲外です。shared writable directoryでの同時buildは行わず、同一出力へのbuildを直列化してください。追加のplatform-specific強化は[#138](https://github.com/itdojp/book-formatter/issues/138)で追跡します。
+
 `internal` editionはZennへ出力しません。`config.yaml#published`は正本のedition statusにかかわらず必ず`false`です。paid editionでは`targets.zenn.price`を出力し、free/sample editionでは現行Zenn validatorが要求する`price: 0`を出力します。paid book内では、included `paid` blockを持たないfree/sample documentだけをchapter Front Matterの`free: true`にします。paid documentと、document自体はfree/sampleでもincluded `paid` blockを含むchapterは`free: false`にして有償本文を無料公開しません。
 
 Issue #98の初期記述には「有償版の場合のみ`price`を出力」とありますが、2026-09-06に確認した現行Zenn validatorは`price`をnumber必須としています。そのためfield自体を省略せず、非0価格をpaid buildだけに限定します。

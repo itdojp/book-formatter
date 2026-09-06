@@ -531,6 +531,26 @@ describe('ZennAdapter', () => {
     assert.deepStrictEqual(warnings.map((warning) => warning.line), [14, 47, 48]);
   });
 
+  test('quoted link title内のparenthesisをdestination境界として数えない', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-quoted-link-title-');
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# Warning positions\n' +
+        '[double](target.md "note (")\n' +
+        '[single](target.md \'note (\' )\n',
+      'utf8'
+    );
+
+    const result = await build(bookDirectory, outputRoot);
+    assert.deepStrictEqual(
+      result.manifest.adapter.warnings.filter(
+        (warning) => warning.file === 'manuscript/02-workflow.md'
+      ).map((warning) => warning.line),
+      [1, 2]
+    );
+  });
+
   test('複数行inline codeをまたぐrelative link warningも物理行を保持する', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-zenn-inline-code-warning-');
