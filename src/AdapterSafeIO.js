@@ -339,18 +339,28 @@ export function createAdapterSafeIO({ adapterName, target }) {
     });
   }
 
-  async function readFileFromHeldTree(
+  function heldTreePathComponents(relativePath, pathLabel) {
+    const components = String(relativePath).split(path.sep);
+    if (
+      typeof relativePath !== 'string' ||
+      !relativePath ||
+      path.isAbsolute(relativePath) ||
+      components.some((component) =>
+        !component || component === '.' || component === '..' || /[\\/]/u.test(component)
+      )
+    ) {
+      throw new AdapterSafeIOError(`Invalid ${pathLabel} path: ${relativePath}`);
+    }
+    return components;
+  }
+
+  async function inspectDirectoryPathInHeldTree(
     root,
     rootIdentity,
+    components,
     relativePath,
-    {
-      maximumSize,
-      pathLabel = 'Asset',
-      tooLargeMessage = `${pathLabel} exceeds its size limit: ${relativePath}`
-    }
+    pathLabel
   ) {
-    const components = relativePath.split(path.sep);
-    const name = components.pop();
     let current = { path: root, identity: rootIdentity };
     for (const component of components) {
       const identity = await inspectDirectoryInHeldParent(
@@ -362,6 +372,44 @@ export function createAdapterSafeIO({ adapterName, target }) {
       );
       current = { path: path.join(current.path, component), identity };
     }
+    return current;
+  }
+
+  async function bindDirectoryFromHeldTree(
+    root,
+    rootIdentity,
+    relativePath,
+    { pathLabel = 'Directory' } = {}
+  ) {
+    const components = heldTreePathComponents(relativePath, pathLabel);
+    return (await inspectDirectoryPathInHeldTree(
+      root,
+      rootIdentity,
+      components,
+      relativePath,
+      pathLabel
+    )).identity;
+  }
+
+  async function readFileFromHeldTree(
+    root,
+    rootIdentity,
+    relativePath,
+    {
+      maximumSize,
+      pathLabel = 'Asset',
+      tooLargeMessage = `${pathLabel} exceeds its size limit: ${relativePath}`
+    }
+  ) {
+    const components = heldTreePathComponents(relativePath, pathLabel);
+    const name = components.pop();
+    const current = await inspectDirectoryPathInHeldTree(
+      root,
+      rootIdentity,
+      components,
+      relativePath,
+      pathLabel
+    );
     return readFileInHeldDirectory(current.path, current.identity, name, relativePath, {
       maximumSize,
       pathLabel,
@@ -814,6 +862,7 @@ export function createAdapterSafeIO({ adapterName, target }) {
   return Object.freeze({
     assertOwnedExistingOutput,
     assertPathObjectIdentity,
+    bindDirectoryFromHeldTree,
     createDirectoryInHeldParent,
     createStagingTree,
     pathIdentity,

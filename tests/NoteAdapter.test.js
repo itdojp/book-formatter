@@ -275,6 +275,8 @@ describe('NoteAdapter', () => {
         '[broken](\n\n' +
         '[between-link][shared]\n\n' +
         ')\n\n' +
+        '[broken\n\n' +
+        '[between-bracket][shared]\n\n' +
         '```text\n[shared] [^note]\n```\n\n' +
         '<span data-test="1 > 0" data-label="[shared]">metadata</span>\n\n' +
         '<span\n data-label="[shared]">multiline metadata</span>\n\n' +
@@ -328,6 +330,7 @@ describe('NoteAdapter', () => {
     assert.match(markdown, /`literal\\` \[after\]\[note-preface-free-ref-1\] `later`/u);
     assert.match(markdown, /\[between\]\[note-preface-free-ref-1\]/u);
     assert.match(markdown, /\[between-link\]\[note-preface-free-ref-1\]/u);
+    assert.match(markdown, /\[between-bracket\]\[note-preface-free-ref-1\]/u);
     assert.match(markdown, /```text\n\[shared\] \[\^note\]\n```/u);
     assert.match(markdown, /<span data-test="1 > 0" data-label="\[shared\]">metadata<\/span>/u);
     assert.match(markdown, /<span\n data-label="\[shared\]">multiline metadata<\/span>/u);
@@ -556,46 +559,66 @@ describe('NoteAdapter', () => {
     );
   });
 
-  test('検証後にsymlinkへ差し替えられたasset rootを束縛前に拒否する', async (context) => {
+  test('検証後にsymlinkへ差し替えられたasset rootの全componentを拒否する', async (context) => {
     if (process.platform === 'win32') {
       context.diagnostic('asset-root symbolic-link race assertion is skipped on Windows');
       return;
     }
-    const bookDirectory = await copySampleBook();
-    const outputRoot = await temporaryDirectory('tmp-note-asset-root-race-output-');
-    const assetRoot = path.join(bookDirectory, 'assets');
-    const displacedAssetRoot = path.join(bookDirectory, 'assets.displaced');
-    const outside = await temporaryDirectory('tmp-note-asset-root-race-outside-');
-    await fs.writeFile(path.join(assetRoot, 'guide.pdf'), 'validated bytes');
-    await fs.writeFile(path.join(outside, 'guide.pdf'), 'outside bytes');
-    await updateMetadata(bookDirectory, (metadata) => {
-      metadata.targets.note.attachment_candidates = ['assets/guide.pdf'];
-    });
-
-    const originalLstat = fs.lstat;
-    let assetRootLstatCalls = 0;
-    fs.lstat = async (candidate, ...args) => {
-      if (path.resolve(candidate) === assetRoot && ++assetRootLstatCalls === 5) {
-        await fs.rename(assetRoot, displacedAssetRoot);
-        await fs.symlink(outside, assetRoot, 'dir');
+    for (const nested of [false, true]) {
+      const bookDirectory = await copySampleBook();
+      const outputRoot = await temporaryDirectory('tmp-note-asset-root-race-output-');
+      const outside = await temporaryDirectory('tmp-note-asset-root-race-outside-');
+      const outsideAssetRoot = path.join(outside, 'assets');
+      await fs.ensureDir(outsideAssetRoot);
+      let assetRoot = path.join(bookDirectory, 'assets');
+      let swappedPath = assetRoot;
+      let displacedPath = path.join(bookDirectory, 'assets.displaced');
+      let symlinkTarget = outsideAssetRoot;
+      let validatedFileAfterSwap = path.join(displacedPath, 'guide.pdf');
+      let sourceAssets = 'assets';
+      if (nested) {
+        assetRoot = path.join(bookDirectory, 'content/assets');
+        await fs.ensureDir(path.dirname(assetRoot));
+        await fs.move(path.join(bookDirectory, 'assets'), assetRoot);
+        swappedPath = path.join(bookDirectory, 'content');
+        displacedPath = path.join(bookDirectory, 'content.displaced');
+        symlinkTarget = outside;
+        validatedFileAfterSwap = path.join(displacedPath, 'assets/guide.pdf');
+        sourceAssets = 'content/assets';
       }
-      return originalLstat(candidate, ...args);
-    };
-    try {
-      await assert.rejects(
-        build(bookDirectory, outputRoot),
-        /note asset root must remain a real directory/
+      await fs.writeFile(path.join(assetRoot, 'guide.pdf'), 'validated bytes');
+      await fs.writeFile(path.join(outsideAssetRoot, 'guide.pdf'), 'outside bytes');
+      await updateMetadata(bookDirectory, (metadata) => {
+        metadata.source.assets = sourceAssets;
+        metadata.targets.note.attachment_candidates = [`${sourceAssets}/guide.pdf`];
+      });
+
+      const originalLstat = fs.lstat;
+      let bookRootLstatCalls = 0;
+      fs.lstat = async (candidate, ...args) => {
+        const result = await originalLstat(candidate, ...args);
+        if (path.resolve(candidate) === bookDirectory && ++bookRootLstatCalls === 4) {
+          await fs.rename(swappedPath, displacedPath);
+          await fs.symlink(symlinkTarget, swappedPath, 'dir');
+        }
+        return result;
+      };
+      try {
+        await assert.rejects(
+          build(bookDirectory, outputRoot),
+          /note asset root path must not contain symbolic links/
+        );
+      } finally {
+        fs.lstat = originalLstat;
+      }
+      assert.ok(bookRootLstatCalls >= 4);
+      assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'note')), false);
+      assert.strictEqual(await fs.readFile(validatedFileAfterSwap, 'utf8'), 'validated bytes');
+      assert.strictEqual(
+        await fs.readFile(path.join(outsideAssetRoot, 'guide.pdf'), 'utf8'),
+        'outside bytes'
       );
-    } finally {
-      fs.lstat = originalLstat;
     }
-    assert.ok(assetRootLstatCalls >= 5);
-    assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'note')), false);
-    assert.strictEqual(
-      await fs.readFile(path.join(displacedAssetRoot, 'guide.pdf'), 'utf8'),
-      'validated bytes'
-    );
-    assert.strictEqual(await fs.readFile(path.join(outside, 'guide.pdf'), 'utf8'), 'outside bytes');
   });
 
   test('paid対象・sample部分集合・metadata有限契約をfail closedで検証する', async () => {

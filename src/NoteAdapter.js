@@ -305,9 +305,9 @@ function collectProtectedMarkdownRanges(source) {
   };
 }
 
-function findClosingBracket(source, opening) {
+function findClosingBracket(source, opening, end = source.length) {
   let depth = 0;
-  for (let cursor = opening; cursor < source.length; cursor += 1) {
+  for (let cursor = opening; cursor < end; cursor += 1) {
     if (isBackslashEscaped(source, cursor)) continue;
     if (source[cursor] === '[') depth += 1;
     if (source[cursor] !== ']') continue;
@@ -533,7 +533,18 @@ function namespaceReferenceLabels(projection, namespace) {
       continue;
     }
 
-    const firstEnd = findClosingBracket(source, cursor);
+    while (
+      inlineScopeIndex < inlineScopes.length &&
+      inlineScopes[inlineScopeIndex].end <= cursor
+    ) inlineScopeIndex += 1;
+    const inlineScope = inlineScopes[inlineScopeIndex];
+    const inlineScopeContainsCursor = inlineScope &&
+      cursor >= inlineScope.start && cursor < inlineScope.end;
+    const physicalLineEnd = source.indexOf('\n', cursor);
+    const bracketSearchEnd = inlineScopeContainsCursor
+      ? inlineScope.end
+      : physicalLineEnd === -1 ? source.length : physicalLineEnd;
+    const firstEnd = findClosingBracket(source, cursor, bracketSearchEnd);
     if (firstEnd === -1) {
       cursor += 1;
       continue;
@@ -564,13 +575,7 @@ function namespaceReferenceLabels(projection, namespace) {
 
     const following = source[firstEnd + 1];
     if (following === '(') {
-      while (
-        inlineScopeIndex < inlineScopes.length &&
-        inlineScopes[inlineScopeIndex].end <= cursor
-      ) inlineScopeIndex += 1;
-      const inlineScope = inlineScopes[inlineScopeIndex];
-      const destinationEnd = inlineScope &&
-        cursor >= inlineScope.start && cursor < inlineScope.end
+      const destinationEnd = inlineScopeContainsCursor
         ? parsedInlineLinkEnd(source, cursor, inlineScope.end)
         : -1;
       if (destinationEnd !== -1) {
@@ -579,7 +584,7 @@ function namespaceReferenceLabels(projection, namespace) {
       }
     }
     if (following === '[') {
-      const secondEnd = findClosingBracket(source, firstEnd + 1);
+      const secondEnd = findClosingBracket(source, firstEnd + 1, bracketSearchEnd);
       if (secondEnd === -1) {
         cursor = firstEnd + 1;
         continue;
@@ -1383,11 +1388,18 @@ export async function writeNotePackage({
   const freeSections = [];
   const paidSections = [];
   const assetRoot = path.resolve(standardBook.bookRoot, standardBook.metadata.source.assets);
-  const assetRootStat = await fs.lstat(assetRoot);
-  if (assetRootStat.isSymbolicLink() || !assetRootStat.isDirectory()) {
-    throw new NoteAdapterError(`note asset root must remain a real directory: ${assetRoot}`);
+  const bookRootStat = await fs.lstat(standardBook.bookRoot);
+  if (bookRootStat.isSymbolicLink() || !bookRootStat.isDirectory()) {
+    throw new NoteAdapterError(
+      `note book root must remain a real directory: ${standardBook.bookRoot}`
+    );
   }
-  const assetRootIdentity = { dev: assetRootStat.dev, ino: assetRootStat.ino };
+  const assetRootIdentity = await SAFE_IO.bindDirectoryFromHeldTree(
+    standardBook.bookRoot,
+    { dev: bookRootStat.dev, ino: bookRootStat.ino },
+    path.relative(standardBook.bookRoot, assetRoot),
+    { pathLabel: 'note asset root' }
+  );
   let paidBoundaryStarted = false;
 
   for (const entry of entries) {
