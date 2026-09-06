@@ -1092,7 +1092,9 @@ async function collectImageCandidates({
 function createFragment(sections) {
   return sections
     .filter((section) => section.body)
-    .map((section) => `## ${section.title}\n\n${section.body}`)
+    .map((section) => section.includeTitle === false
+      ? section.body
+      : `## ${section.title}\n\n${section.body}`)
     .join('\n\n---\n\n') + '\n';
 }
 
@@ -1100,7 +1102,9 @@ function renderHtmlFragment(sections) {
   return sections
     .filter((section) => section.body)
     .map((section) => {
-      const markdown = `## ${section.title}\n\n${section.body}\n`;
+      const markdown = section.includeTitle === false
+        ? `${section.body}\n`
+        : `## ${section.title}\n\n${section.body}\n`;
       return HTML_FRAGMENT_MARKDOWN.render(markdown, {
         imageDestinations: section.imageDestinations,
         docId: section.id
@@ -1123,6 +1127,14 @@ function sortAndDeduplicateWarnings(warnings) {
       seen.add(key);
       return true;
     });
+}
+
+function hasReaderVisibleSourceLine(projection, nonReaderVisibleLines) {
+  const { lines } = normalizedLines(projection.text);
+  return lines.some((line, index) => {
+    const sourceLine = projection.sourceLines[index] ?? index + 1;
+    return line.trim() && !nonReaderVisibleLines.has(sourceLine);
+  });
 }
 
 function validateNoteMetadata(metadata, edition) {
@@ -1387,6 +1399,7 @@ export async function writeNotePackage({
   const imageCandidates = new Map();
   const freeSections = [];
   const paidSections = [];
+  const freeSectionIds = new Set();
   const assetRoot = path.resolve(standardBook.bookRoot, standardBook.metadata.source.assets);
   const bookRootStat = await fs.lstat(standardBook.bookRoot);
   if (bookRootStat.isSymbolicLink() || !bookRootStat.isDirectory()) {
@@ -1473,19 +1486,21 @@ export async function writeNotePackage({
           body: body.text,
           imageDestinations
         });
+        freeSectionIds.add(entry.id);
       }
     }
 
-    const paidProjected = projectSourceLines(
-      source,
-      paidReport,
-      entry.path,
-      freeReport
+    const paidProjected = removeLeadingCanonicalH1(
+      projectSourceLines(source, paidReport, entry.path, freeReport),
+      entry.path
     );
-    if (paidProjected.text) {
+    if (
+      paidProjected.text &&
+      hasReaderVisibleSourceLine(paidProjected, nonReaderVisibleLines)
+    ) {
       const body = convertStandardCallouts(
         completeDocumentReferences(
-          removeLeadingCanonicalH1(paidProjected, entry.path),
+          paidProjected,
           paidLabelNamespace,
           paidVisibleLines,
           entry.path,
@@ -1509,7 +1524,8 @@ export async function writeNotePackage({
           id: entry.id,
           title: escapedGeneratedTitle(entry.title, `structure title ${entry.id}`),
           body: body.text,
-          imageDestinations
+          imageDestinations,
+          includeTitle: !freeSectionIds.has(entry.id)
         });
       }
     }

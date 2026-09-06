@@ -162,11 +162,51 @@ describe('NoteAdapter', () => {
       path.join(packageDirectory(result), '02-paid-body.md'),
       'utf8'
     );
+    const freeHtml = await fs.readFile(
+      path.join(packageDirectory(result), '01-free-sample.html'),
+      'utf8'
+    );
+    const paidHtml = await fs.readFile(
+      path.join(packageDirectory(result), '02-paid-body.html'),
+      'utf8'
+    );
 
     assert.match(freeMarkdown, /adapterによる変換は後続Issueで扱います/u);
     assert.doesNotMatch(freeMarkdown, /この範囲は有償edition候補です/u);
     assert.match(paidMarkdown, /この範囲は有償edition候補です/u);
     assert.doesNotMatch(paidMarkdown, /adapterによる変換は後続Issueで扱います/u);
+    assert.strictEqual(
+      `${freeMarkdown}${paidMarkdown}`.match(/^## 正本から出力する流れ$/gmu)?.length,
+      1
+    );
+    assert.doesNotMatch(paidMarkdown, /^## 正本から出力する流れ$/mu);
+    assert.strictEqual(
+      `${freeHtml}${paidHtml}`.match(/<h2>正本から出力する流れ<\/h2>/gu)?.length,
+      1
+    );
+    assert.doesNotMatch(paidHtml, /<h2>正本から出力する流れ<\/h2>/u);
+  });
+
+  test('読者可視の有料本文がないpackageを拒否する', async () => {
+    const bookDirectory = await copySampleBook();
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# 第2章 正本から出力する流れ\n\n' +
+        '無料で読める本文です。\n\n' +
+        ':::paid\n\n' +
+        '[paid-only]: https://paid.example/reference\n\n' +
+        ':::\n',
+      'utf8'
+    );
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents = ['workflow'];
+      metadata.editions.find((edition) => edition.id === 'paid').documents = ['workflow'];
+    });
+
+    await assert.rejects(
+      build(bookDirectory, await temporaryDirectory('tmp-note-no-visible-paid-')),
+      /note paid-body fragment must not be empty/
+    );
   });
 
   test('無料範囲が有料範囲の後へ再出現する非単調構成を拒否する', async () => {
