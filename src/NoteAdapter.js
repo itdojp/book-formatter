@@ -6,6 +6,7 @@ import MarkdownIt from 'markdown-it';
 import markdownItFootnote from 'markdown-it-footnote';
 import markdownAutolinkRule from 'markdown-it/lib/rules_inline/autolink.mjs';
 import markdownHtmlInlineRule from 'markdown-it/lib/rules_inline/html_inline.mjs';
+import markdownLinkRule from 'markdown-it/lib/rules_inline/link.mjs';
 import markdownReferenceRule from 'markdown-it/lib/rules_block/reference.mjs';
 import YAML from 'yaml';
 
@@ -177,7 +178,8 @@ function createDocumentLabelNamespace(source, documentId) {
       references,
       environment[REFERENCE_DEFINITION_RANGES] || new Map()
     ),
-    footnoteDefinitions: collectFootnoteDefinitions(normalizedSource, tokens)
+    footnoteDefinitions: collectFootnoteDefinitions(normalizedSource, tokens),
+    nonRenderedHtmlLines: collectStandaloneHtmlCommentLines(normalizedSource, tokens)
   };
 }
 
@@ -297,7 +299,10 @@ function collectProtectedMarkdownRanges(source) {
     inlineRanges.push({ start: cursor, end: closing + markerLength });
     cursor = closing + markerLength;
   }
-  return mergeProtectedRanges([...ranges, ...inlineRanges]);
+  return {
+    protectedRanges: mergeProtectedRanges([...ranges, ...inlineRanges]),
+    inlineScopes: uniqueInlineScopes
+  };
 }
 
 function findClosingBracket(source, opening) {
@@ -312,34 +317,14 @@ function findClosingBracket(source, opening) {
   return -1;
 }
 
-function findInlineDestinationEnd(source, opening) {
-  let depth = 1;
-  let angleDestination = false;
-  let quote = null;
-  for (let cursor = opening + 1; cursor < source.length; cursor += 1) {
-    if (isBackslashEscaped(source, cursor)) continue;
-    const character = source[cursor];
-    if (quote) {
-      if (character === quote) quote = null;
-      continue;
-    }
-    if (angleDestination) {
-      if (character === '>') angleDestination = false;
-      continue;
-    }
-    if (character === '<') {
-      angleDestination = true;
-      continue;
-    }
-    if ((character === '"' || character === '\'') && /\s/u.test(source[cursor - 1] || '')) {
-      quote = character;
-      continue;
-    }
-    if (character === '(') depth += 1;
-    if (character !== ')') continue;
-    depth -= 1;
-    if (depth === 0) return cursor + 1;
-  }
+function parsedInlineLinkEnd(source, start, inlineScopeEnd) {
+  const scopedSource = source.slice(start, inlineScopeEnd);
+  const state = new SOURCE_MARKDOWN.inline.State(scopedSource, SOURCE_MARKDOWN, {}, []);
+  if (
+    markdownLinkRule(state, true) &&
+    state.pos > 0 &&
+    scopedSource[state.pos - 1] === ')'
+  ) return start + state.pos;
   return -1;
 }
 
@@ -419,6 +404,33 @@ function collectFootnoteDefinitions(source, tokens) {
   return definitions;
 }
 
+function containsOnlyHtmlComments(source) {
+  let remaining = source.trim();
+  let found = false;
+  while (remaining) {
+    if (!remaining.startsWith('<!--')) return false;
+    const closing = remaining.indexOf('-->', 4);
+    if (closing === -1) return false;
+    found = true;
+    remaining = remaining.slice(closing + 3).trim();
+  }
+  return found;
+}
+
+function collectStandaloneHtmlCommentLines(source, tokens) {
+  const { lines } = normalizedLines(source);
+  const sourceLines = new Set();
+  for (const token of tokens) {
+    if (token.type !== 'html_block' || !token.map) continue;
+    const blockSource = lines.slice(token.map[0], token.map[1]).join('\n');
+    if (!containsOnlyHtmlComments(blockSource)) continue;
+    for (let line = token.map[0] + 1; line <= token.map[1]; line += 1) {
+      sourceLines.add(line);
+    }
+  }
+  return sourceLines;
+}
+
 function emptyLabelState() {
   return {
     usedReferences: new Set(),
@@ -496,9 +508,10 @@ function namespaceReferenceLabels(projection, namespace) {
   }
   const source = projection.text;
   const lineOffsets = sourceLineOffsets(source);
-  const protectedRanges = collectProtectedMarkdownRanges(source);
+  const { protectedRanges, inlineScopes } = collectProtectedMarkdownRanges(source);
   const replacements = [];
   let protectedIndex = 0;
+  let inlineScopeIndex = 0;
   let cursor = 0;
 
   while (cursor < source.length) {
@@ -551,7 +564,15 @@ function namespaceReferenceLabels(projection, namespace) {
 
     const following = source[firstEnd + 1];
     if (following === '(') {
-      const destinationEnd = findInlineDestinationEnd(source, firstEnd + 1);
+      while (
+        inlineScopeIndex < inlineScopes.length &&
+        inlineScopes[inlineScopeIndex].end <= cursor
+      ) inlineScopeIndex += 1;
+      const inlineScope = inlineScopes[inlineScopeIndex];
+      const destinationEnd = inlineScope &&
+        cursor >= inlineScope.start && cursor < inlineScope.end
+        ? parsedInlineLinkEnd(source, cursor, inlineScope.end)
+        : -1;
       if (destinationEnd !== -1) {
         cursor = destinationEnd;
         continue;
@@ -1385,7 +1406,10 @@ export async function writeNotePackage({
     );
     const freeLabelNamespace = createDocumentLabelNamespace(source, `${entry.id}-free`);
     const paidLabelNamespace = createDocumentLabelNamespace(source, `${entry.id}-paid`);
-    const semanticDefinitionLines = definitionSourceLines(freeLabelNamespace);
+    const nonReaderVisibleLines = definitionSourceLines(freeLabelNamespace);
+    for (const line of freeLabelNamespace.nonRenderedHtmlLines) {
+      nonReaderVisibleLines.add(line);
+    }
     const paidVisibleLines = visibleSourceLines(source, paidReport, entry.path);
     const freeVisibleLines = visibleSourceLines(source, freeReport, entry.path);
     const { lines: sourceLines } = normalizedLines(source);
@@ -1394,7 +1418,7 @@ export async function writeNotePackage({
       if (
         !line.trim() ||
         !paidVisibleLines.has(lineNumber) ||
-        semanticDefinitionLines.has(lineNumber)
+        nonReaderVisibleLines.has(lineNumber)
       ) continue;
       if (freeVisibleLines.has(lineNumber)) {
         if (paidBoundaryStarted) {

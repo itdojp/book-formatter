@@ -174,6 +174,8 @@ describe('NoteAdapter', () => {
     await updateMetadata(bookDirectory, (metadata) => {
       metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
     });
+    await appendWorkflow(bookDirectory, '\n<!-- editorial note -->\n');
+    await build(bookDirectory, await temporaryDirectory('tmp-note-comment-after-paid-'));
     await appendWorkflow(bookDirectory, '\n有料block後に再出現する無料本文です。\n');
 
     await assert.rejects(
@@ -270,6 +272,9 @@ describe('NoteAdapter', () => {
         '`unclosed\n\n' +
         '[between][shared]\n\n' +
         '`later`\n\n' +
+        '[broken](\n\n' +
+        '[between-link][shared]\n\n' +
+        ')\n\n' +
         '```text\n[shared] [^note]\n```\n\n' +
         '<span data-test="1 > 0" data-label="[shared]">metadata</span>\n\n' +
         '<span\n data-label="[shared]">multiline metadata</span>\n\n' +
@@ -322,6 +327,7 @@ describe('NoteAdapter', () => {
     assert.match(markdown, /`\[shared\] \[\^note\]`/u);
     assert.match(markdown, /`literal\\` \[after\]\[note-preface-free-ref-1\] `later`/u);
     assert.match(markdown, /\[between\]\[note-preface-free-ref-1\]/u);
+    assert.match(markdown, /\[between-link\]\[note-preface-free-ref-1\]/u);
     assert.match(markdown, /```text\n\[shared\] \[\^note\]\n```/u);
     assert.match(markdown, /<span data-test="1 > 0" data-label="\[shared\]">metadata<\/span>/u);
     assert.match(markdown, /<span\n data-label="\[shared\]">multiline metadata<\/span>/u);
