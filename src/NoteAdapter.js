@@ -222,6 +222,7 @@ function parsedProtectedAngleEnd(source, start) {
 
 function collectProtectedMarkdownRanges(source) {
   const blockRanges = [];
+  const inlineScopes = [];
   const lineOffsets = sourceLineOffsets(source);
   for (const token of SOURCE_MARKDOWN.parse(source, {})) {
     if (
@@ -233,12 +234,22 @@ function collectProtectedMarkdownRanges(source) {
         end: lineOffsets[token.map[1]] ?? source.length
       });
     }
+    if (token.type === 'inline' && token.map) {
+      inlineScopes.push({
+        start: lineOffsets[token.map[0]],
+        end: lineOffsets[token.map[1]] ?? source.length
+      });
+    }
   }
 
   const ranges = mergeProtectedRanges(blockRanges);
+  const uniqueInlineScopes = [...new Map(
+    inlineScopes.map((range) => [`${range.start}:${range.end}`, range])
+  ).values()].sort((left, right) => left.start - right.start || left.end - right.end);
   const inlineRanges = [];
   let cursor = 0;
   let rangeIndex = 0;
+  let inlineScopeIndex = 0;
   while (cursor < source.length) {
     while (rangeIndex < ranges.length && ranges[rangeIndex].end <= cursor) {
       rangeIndex += 1;
@@ -260,17 +271,26 @@ function collectProtectedMarkdownRanges(source) {
       cursor += 1;
       continue;
     }
+    while (
+      inlineScopeIndex < uniqueInlineScopes.length &&
+      uniqueInlineScopes[inlineScopeIndex].end <= cursor
+    ) inlineScopeIndex += 1;
+    const inlineScope = uniqueInlineScopes[inlineScopeIndex];
+    if (!inlineScope || cursor < inlineScope.start || cursor >= inlineScope.end) {
+      cursor += 1;
+      continue;
+    }
     let openingEnd = cursor + 1;
     while (source[openingEnd] === '`') openingEnd += 1;
     const markerLength = openingEnd - cursor;
     let closing = source.indexOf('`', openingEnd);
-    while (closing !== -1) {
+    while (closing !== -1 && closing < inlineScope.end) {
       let closingEnd = closing + 1;
       while (source[closingEnd] === '`') closingEnd += 1;
-      if (closingEnd - closing === markerLength) break;
+      if (closingEnd <= inlineScope.end && closingEnd - closing === markerLength) break;
       closing = source.indexOf('`', closingEnd);
     }
-    if (closing === -1) {
+    if (closing === -1 || closing >= inlineScope.end) {
       cursor = openingEnd;
       continue;
     }
@@ -357,6 +377,10 @@ function collectReferenceDefinitions(source, parsedReferences, referenceLabels, 
         (_value, offset) => range.start + offset + 1
       ),
       definitionStartLines: acceptedRanges.map((item) => item.start + 1),
+      acceptedDefinitionRanges: acceptedRanges.map((item) => ({
+        startLine: item.start + 1,
+        endLine: item.end + 1
+      })),
       acceptedDefinitionLines: acceptedRanges.flatMap((item) =>
         Array.from(
           { length: item.end - item.start },
@@ -442,6 +466,27 @@ function isKnownDefinitionStart(
     opening
   );
   return (definition.definitionStartLines || definition.sourceLines).includes(sourceLine);
+}
+
+function knownReferenceDefinitionRange(
+  projection,
+  lineOffsets,
+  namespace,
+  opening,
+  label
+) {
+  const sourceLine = projectedSourceLineAtOffset(
+    lineOffsets,
+    projection.sourceLines,
+    opening
+  );
+  return namespace.referenceDefinitions.get(label)?.acceptedDefinitionRanges
+    ?.find((range) => range.startLine === sourceLine) || null;
+}
+
+function projectedOffsetAtSourceLine(projection, lineOffsets, sourceLine) {
+  const projectedLine = projection.sourceLines.findIndex((line) => line >= sourceLine);
+  return projectedLine === -1 ? projection.text.length : lineOffsets[projectedLine];
 }
 
 function namespaceReferenceLabels(projection, namespace) {
@@ -538,20 +583,24 @@ function namespaceReferenceLabels(projection, namespace) {
     );
     if (replacement) {
       const normalizedLabel = SOURCE_MARKDOWN.utils.normalizeReference(firstLabel);
-      if (isKnownDefinitionStart(
-        source,
+      const definitionRange = knownReferenceDefinitionRange(
         projection,
         lineOffsets,
         namespace,
         cursor,
-        firstEnd,
-        'reference',
         normalizedLabel
-      )) {
+      );
+      if (definitionRange) {
         labelState.definedReferences.add(
           normalizedLabel
         );
         addLabelReplacement(replacements, source, cursor + 1, firstEnd, replacement);
+        cursor = projectedOffsetAtSourceLine(
+          projection,
+          lineOffsets,
+          definitionRange.endLine
+        );
+        continue;
       } else {
         labelState.usedReferences.add(
           normalizedLabel
@@ -1313,7 +1362,11 @@ export async function writeNotePackage({
   const freeSections = [];
   const paidSections = [];
   const assetRoot = path.resolve(standardBook.bookRoot, standardBook.metadata.source.assets);
-  const assetRootIdentity = await SAFE_IO.pathIdentity(assetRoot);
+  const assetRootStat = await fs.lstat(assetRoot);
+  if (assetRootStat.isSymbolicLink() || !assetRootStat.isDirectory()) {
+    throw new NoteAdapterError(`note asset root must remain a real directory: ${assetRoot}`);
+  }
+  const assetRootIdentity = { dev: assetRootStat.dev, ino: assetRootStat.ino };
   let paidBoundaryStarted = false;
 
   for (const entry of entries) {

@@ -262,17 +262,21 @@ describe('NoteAdapter', () => {
     await fs.writeFile(
       path.join(bookDirectory, 'frontmatter/preface.md'),
       '# はじめに\n\n' +
-        '[first][shared] [shared][] [quoted][z-quoted] [^note]\n\n' +
+        '[first][shared] [shared][] [quoted][z-quoted] [metadata][zz-metadata] [^note]\n\n' +
         'x < [shared] > y\n\n' +
         'Text [shared]: remains visible.\n\n' +
         '`[shared] [^note]`\n\n' +
         '`literal\\` [after][shared] `later`\n\n' +
+        '`unclosed\n\n' +
+        '[between][shared]\n\n' +
+        '`later`\n\n' +
         '```text\n[shared] [^note]\n```\n\n' +
         '<span data-test="1 > 0" data-label="[shared]">metadata</span>\n\n' +
         '<span\n data-label="[shared]">multiline metadata</span>\n\n' +
         '[shared]: https://first.example/reference\n' +
         '> [z-quoted]: https://first.example/quoted\n' +
         '[shared]: https://ignored.example/duplicate\n' +
+        '[zz-metadata]: https://metadata.example/[shared] "title [shared]"\n' +
         '[^note]: first footnote\n',
       'utf8'
     );
@@ -299,6 +303,10 @@ describe('NoteAdapter', () => {
     assert.match(markdown, /\[\^note-preface-free-fn-1\]/u);
     assert.match(markdown, /\[note-preface-free-ref-1\]: https:\/\/first\.example\/reference/u);
     assert.match(markdown, /> \[note-preface-free-ref-2\]: https:\/\/first\.example\/quoted/u);
+    assert.match(
+      markdown,
+      /\[note-preface-free-ref-3\]: https:\/\/metadata\.example\/\[shared\] "title \[shared\]"/u
+    );
     assert.match(markdown, /\[\^note-preface-free-fn-1\]: first footnote/u);
     assert.match(markdown, /\[second\]\[note-introduction-free-ref-1\]/u);
     assert.match(markdown, /\[shared\]\[note-introduction-free-ref-1\]/u);
@@ -310,6 +318,7 @@ describe('NoteAdapter', () => {
     assert.match(markdown, /\[\^note-introduction-free-fn-1\]: second footnote/u);
     assert.match(markdown, /`\[shared\] \[\^note\]`/u);
     assert.match(markdown, /`literal\\` \[after\]\[note-preface-free-ref-1\] `later`/u);
+    assert.match(markdown, /\[between\]\[note-preface-free-ref-1\]/u);
     assert.match(markdown, /```text\n\[shared\] \[\^note\]\n```/u);
     assert.match(markdown, /<span data-test="1 > 0" data-label="\[shared\]">metadata<\/span>/u);
     assert.match(markdown, /<span\n data-label="\[shared\]">multiline metadata<\/span>/u);
@@ -535,6 +544,48 @@ describe('NoteAdapter', () => {
       build(symlinkBook, await temporaryDirectory('tmp-note-symlink-')),
       /must not contain symbolic links/
     );
+  });
+
+  test('検証後にsymlinkへ差し替えられたasset rootを束縛前に拒否する', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('asset-root symbolic-link race assertion is skipped on Windows');
+      return;
+    }
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-note-asset-root-race-output-');
+    const assetRoot = path.join(bookDirectory, 'assets');
+    const displacedAssetRoot = path.join(bookDirectory, 'assets.displaced');
+    const outside = await temporaryDirectory('tmp-note-asset-root-race-outside-');
+    await fs.writeFile(path.join(assetRoot, 'guide.pdf'), 'validated bytes');
+    await fs.writeFile(path.join(outside, 'guide.pdf'), 'outside bytes');
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.targets.note.attachment_candidates = ['assets/guide.pdf'];
+    });
+
+    const originalLstat = fs.lstat;
+    let assetRootLstatCalls = 0;
+    fs.lstat = async (candidate, ...args) => {
+      if (path.resolve(candidate) === assetRoot && ++assetRootLstatCalls === 5) {
+        await fs.rename(assetRoot, displacedAssetRoot);
+        await fs.symlink(outside, assetRoot, 'dir');
+      }
+      return originalLstat(candidate, ...args);
+    };
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /note asset root must remain a real directory/
+      );
+    } finally {
+      fs.lstat = originalLstat;
+    }
+    assert.ok(assetRootLstatCalls >= 5);
+    assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'note')), false);
+    assert.strictEqual(
+      await fs.readFile(path.join(displacedAssetRoot, 'guide.pdf'), 'utf8'),
+      'validated bytes'
+    );
+    assert.strictEqual(await fs.readFile(path.join(outside, 'guide.pdf'), 'utf8'), 'outside bytes');
   });
 
   test('paid対象・sample部分集合・metadata有限契約をfail closedで検証する', async () => {
