@@ -182,6 +182,130 @@ describe('NoteAdapter', () => {
     );
   });
 
+  test('fragment先頭のcode indentと末尾のMarkdown空白を保持する', async () => {
+    const bookDirectory = await copySampleBook();
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# 第2章 正本から出力する流れ\n\n' +
+        ':::paid\n' +
+        '    paid code\n' +
+        '\n' +
+        'paid hard break  \n' +
+        ':::\n',
+      'utf8'
+    );
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+    });
+
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-whitespace-'));
+    const output = packageDirectory(result);
+    const paidMarkdown = await fs.readFile(path.join(output, '02-paid-body.md'), 'utf8');
+    const paidHtml = await fs.readFile(path.join(output, '02-paid-body.html'), 'utf8');
+
+    assert.match(paidMarkdown, /\n {4}paid code\n\npaid hard break {2}\n/u);
+    assert.match(paidHtml, /<pre><code>paid code\n<\/code><\/pre>/u);
+    assert.match(paidHtml, /<p>paid hard break<\/p>/u);
+  });
+
+  test('文書間で重複するreferenceとfootnoteをnamespaceしcode literalを保持する', async () => {
+    const bookDirectory = await copySampleBook();
+    await fs.writeFile(
+      path.join(bookDirectory, 'frontmatter/preface.md'),
+      '# はじめに\n\n' +
+        '[first][shared] [shared][] [^note]\n\n' +
+        'Text [shared]: remains visible.\n\n' +
+        '`[shared] [^note]`\n\n' +
+        '```text\n[shared] [^note]\n```\n\n' +
+        '<span data-label="[shared]">metadata</span>\n\n' +
+        '[shared]: https://first.example/reference\n' +
+        '[^note]: first footnote\n',
+      'utf8'
+    );
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/01-introduction.md'),
+      '# 第1章 標準書籍フォーマットとは\n\n' +
+        '[second][shared] [shared] [^note]\n\n' +
+        '[inline](https://second.example/[shared])\n\n' +
+        '[shared]: https://second.example/reference\n' +
+        '[^note]: second footnote\n',
+      'utf8'
+    );
+
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-labels-'));
+    const output = packageDirectory(result);
+    const markdown = await fs.readFile(path.join(output, '01-free-sample.md'), 'utf8');
+    const html = await fs.readFile(path.join(output, '01-free-sample.html'), 'utf8');
+
+    assert.match(markdown, /\[first\]\[note-preface-ref-1\]/u);
+    assert.match(markdown, /\[shared\]\[note-preface-ref-1\]/u);
+    assert.match(markdown, /Text \[shared\]\[note-preface-ref-1\]: remains visible\./u);
+    assert.match(markdown, /\[\^note-preface-fn-1\]/u);
+    assert.match(markdown, /\[note-preface-ref-1\]: https:\/\/first\.example\/reference/u);
+    assert.match(markdown, /\[\^note-preface-fn-1\]: first footnote/u);
+    assert.match(markdown, /\[second\]\[note-introduction-ref-1\]/u);
+    assert.match(markdown, /\[shared\]\[note-introduction-ref-1\]/u);
+    assert.match(markdown, /\[\^note-introduction-fn-1\]/u);
+    assert.match(
+      markdown,
+      /\[note-introduction-ref-1\]: https:\/\/second\.example\/reference/u
+    );
+    assert.match(markdown, /\[\^note-introduction-fn-1\]: second footnote/u);
+    assert.match(markdown, /`\[shared\] \[\^note\]`/u);
+    assert.match(markdown, /```text\n\[shared\] \[\^note\]\n```/u);
+    assert.match(markdown, /<span data-label="\[shared\]">metadata<\/span>/u);
+    assert.match(markdown, /\[inline\]\(https:\/\/second\.example\/\[shared\]\)/u);
+    assert.doesNotMatch(markdown, /^\[shared\]:/mu);
+    assert.doesNotMatch(markdown, /^\[\^note\]:/mu);
+
+    assert.match(html, /href="https:\/\/first\.example\/reference"/u);
+    assert.match(html, /href="https:\/\/second\.example\/reference"/u);
+    assert.match(html, /id="fnref-preface-1"/u);
+    assert.match(html, /id="fn-preface-1"/u);
+    assert.match(html, /id="fnref-introduction-1"/u);
+    assert.match(html, /id="fn-introduction-1"/u);
+    assert.doesNotMatch(html, />note-(?:preface|introduction)-ref-/u);
+    assert.strictEqual(new Set([...html.matchAll(/id="(fn(?:ref)?-[^"]+)"/gu)]
+      .map((match) => match[1])).size, 4);
+  });
+
+  test('生成titleは可視single-lineに制限しMarkdown punctuationをescapeする', async () => {
+    const multilineBook = await copySampleBook();
+    await updateMetadata(multilineBook, (metadata) => {
+      metadata.structure.frontmatter[0].title = 'unsafe\n## injected';
+    });
+    await assert.rejects(
+      build(multilineBook, await temporaryDirectory('tmp-note-title-line-')),
+      /structure title preface must be a visible single-line string/
+    );
+
+    const multilineBookTitle = await copySampleBook();
+    await updateMetadata(multilineBookTitle, (metadata) => {
+      metadata.title = 'unsafe\n# injected';
+    });
+    await assert.rejects(
+      build(multilineBookTitle, await temporaryDirectory('tmp-note-book-title-line-')),
+      /book title must be a visible single-line string/
+    );
+
+    const escapedBook = await copySampleBook();
+    await updateMetadata(escapedBook, (metadata) => {
+      metadata.title = '[Book](https://book.example)';
+      metadata.structure.frontmatter[0].title = '[Generated](https://title.example)';
+    });
+    const result = await build(escapedBook, await temporaryDirectory('tmp-note-title-escape-'));
+    const output = packageDirectory(result);
+    const markdown = await fs.readFile(path.join(output, '01-free-sample.md'), 'utf8');
+    const html = await fs.readFile(path.join(output, '01-free-sample.html'), 'utf8');
+    const checklist = await fs.readFile(path.join(output, 'publish-checklist.md'), 'utf8');
+
+    assert.ok(markdown.includes('## \\[Generated\\]\\(https\\:\\/\\/title\\.example\\)\n'));
+    assert.match(html, /<h2>\[Generated\]\(https:\/\/title\.example\)<\/h2>/u);
+    assert.doesNotMatch(html, /href="https:\/\/title\.example/u);
+    assert.ok(checklist.includes('「\\[Book\\]\\(https\\:\\/\\/book\\.example\\)」'));
+    assert.doesNotMatch(checklist, /\[Book\]\(https:\/\/book\.example\)/u);
+  });
+
   test('画像とPDFを候補としてcopyし外部・非対応画像をredacted warningにする', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-note-assets-');

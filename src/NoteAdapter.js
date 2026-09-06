@@ -79,6 +79,299 @@ function compareCodeUnits(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+function createUniqueLabel(existingLabels, prefix, index, normalize = (value) => value) {
+  let suffix = index;
+  let candidate;
+  do {
+    candidate = `${prefix}-${suffix}`;
+    suffix += 1;
+  } while (existingLabels.has(normalize(candidate)));
+  existingLabels.add(normalize(candidate));
+  return candidate;
+}
+
+function createDocumentLabelNamespace(source, documentId) {
+  const environment = {};
+  SOURCE_MARKDOWN.parse(String(source), environment);
+
+  const referenceLabels = Object.keys(environment.references || {}).sort(compareCodeUnits);
+  const existingReferences = new Set(referenceLabels);
+  const references = new Map(referenceLabels.map((label, index) => [
+    label,
+    createUniqueLabel(
+      existingReferences,
+      `note-${documentId}-ref`,
+      index + 1,
+      SOURCE_MARKDOWN.utils.normalizeReference
+    )
+  ]));
+
+  const footnoteLabels = Object.keys(environment.footnotes?.refs || {})
+    .filter((label) => label.startsWith(':'))
+    .map((label) => label.slice(1))
+    .sort(compareCodeUnits);
+  const existingFootnotes = new Set(footnoteLabels);
+  const footnotes = new Map(footnoteLabels.map((label, index) => [
+    label,
+    createUniqueLabel(existingFootnotes, `note-${documentId}-fn`, index + 1)
+  ]));
+
+  return { references, footnotes };
+}
+
+function sourceLineOffsets(source) {
+  const offsets = [0];
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === '\n') offsets.push(index + 1);
+  }
+  offsets.push(source.length);
+  return offsets;
+}
+
+function isBackslashEscaped(source, index) {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && source[cursor] === '\\'; cursor -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
+function mergeProtectedRanges(ranges) {
+  const merged = [];
+  for (const range of ranges.sort((left, right) => left.start - right.start || left.end - right.end)) {
+    const previous = merged.at(-1);
+    if (previous && range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
+}
+
+function collectProtectedMarkdownRanges(source) {
+  const blockRanges = [];
+  const lineOffsets = sourceLineOffsets(source);
+  for (const token of SOURCE_MARKDOWN.parse(source, {})) {
+    if (
+      ['code_block', 'fence', 'html_block'].includes(token.type) &&
+      token.map
+    ) {
+      blockRanges.push({
+        start: lineOffsets[token.map[0]],
+        end: lineOffsets[token.map[1]] ?? source.length
+      });
+    }
+  }
+
+  const ranges = mergeProtectedRanges(blockRanges);
+  const inlineRanges = [];
+  let cursor = 0;
+  let rangeIndex = 0;
+  while (cursor < source.length) {
+    while (rangeIndex < ranges.length && ranges[rangeIndex].end <= cursor) {
+      rangeIndex += 1;
+    }
+    const protectedRange = ranges[rangeIndex];
+    if (protectedRange && cursor >= protectedRange.start && cursor < protectedRange.end) {
+      cursor = protectedRange.end;
+      continue;
+    }
+    if (source[cursor] === '<' && !isBackslashEscaped(source, cursor)) {
+      const closing = source.indexOf('>', cursor + 1);
+      const newline = source.indexOf('\n', cursor + 1);
+      if (closing !== -1 && (newline === -1 || closing < newline)) {
+        inlineRanges.push({ start: cursor, end: closing + 1 });
+        cursor = closing + 1;
+        continue;
+      }
+    }
+    if (source[cursor] !== '`' || isBackslashEscaped(source, cursor)) {
+      cursor += 1;
+      continue;
+    }
+    let openingEnd = cursor + 1;
+    while (source[openingEnd] === '`') openingEnd += 1;
+    const markerLength = openingEnd - cursor;
+    let closing = source.indexOf('`', openingEnd);
+    while (closing !== -1) {
+      let closingEnd = closing + 1;
+      while (source[closingEnd] === '`') closingEnd += 1;
+      if (
+        closingEnd - closing === markerLength &&
+        !isBackslashEscaped(source, closing)
+      ) break;
+      closing = source.indexOf('`', closingEnd);
+    }
+    if (closing === -1) {
+      cursor = openingEnd;
+      continue;
+    }
+    inlineRanges.push({ start: cursor, end: closing + markerLength });
+    cursor = closing + markerLength;
+  }
+  return mergeProtectedRanges([...ranges, ...inlineRanges]);
+}
+
+function findClosingBracket(source, opening) {
+  let depth = 0;
+  for (let cursor = opening; cursor < source.length; cursor += 1) {
+    if (isBackslashEscaped(source, cursor)) continue;
+    if (source[cursor] === '[') depth += 1;
+    if (source[cursor] !== ']') continue;
+    depth -= 1;
+    if (depth === 0) return cursor;
+  }
+  return -1;
+}
+
+function findInlineDestinationEnd(source, opening) {
+  let depth = 1;
+  let angleDestination = false;
+  let quote = null;
+  for (let cursor = opening + 1; cursor < source.length; cursor += 1) {
+    if (isBackslashEscaped(source, cursor)) continue;
+    const character = source[cursor];
+    if (quote) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (angleDestination) {
+      if (character === '>') angleDestination = false;
+      continue;
+    }
+    if (character === '<') {
+      angleDestination = true;
+      continue;
+    }
+    if ((character === '"' || character === '\'') && /\s/u.test(source[cursor - 1] || '')) {
+      quote = character;
+      continue;
+    }
+    if (character === '(') depth += 1;
+    if (character !== ')') continue;
+    depth -= 1;
+    if (depth === 0) return cursor + 1;
+  }
+  return -1;
+}
+
+function addLabelReplacement(replacements, source, start, end, replacement) {
+  if (source.slice(start, end) === replacement) return;
+  replacements.push({ start, end, replacement });
+}
+
+function isReferenceDefinitionStart(source, opening, closing) {
+  if (source[closing + 1] !== ':') return false;
+  const lineStart = source.lastIndexOf('\n', opening - 1) + 1;
+  return /^ {0,3}$/u.test(source.slice(lineStart, opening));
+}
+
+function namespaceReferenceLabels(projection, namespace) {
+  if (!projection.text || (namespace.references.size === 0 && namespace.footnotes.size === 0)) {
+    return projection;
+  }
+  const source = projection.text;
+  const protectedRanges = collectProtectedMarkdownRanges(source);
+  const replacements = [];
+  let protectedIndex = 0;
+  let cursor = 0;
+
+  while (cursor < source.length) {
+    while (
+      protectedIndex < protectedRanges.length &&
+      protectedRanges[protectedIndex].end <= cursor
+    ) protectedIndex += 1;
+    const protectedRange = protectedRanges[protectedIndex];
+    if (protectedRange && cursor >= protectedRange.start && cursor < protectedRange.end) {
+      cursor = protectedRange.end;
+      continue;
+    }
+    if (
+      source[cursor] !== '[' ||
+      isBackslashEscaped(source, cursor) ||
+      (cursor > 0 && source[cursor - 1] === '^' && !isBackslashEscaped(source, cursor - 1))
+    ) {
+      cursor += 1;
+      continue;
+    }
+
+    const firstEnd = findClosingBracket(source, cursor);
+    if (firstEnd === -1) {
+      cursor += 1;
+      continue;
+    }
+    const firstLabel = source.slice(cursor + 1, firstEnd);
+    if (firstLabel.startsWith('^')) {
+      const footnote = namespace.footnotes.get(firstLabel.slice(1));
+      if (footnote) {
+        addLabelReplacement(replacements, source, cursor + 2, firstEnd, footnote);
+      }
+      cursor = firstEnd + 1;
+      continue;
+    }
+
+    const following = source[firstEnd + 1];
+    if (following === '(') {
+      const destinationEnd = findInlineDestinationEnd(source, firstEnd + 1);
+      if (destinationEnd !== -1) {
+        cursor = destinationEnd;
+        continue;
+      }
+    }
+    if (following === '[') {
+      const secondEnd = findClosingBracket(source, firstEnd + 1);
+      if (secondEnd === -1) {
+        cursor = firstEnd + 1;
+        continue;
+      }
+      const secondLabel = source.slice(firstEnd + 2, secondEnd);
+      const effectiveLabel = secondLabel || firstLabel;
+      const replacement = namespace.references.get(
+        SOURCE_MARKDOWN.utils.normalizeReference(effectiveLabel)
+      );
+      if (replacement) {
+        addLabelReplacement(replacements, source, firstEnd + 2, secondEnd, replacement);
+      }
+      cursor = secondEnd + 1;
+      continue;
+    }
+
+    const replacement = namespace.references.get(
+      SOURCE_MARKDOWN.utils.normalizeReference(firstLabel)
+    );
+    if (replacement) {
+      if (isReferenceDefinitionStart(source, cursor, firstEnd)) {
+        addLabelReplacement(replacements, source, cursor + 1, firstEnd, replacement);
+      } else {
+        addLabelReplacement(replacements, source, firstEnd + 1, firstEnd + 1, `[${replacement}]`);
+      }
+    }
+    cursor = firstEnd + 1;
+  }
+
+  let text = source;
+  for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+    text = text.slice(0, replacement.start) + replacement.replacement + text.slice(replacement.end);
+  }
+  return { text, sourceLines: projection.sourceLines };
+}
+
+function escapedGeneratedTitle(title, context) {
+  const prohibitedCodePoints = new Set([0x7f, 0x85, 0x2028, 0x2029]);
+  if (
+    typeof title !== 'string' ||
+    !title.trim() ||
+    [...String(title)].some((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint <= 0x1f || prohibitedCodePoints.has(codePoint);
+    })
+  ) {
+    throw new NoteAdapterError(`${context} must be a visible single-line string.`);
+  }
+  return title.replace(/[!-/:-@[-`{-~]/gu, '\\$&');
+}
+
 function normalizedLines(source) {
   const normalized = String(source).replace(/\r\n?/g, '\n');
   const trailingNewline = normalized.endsWith('\n');
@@ -93,7 +386,7 @@ function trimProjection(lines, sourceLines) {
   while (start < end && !lines[start].trim()) start += 1;
   while (end > start && !lines[end - 1].trim()) end -= 1;
   return {
-    text: lines.slice(start, end).join('\n').trim(),
+    text: lines.slice(start, end).join('\n'),
     sourceLines: sourceLines.slice(start, end)
   };
 }
@@ -150,8 +443,8 @@ function projectSourceLines(source, report, sourcePath, subtractReport = null) {
 }
 
 function removeLeadingCanonicalH1(projection, sourcePath) {
-  const normalized = String(projection.text).replace(/\r\n?/g, '\n').trim();
-  if (!normalized) return { text: '', sourceLines: [] };
+  const normalized = String(projection.text).replace(/\r\n?/g, '\n');
+  if (!normalized.trim()) return { text: '', sourceLines: [] };
   const lines = normalized.split('\n');
   const topLevelH1 = SOURCE_MARKDOWN.parse(normalized, {}).filter(
     (token) => token.type === 'heading_open' && token.tag === 'h1' && token.level === 0
@@ -397,7 +690,7 @@ async function collectImageCandidates({
 function createFragment(sections) {
   return sections
     .filter((section) => section.body)
-    .map((section) => `## ${section.title}\n\n${section.body}`.trim())
+    .map((section) => `## ${section.title}\n\n${section.body}`)
     .join('\n\n---\n\n') + '\n';
 }
 
@@ -407,7 +700,8 @@ function renderHtmlFragment(sections) {
     .map((section) => {
       const markdown = `## ${section.title}\n\n${section.body}\n`;
       return HTML_FRAGMENT_MARKDOWN.render(markdown, {
-        imageDestinations: section.imageDestinations
+        imageDestinations: section.imageDestinations,
+        docId: section.id
       }).trim();
     })
     .join('\n<hr>\n') + '\n';
@@ -482,7 +776,8 @@ function validateNoteMetadata(metadata, edition) {
       `Free-sample documents must be included in the paid edition: ${missing.join(', ')}`
     );
   }
-  return { target, sampleEdition };
+  const escapedBookTitle = escapedGeneratedTitle(metadata.title, 'book title');
+  return { target, sampleEdition, escapedBookTitle };
 }
 
 async function collectAttachmentCandidates({
@@ -580,13 +875,13 @@ function createNoteManifest({
   };
 }
 
-function createPublishChecklist(noteManifest) {
+function createPublishChecklist(noteManifest, escapedBookTitle) {
   const tags = noteManifest.publication.hashtags.map((tag) => `#${tag}`).join(' ');
   return `# note公開前チェックリスト
 
 このpackageはnoteへ自動投稿しません。Markdownは正本照合用、HTMLは表示比較用です。noteの公式一括import形式ではないため、編集画面への転記と装飾確認を人間が行います。
 
-- [ ] noteのタイトル欄へ「${noteManifest.book.title}」を設定した
+- [ ] noteのタイトル欄へ「${escapedBookTitle}」を設定した
 - [ ] \`01-free-sample.md\`の内容を無料範囲として転記した
 - [ ] 無料範囲の末尾が段落境界であることを確認した
 - [ ] その段落境界の直後へnote編集画面で有料ラインを設定した
@@ -633,7 +928,11 @@ export async function writeNotePackage({
       'note output requires fail-closed visibility, destination, and artifact callbacks.'
     );
   }
-  const { target, sampleEdition } = validateNoteMetadata(standardBook.metadata, edition);
+  const {
+    target,
+    sampleEdition,
+    escapedBookTitle
+  } = validateNoteMetadata(standardBook.metadata, edition);
   const sampleReport = await getVisibilityReport(sampleEdition.id);
   if (!sampleReport.summary.safe) {
     throw new NoteAdapterError(
@@ -677,6 +976,7 @@ export async function writeNotePackage({
       entry.path,
       paidReport.sourceDigest
     );
+    const labelNamespace = createDocumentLabelNamespace(source, entry.id);
     const paidVisibleLines = visibleSourceLines(source, paidReport, entry.path);
     const freeVisibleLines = visibleSourceLines(source, freeReport, entry.path);
     const { lines: sourceLines } = normalizedLines(source);
@@ -697,7 +997,10 @@ export async function writeNotePackage({
     const freeProjected = projectSourceLines(source, freeReport, entry.path);
     if (freeProjected.text) {
       const body = convertStandardCallouts(
-        removeLeadingCanonicalH1(freeProjected, entry.path),
+        namespaceReferenceLabels(
+          removeLeadingCanonicalH1(freeProjected, entry.path),
+          labelNamespace
+        ),
         entry.path,
         warnings
       );
@@ -714,7 +1017,7 @@ export async function writeNotePackage({
       if (body.text) {
         freeSections.push({
           id: entry.id,
-          title: entry.title,
+          title: escapedGeneratedTitle(entry.title, `structure title ${entry.id}`),
           body: body.text,
           imageDestinations
         });
@@ -729,7 +1032,10 @@ export async function writeNotePackage({
     );
     if (paidProjected.text) {
       const body = convertStandardCallouts(
-        removeLeadingCanonicalH1(paidProjected, entry.path),
+        namespaceReferenceLabels(
+          removeLeadingCanonicalH1(paidProjected, entry.path),
+          labelNamespace
+        ),
         entry.path,
         warnings
       );
@@ -746,7 +1052,7 @@ export async function writeNotePackage({
       if (body.text) {
         paidSections.push({
           id: entry.id,
-          title: entry.title,
+          title: escapedGeneratedTitle(entry.title, `structure title ${entry.id}`),
           body: body.text,
           imageDestinations
         });
@@ -833,7 +1139,7 @@ export async function writeNotePackage({
     );
     await staging.write(
       `${packagePrefix}/publish-checklist.md`,
-      createPublishChecklist(noteManifest)
+      createPublishChecklist(noteManifest, escapedBookTitle)
     );
     for (const [destination, contents] of copiedAssets) {
       await staging.write(`${packagePrefix}/${destination}`, contents);
