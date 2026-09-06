@@ -169,6 +169,8 @@ describe('ZennAdapter', () => {
         '![[reference](http://example.test)](../assets/figures/flow.png)\n' +
         '![code alt `]`](../assets/figures/flow.png)\n' +
         '![outer ![inner](missing.png)](../assets/figures/outer.png)\n' +
+        '![x](../assets/figures/flow.png) ' +
+        '<https://example.test/![x](../assets/figures/flow.png)>\n' +
         '![metadata twin](../assets/figures/flow.png) ' +
         '[same metadata](https://example.test "literal ![metadata twin](../assets/figures/flow.png)")\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
@@ -241,6 +243,12 @@ describe('ZennAdapter', () => {
     assert.ok(
       workflow.includes(
         '![outer ![inner](missing.png)](/images/standard-book-example/figures/outer.png)'
+      )
+    );
+    assert.ok(
+      workflow.includes(
+        '![x](/images/standard-book-example/figures/flow.png) ' +
+        '<https://example.test/![x](../assets/figures/flow.png)>'
       )
     );
     assert.ok(
@@ -548,6 +556,29 @@ describe('ZennAdapter', () => {
         (warning) => warning.file === 'manuscript/02-workflow.md'
       ).map((warning) => warning.line),
       [1, 2]
+    );
+  });
+
+  test('autolink metadata内のlink・code風textをsource候補から除外する', async () => {
+    const bookDirectory = await copySampleBook();
+    const outputRoot = await temporaryDirectory('tmp-zenn-autolink-metadata-');
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# Warning positions\n' +
+        '<https://example.test/`b`/[fake](relative.md)> and `b` [real](relative.md)\n',
+      'utf8'
+    );
+
+    const result = await build(bookDirectory, outputRoot);
+    assert.deepStrictEqual(
+      result.manifest.adapter.warnings.filter(
+        (warning) => warning.file === 'manuscript/02-workflow.md'
+      ),
+      [{
+        code: 'relative_link_passthrough',
+        file: 'manuscript/02-workflow.md',
+        line: 1
+      }]
     );
   });
 

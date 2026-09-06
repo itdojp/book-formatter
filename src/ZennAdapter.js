@@ -528,7 +528,10 @@ function maskReaderVisibleScope(lines, scope, sourcePath) {
   const visibleScope = lines.slice(scope.start, scope.end).join('\n');
   const parsedKeys = parsedInlineCodeTokens(visibleScope).map(inlineCodeTokenKey);
   if (parsedKeys.length === 0) return visibleScope;
-  const metadataSpans = standaloneInlineDestinationSpans(visibleScope);
+  const metadataSpans = [
+    ...standaloneInlineDestinationSpans(visibleScope),
+    ...collectAutolinkSyntaxSpans(visibleScope)
+  ];
   const spans = selectUniqueParsedCandidates(
     collectInlineCodeCandidates(visibleScope, metadataSpans),
     parsedKeys,
@@ -741,6 +744,31 @@ function collectInlineLinks(segment) {
   );
 }
 
+function collectAutolinkSyntaxSpans(segment) {
+  const spans = [];
+  let opening = null;
+  for (let cursor = 0; cursor < segment.length; cursor += 1) {
+    if (segment[cursor] === '\\') {
+      cursor += 1;
+      continue;
+    }
+    if (segment[cursor] === '\n') {
+      opening = null;
+      continue;
+    }
+    if (segment[cursor] === '<') {
+      opening = cursor;
+      continue;
+    }
+    if (segment[cursor] !== '>' || opening === null) continue;
+    const end = cursor + 1;
+    const token = parsedRootLink(segment.slice(opening, end), {});
+    if (token?.markup === 'autolink') spans.push({ start: opening, end });
+    opening = null;
+  }
+  return spans;
+}
+
 function parsedInlineImages(source) {
   return collectTokens(
     SOURCE_AUDIT_MARKDOWN.parseInline(source, {}),
@@ -809,7 +837,7 @@ function selectParsedInlineLinkSyntaxes(
 
   const candidates = excludeCandidatesWithinSpans(
     collectInlineLinks(segment),
-    standaloneImageSyntaxSpans(segment)
+    [...standaloneImageSyntaxSpans(segment), ...collectAutolinkSyntaxSpans(segment)]
   ).map((candidate) => {
     const token = parsedRootLink(candidate.source, environment);
     return {
@@ -824,18 +852,21 @@ function selectParsedInlineImages(segment, sourcePath) {
   const parsedKeys = parsedInlineImages(segment).map(imageTokenKey);
   if (parsedKeys.length === 0) return [];
 
-  const linkMetadataSpans = selectParsedInlineLinkSyntaxes(
-    segment,
-    {},
-    sourcePath,
-    (token) => token.markup !== 'autolink',
-    'link metadata'
-  )
-    .filter((candidate) => candidate.destinationStart !== undefined)
-    .map((candidate) => ({
-      start: candidate.destinationStart,
-      end: candidate.destinationEnd
-    }));
+  const linkMetadataSpans = [
+    ...selectParsedInlineLinkSyntaxes(
+      segment,
+      {},
+      sourcePath,
+      (token) => token.markup !== 'autolink',
+      'link metadata'
+    )
+      .filter((candidate) => candidate.destinationStart !== undefined)
+      .map((candidate) => ({
+        start: candidate.destinationStart,
+        end: candidate.destinationEnd
+      })),
+    ...collectAutolinkSyntaxSpans(segment)
+  ];
   const candidates = excludeCandidatesWithinSpans(
     collectInlineImages(segment),
     linkMetadataSpans
