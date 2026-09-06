@@ -27,16 +27,39 @@ const NOTE_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 const SAFE_IO = createAdapterSafeIO({ adapterName: 'note', target: 'note' });
 const REFERENCE_DEFINITION_RANGES = Symbol('note-reference-definition-ranges');
 
+function acceptedReferenceLabel(state, startLine, endLine) {
+  let source = '';
+  for (let line = startLine; line < endLine; line += 1) {
+    if (source) source += '\n';
+    source += state.src.slice(
+      state.bMarks[line] + state.tShift[line],
+      state.eMarks[line]
+    );
+  }
+  if (source[0] !== '[') return null;
+  for (let cursor = 1; cursor < source.length; cursor += 1) {
+    if (source[cursor] === '\\') {
+      cursor += 1;
+      continue;
+    }
+    if (source[cursor] === ']') {
+      return state.md.utils.normalizeReference(source.slice(1, cursor));
+    }
+  }
+  return null;
+}
+
 function captureReferenceDefinitionRanges(markdown) {
   markdown.block.ruler.at('reference', (state, startLine, endLine, silent) => {
-    const existingLabels = new Set(Object.keys(state.env.references || {}));
     const accepted = markdownReferenceRule(state, startLine, endLine, silent);
     if (!accepted || silent) return accepted;
+    const label = acceptedReferenceLabel(state, startLine, state.line);
+    if (!label) return accepted;
     const ranges = state.env[REFERENCE_DEFINITION_RANGES] || new Map();
     state.env[REFERENCE_DEFINITION_RANGES] = ranges;
-    for (const label of Object.keys(state.env.references || {})) {
-      if (!existingLabels.has(label)) ranges.set(label, { start: startLine, end: state.line });
-    }
+    const acceptedRanges = ranges.get(label) || [];
+    acceptedRanges.push({ start: startLine, end: state.line });
+    ranges.set(label, acceptedRanges);
     return accepted;
   });
 }
@@ -76,6 +99,16 @@ HTML_FRAGMENT_MARKDOWN.renderer.rules.image = (
   }
   token.attrSet('src', destination);
   return defaultImageRenderer(tokens, index, options, environment, renderer);
+};
+
+HTML_FRAGMENT_MARKDOWN.renderer.rules.footnote_anchor_name = (
+  tokens,
+  index,
+  _options,
+  environment
+) => {
+  const number = Number(tokens[index].meta.id + 1).toString();
+  return `-${environment.docId}-${number}`;
 };
 
 export class NoteAdapterError extends Error {
@@ -234,10 +267,7 @@ function collectProtectedMarkdownRanges(source) {
     while (closing !== -1) {
       let closingEnd = closing + 1;
       while (source[closingEnd] === '`') closingEnd += 1;
-      if (
-        closingEnd - closing === markerLength &&
-        !isBackslashEscaped(source, closing)
-      ) break;
+      if (closingEnd - closing === markerLength) break;
       closing = source.indexOf('`', closingEnd);
     }
     if (closing === -1) {
@@ -312,7 +342,8 @@ function escapedReferenceTitle(title) {
 function collectReferenceDefinitions(source, parsedReferences, referenceLabels, definitionRanges) {
   const definitions = new Map();
   for (const normalizedLabel of Object.keys(parsedReferences).sort(compareCodeUnits)) {
-    const range = definitionRanges.get(normalizedLabel);
+    const acceptedRanges = definitionRanges.get(normalizedLabel) || [];
+    const range = acceptedRanges[0];
     if (!range) continue;
     const parsed = parsedReferences[normalizedLabel];
     const generatedLabel = referenceLabels.get(normalizedLabel);
@@ -324,6 +355,13 @@ function collectReferenceDefinitions(source, parsedReferences, referenceLabels, 
       visibilityLines: Array.from(
         { length: range.end - range.start },
         (_value, offset) => range.start + offset + 1
+      ),
+      definitionStartLines: acceptedRanges.map((item) => item.start + 1),
+      acceptedDefinitionLines: acceptedRanges.flatMap((item) =>
+        Array.from(
+          { length: item.end - item.start },
+          (_value, offset) => item.start + offset + 1
+        )
       )
     });
   }
@@ -398,11 +436,12 @@ function isKnownDefinitionStart(
     ? namespace.footnoteDefinitions.get(label)
     : namespace.referenceDefinitions.get(label);
   if (!definition) return false;
-  return definition.sourceLines[0] === projectedSourceLineAtOffset(
+  const sourceLine = projectedSourceLineAtOffset(
     lineOffsets,
     projection.sourceLines,
     opening
   );
+  return (definition.definitionStartLines || definition.sourceLines).includes(sourceLine);
 }
 
 function namespaceReferenceLabels(projection, namespace) {
@@ -637,7 +676,9 @@ function definitionSourceLines(namespace) {
   const lines = new Set();
   for (const definitions of [namespace.referenceDefinitions, namespace.footnoteDefinitions]) {
     for (const definition of definitions.values()) {
-      for (const line of definition.visibilityLines) lines.add(line);
+      for (const line of definition.acceptedDefinitionLines || definition.visibilityLines) {
+        lines.add(line);
+      }
     }
   }
   return lines;

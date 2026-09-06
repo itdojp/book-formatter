@@ -220,11 +220,13 @@ describe('NoteAdapter', () => {
         'x < [shared] > y\n\n' +
         'Text [shared]: remains visible.\n\n' +
         '`[shared] [^note]`\n\n' +
+        '`literal\\` [after][shared] `later`\n\n' +
         '```text\n[shared] [^note]\n```\n\n' +
         '<span data-test="1 > 0" data-label="[shared]">metadata</span>\n\n' +
         '<span\n data-label="[shared]">multiline metadata</span>\n\n' +
         '[shared]: https://first.example/reference\n' +
         '> [z-quoted]: https://first.example/quoted\n' +
+        '[shared]: https://ignored.example/duplicate\n' +
         '[^note]: first footnote\n',
       'utf8'
     );
@@ -261,6 +263,7 @@ describe('NoteAdapter', () => {
     );
     assert.match(markdown, /\[\^note-introduction-free-fn-1\]: second footnote/u);
     assert.match(markdown, /`\[shared\] \[\^note\]`/u);
+    assert.match(markdown, /`literal\\` \[after\]\[note-preface-free-ref-1\] `later`/u);
     assert.match(markdown, /```text\n\[shared\] \[\^note\]\n```/u);
     assert.match(markdown, /<span data-test="1 > 0" data-label="\[shared\]">metadata<\/span>/u);
     assert.match(markdown, /<span\n data-label="\[shared\]">multiline metadata<\/span>/u);
@@ -269,6 +272,7 @@ describe('NoteAdapter', () => {
     assert.doesNotMatch(markdown, /^\[\^note\]:/mu);
 
     assert.match(html, /href="https:\/\/first\.example\/reference"/u);
+    assert.doesNotMatch(html, /ignored\.example\/duplicate/u);
     assert.match(html, /href="https:\/\/first\.example\/quoted"/u);
     assert.match(html, /href="https:\/\/second\.example\/reference"/u);
     assert.match(html, /x &lt; <a href="https:\/\/first\.example\/reference">shared<\/a> &gt; y/u);
@@ -292,6 +296,7 @@ describe('NoteAdapter', () => {
         ':::\n\n' +
         '[shared]: <https://shared.example/a%20b>\n' +
         '  "Shared title"\n' +
+        '[shared]: https://ignored.example/duplicate\n' +
         '[z-nested]: https://shared.example/nested\n' +
         '[^note]: shared footnote with [z-nested]\n',
       'utf8'
@@ -317,6 +322,8 @@ describe('NoteAdapter', () => {
     assert.doesNotMatch(paidMarkdown, /%2520/u);
     assert.match(freeHtml, /href="https:\/\/shared\.example\/a%20b" title="Shared title"/u);
     assert.match(paidHtml, /href="https:\/\/shared\.example\/a%20b" title="Shared title"/u);
+    assert.doesNotMatch(freeHtml, /ignored\.example\/duplicate/u);
+    assert.doesNotMatch(paidHtml, /ignored\.example\/duplicate/u);
     assert.match(freeHtml, /id="fn-workflow-1"/u);
     assert.match(paidHtml, /id="fn-workflow-1"/u);
   });
