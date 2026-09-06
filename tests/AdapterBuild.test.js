@@ -150,6 +150,41 @@ describe('AdapterBuild', () => {
     assert.strictEqual(await fs.pathExists(first.manifestPath), false);
   });
 
+  test('初回検証後に変更されたbook.yamlをvisibility結果と混在させない', async () => {
+    const bookDirectory = await copySampleBook();
+    const metadataPath = path.join(bookDirectory, 'book.yaml');
+    const originalReadFile = fs.readFile;
+    let metadataReads = 0;
+    fs.readFile = async (candidate, ...args) => {
+      const contents = await originalReadFile(candidate, ...args);
+      if (path.resolve(candidate) === metadataPath) {
+        metadataReads += 1;
+        if (metadataReads === 1) {
+          await fs.writeFile(
+            metadataPath,
+            String(contents).replace('slug: standard-book-example', 'slug: changed-book-example'),
+            'utf8'
+          );
+        }
+      }
+      return contents;
+    };
+    try {
+      await assert.rejects(
+        buildStandardBookAdapter({
+          bookDirectory,
+          target: 'zenn',
+          editionId: 'free',
+          dryRun: true
+        }),
+        /book\.yaml changed after the adapter metadata snapshot was validated/u
+      );
+    } finally {
+      fs.readFile = originalReadFile;
+    }
+    assert.ok(metadataReads >= 2);
+  });
+
   test('通常buildはtarget配下へmanifestだけを原子的かつ決定的に出力する', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await createTemporaryDirectory('tmp-adapter-output-');

@@ -363,7 +363,9 @@ export async function buildStandardBookAdapter(options) {
   );
   if (!edition) throw new AdapterBuildError(`Unknown edition: ${editionId}`);
 
-  const visibilityReport = await checkBookVisibility(standardBook.bookRoot, editionId);
+  const visibilityReport = await checkBookVisibility(standardBook.bookRoot, editionId, {
+    expectedMetadataDigest: standardBook.metadataDigest
+  });
   if (!visibilityReport.summary.safe) {
     throw new AdapterBuildError(
       `Visibility check failed for edition ${editionId}: ` +
@@ -423,7 +425,10 @@ export async function buildStandardBookAdapter(options) {
         verifyArtifact: (artifactPath) => checkBookVisibility(
           standardBook.bookRoot,
           edition.id,
-          { artifactPath }
+          {
+            artifactPath,
+            expectedMetadataDigest: standardBook.metadataDigest
+          }
         ),
         validateOnly: dryRun
       });

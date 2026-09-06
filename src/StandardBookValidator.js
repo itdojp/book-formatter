@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Ajv from 'ajv';
@@ -148,10 +149,12 @@ export async function validateStandardBook(bookDirectory, options = {}) {
   const schemaPath = path.resolve(options.schemaPath || DEFAULT_STANDARD_BOOK_SCHEMA);
 
   let metadata;
+  let metadataSource;
   let schema;
 
   try {
-    metadata = YAML.parse(await fs.readFile(metadataPath, 'utf8'), { uniqueKeys: true });
+    metadataSource = await fs.readFile(metadataPath, 'utf8');
+    metadata = YAML.parse(metadataSource, { uniqueKeys: true });
   } catch (error) {
     throw new StandardBookValidationError(`Cannot read book.yaml: ${error.message}`);
   }
@@ -247,6 +250,7 @@ export async function validateStandardBook(bookDirectory, options = {}) {
   return {
     bookRoot,
     metadata,
+    metadataDigest: createHash('sha256').update(metadataSource, 'utf8').digest('hex'),
     metadataPath,
     schemaPath,
     schemaVersion: metadata.schema_version,

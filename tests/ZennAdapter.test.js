@@ -158,10 +158,12 @@ describe('ZennAdapter', () => {
         '![entity](../assets/figures/a&amp;b.png)\n' +
         '![escaped path](../assets/figures/a\\(b\\).png)\n' +
         '![angle path](<../assets/figures/a)b.png>)\n' +
+        '![angle whitespace](<../assets/figures/flow name.png>)\n' +
         '![backtick path](../assets/figures/a`b`.png)\n' +
         'inline destination twin: `b`\n' +
         '[docs](target.md) ![link-like path](../assets/figures/a[docs](target.md).png)\n' +
         '![a\\]b](../assets/figures/flow.png)\n' +
+        '![[reference](http://example.test)](../assets/figures/flow.png)\n' +
         '![metadata twin](../assets/figures/flow.png) ' +
         '[same metadata](https://example.test "literal ![metadata twin](../assets/figures/flow.png)")\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
@@ -205,6 +207,10 @@ describe('ZennAdapter', () => {
     );
     assert.match(
       workflow,
+      /!\[angle whitespace\]\(\/images\/standard-book-example\/figures\/flow%20name\.png\)/u
+    );
+    assert.match(
+      workflow,
       /!\[backtick path\]\(\/images\/standard-book-example\/figures\/a%60b%60\.png\)/u
     );
     assert.match(workflow, /inline destination twin: `b`/u);
@@ -214,6 +220,11 @@ describe('ZennAdapter', () => {
     );
     assert.ok(
       workflow.includes('![a\\]b](/images/standard-book-example/figures/flow.png)')
+    );
+    assert.ok(
+      workflow.includes(
+        '![[reference](http://example.test)](/images/standard-book-example/figures/flow.png)'
+      )
     );
     assert.ok(
       workflow.includes(
@@ -858,6 +869,45 @@ describe('ZennAdapter', () => {
       await assert.rejects(
         build(bookDirectory, outputRoot),
         /Zenn staging file changed after exclusive creation/u
+      );
+    } finally {
+      fs.rename = originalRename;
+    }
+    assert.strictEqual(injected, true);
+    assert.strictEqual(await fs.pathExists(outputDirectory), false);
+  });
+
+  test('install中に変更されたbook.yaml snapshotをrollbackする', async (context) => {
+    if (process.platform === 'win32') {
+      context.diagnostic('metadata snapshot race assertion is skipped on Windows');
+      return;
+    }
+    const bookDirectory = await copySampleBook();
+    const metadataPath = path.join(bookDirectory, 'book.yaml');
+    const outputRoot = await temporaryDirectory('tmp-zenn-metadata-race-');
+    const outputDirectory = path.resolve(outputRoot, 'zenn');
+    const originalRename = fs.rename;
+    let injected = false;
+    fs.rename = async (source, destination, ...args) => {
+      if (
+        !injected &&
+        path.basename(source).startsWith('.zenn-') &&
+        path.resolve(destination) === outputDirectory
+      ) {
+        injected = true;
+        const metadata = await fs.readFile(metadataPath, 'utf8');
+        await fs.writeFile(
+          metadataPath,
+          metadata.replace('slug: standard-book-example', 'slug: changed-book-example'),
+          'utf8'
+        );
+      }
+      return originalRename(source, destination, ...args);
+    };
+    try {
+      await assert.rejects(
+        build(bookDirectory, outputRoot),
+        /Zenn source changed after visibility validation: book\.yaml/u
       );
     } finally {
       fs.rename = originalRename;

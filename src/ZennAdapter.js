@@ -107,7 +107,9 @@ function collectTokens(tokens, inheritedLine = 1) {
     const line = token.map ? token.map[0] + 1 : currentLine;
     currentLine = line;
     collected.push({ token, line });
-    if (token.children) collected.push(...collectTokens(token.children, line));
+    if (token.children && token.type !== 'image') {
+      collected.push(...collectTokens(token.children, line));
+    }
     if (token.type === 'softbreak' || token.type === 'hardbreak') currentLine += 1;
   }
   return collected;
@@ -759,7 +761,7 @@ function selectParsedInlineLinkSyntaxes(
 
   const candidates = excludeCandidatesWithinSpans(
     collectInlineLinks(segment),
-    standaloneImageDestinationSpans(segment)
+    standaloneImageSyntaxSpans(segment)
   ).map((candidate) => {
     const token = parsedRootLink(candidate.source, environment);
     return {
@@ -845,16 +847,15 @@ function standaloneInlineDestinationSpans(segment) {
     }));
 }
 
-function standaloneImageDestinationSpans(segment) {
+function standaloneImageSyntaxSpans(segment) {
   return collectInlineImages(segment)
     .filter((candidate) => {
       const children = SOURCE_AUDIT_MARKDOWN.parseInline(candidate.source, {})[0]?.children || [];
       return children.length === 1 && children[0].type === 'image';
     })
-    .filter((candidate) => candidate.destinationStart !== undefined)
     .map((candidate) => ({
-      start: candidate.destinationStart,
-      end: candidate.destinationEnd
+      start: candidate.start,
+      end: candidate.end
     }));
 }
 
@@ -927,7 +928,8 @@ async function convertImagesAndAudit(source, {
           `Zenn source image must have a non-empty destination: ${sourcePath}`
         );
       }
-      if (/\s/u.test(sourceDestination)) {
+      const angleDestination = /^<[^<>\r\n]*>$/u.test(sourceDestination);
+      if (/\s/u.test(sourceDestination) && !angleDestination) {
         throw new ZennAdapterError(`Image titles or whitespace paths are not supported in ${sourcePath}`);
       }
       const destination = imageSyntax.parsedDestination;
@@ -1463,7 +1465,8 @@ async function replaceOwnedDirectory({
   expectedOutputIdentity,
   protectedRoots,
   revalidateReplacementDirectory,
-  revalidateStagingTree
+  revalidateStagingTree,
+  revalidateMetadataSnapshot
 }) {
   const backupDirectory = `${outputDirectory}.backup-${process.pid}-${randomUUID()}`;
   const currentOutputIdentity = await pathObjectIdentityIfExists(outputDirectory);
@@ -1487,6 +1490,7 @@ async function replaceOwnedDirectory({
   let stagingInstalled = false;
   let committed = false;
   try {
+    await revalidateMetadataSnapshot();
     if (outputExists) {
       await fs.rename(outputDirectory, backupDirectory);
       outputMoved = true;
@@ -1496,6 +1500,7 @@ async function replaceOwnedDirectory({
         'Zenn output identity changed across backup rename'
       );
       await assertProtectedRootsUnchanged(protectedRoots, identities);
+      await revalidateMetadataSnapshot();
       await revalidateReplacementDirectory(backupDirectory);
     }
     await assertPathObjectIdentity(
@@ -1513,6 +1518,7 @@ async function replaceOwnedDirectory({
     );
     await revalidateStagingTree(outputDirectory);
     await assertProtectedRootsUnchanged(protectedRoots, identities);
+    await revalidateMetadataSnapshot();
     if (outputMoved) await revalidateReplacementDirectory(backupDirectory);
     committed = true;
     if (outputMoved) {
@@ -1656,6 +1662,15 @@ export async function writeZennProject({
     throw new ZennAdapterError('Zenn output requires fail-closed destination and artifact callbacks.');
   }
 
+  const revalidateMetadataSnapshot = async () => {
+    await readVisibilityBoundSource(
+      standardBook.bookRoot,
+      path.relative(standardBook.bookRoot, standardBook.metadataPath),
+      standardBook.metadataDigest
+    );
+  };
+  await revalidateMetadataSnapshot();
+
   const entries = flattenStructure(standardBook.metadata);
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
   const includedReports = visibilityReport.documents.filter(
@@ -1782,7 +1797,8 @@ export async function writeZennProject({
       expectedOutputIdentity,
       protectedRoots,
       revalidateReplacementDirectory,
-      revalidateStagingTree: staging.assertTreeUnchanged
+      revalidateStagingTree: staging.assertTreeUnchanged,
+      revalidateMetadataSnapshot
     });
   } catch (error) {
     if (expectedStagingIdentity) {
