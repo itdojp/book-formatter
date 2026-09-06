@@ -108,8 +108,37 @@ HTML_FRAGMENT_MARKDOWN.renderer.rules.footnote_anchor_name = (
   _options,
   environment
 ) => {
-  const number = Number(tokens[index].meta.id + 1).toString();
+  const number = Number(
+    tokens[index].meta.id + 1 + (environment.footnoteOffset || 0)
+  ).toString();
   return `-${environment.docId}-${number}`;
+};
+
+HTML_FRAGMENT_MARKDOWN.renderer.rules.footnote_caption = (
+  tokens,
+  index,
+  _options,
+  environment
+) => {
+  let number = Number(
+    tokens[index].meta.id + 1 + (environment.footnoteOffset || 0)
+  ).toString();
+  if (tokens[index].meta.subId > 0) number += `:${tokens[index].meta.subId}`;
+  return `[${number}]`;
+};
+
+HTML_FRAGMENT_MARKDOWN.renderer.rules.footnote_block_open = (
+  _tokens,
+  _index,
+  options,
+  environment
+) => {
+  const separator = options.xhtmlOut
+    ? '<hr class="footnotes-sep" />\n'
+    : '<hr class="footnotes-sep">\n';
+  const start = (environment.footnoteOffset || 0) + 1;
+  const startAttribute = start > 1 ? ` start="${start}"` : '';
+  return `${separator}<section class="footnotes">\n<ol class="footnotes-list"${startAttribute}>\n`;
 };
 
 export class NoteAdapterError extends Error {
@@ -954,6 +983,15 @@ function destinationScheme(destination) {
   return String(destination).trim().match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1]?.toLowerCase() || null;
 }
 
+function encodeLocalUrlPath(relativePath) {
+  return String(relativePath)
+    .split('/')
+    .map((segment) => encodeURIComponent(segment).replace(/[!'()*]/gu, (character) =>
+      `%${character.codePointAt(0).toString(16).toUpperCase()}`
+    ))
+    .join('/');
+}
+
 function stripQueryAndFragment(destination) {
   const boundary = String(destination).search(/[?#]/u);
   return boundary === -1 ? String(destination) : String(destination).slice(0, boundary);
@@ -1076,7 +1114,7 @@ async function collectImageCandidates({
       throw new NoteAdapterError(`Conflicting note asset destination: ${outputPath}`);
     }
     copiedAssets.set(outputPath, contents);
-    destinations.set(destination, outputPath);
+    destinations.set(destination, encodeLocalUrlPath(outputPath));
     const candidate = imageCandidates.get(outputPath) || {
       source: `${path.relative(bookRoot, assetRoot).split(path.sep).join('/')}/${relativeToAssets.split(path.sep).join('/')}`,
       destination: outputPath,
@@ -1098,19 +1136,25 @@ function createFragment(sections) {
     .join('\n\n---\n\n') + '\n';
 }
 
-function renderHtmlFragment(sections) {
-  return sections
+function renderHtmlFragment(sections, initialFootnoteOffset = 0) {
+  let footnoteOffset = initialFootnoteOffset;
+  const html = sections
     .filter((section) => section.body)
     .map((section) => {
       const markdown = section.includeTitle === false
         ? `${section.body}\n`
         : `## ${section.title}\n\n${section.body}\n`;
-      return HTML_FRAGMENT_MARKDOWN.render(markdown, {
+      const environment = {
         imageDestinations: section.imageDestinations,
-        docId: section.id
-      }).trim();
+        docId: section.id,
+        footnoteOffset
+      };
+      const rendered = HTML_FRAGMENT_MARKDOWN.render(markdown, environment).trim();
+      footnoteOffset += environment.footnotes?.list?.length || 0;
+      return rendered;
     })
     .join('\n<hr>\n') + '\n';
+  return { html, nextFootnoteOffset: footnoteOffset };
 }
 
 function sortAndDeduplicateWarnings(warnings) {
@@ -1456,11 +1500,17 @@ export async function writeNotePackage({
       }
     }
 
-    const freeProjected = projectSourceLines(source, freeReport, entry.path);
-    if (freeProjected.text) {
+    const freeProjected = removeLeadingCanonicalH1(
+      projectSourceLines(source, freeReport, entry.path),
+      entry.path
+    );
+    if (
+      freeProjected.text &&
+      hasReaderVisibleSourceLine(freeProjected, nonReaderVisibleLines)
+    ) {
       const body = convertStandardCallouts(
         completeDocumentReferences(
-          removeLeadingCanonicalH1(freeProjected, entry.path),
+          freeProjected,
           freeLabelNamespace,
           freeVisibleLines,
           entry.path,
@@ -1565,8 +1615,13 @@ export async function writeNotePackage({
   });
   const freeMarkdown = createFragment(freeSections);
   const paidMarkdown = createFragment(paidSections);
-  const freeHtml = renderHtmlFragment(freeSections);
-  const paidHtml = renderHtmlFragment(paidSections);
+  const freeHtmlFragment = renderHtmlFragment(freeSections);
+  const paidHtmlFragment = renderHtmlFragment(
+    paidSections,
+    freeHtmlFragment.nextFootnoteOffset
+  );
+  const freeHtml = freeHtmlFragment.html;
+  const paidHtml = paidHtmlFragment.html;
 
   Object.assign(manifest.adapter, {
     implementation: NOTE_IMPLEMENTATION,

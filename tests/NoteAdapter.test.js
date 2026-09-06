@@ -209,6 +209,28 @@ describe('NoteAdapter', () => {
     );
   });
 
+  test('読者可視の無料本文がないpackageを拒否する', async () => {
+    const bookDirectory = await copySampleBook();
+    await fs.writeFile(
+      path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# 第2章 正本から出力する流れ\n\n' +
+        '[free-only]: https://free.example/reference\n\n' +
+        ':::paid\n\n' +
+        '有料で読める本文です。\n\n' +
+        ':::\n',
+      'utf8'
+    );
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents = ['workflow'];
+      metadata.editions.find((edition) => edition.id === 'paid').documents = ['workflow'];
+    });
+
+    await assert.rejects(
+      build(bookDirectory, await temporaryDirectory('tmp-note-no-visible-free-')),
+      /note free-sample fragment must not be empty/
+    );
+  });
+
   test('無料範囲が有料範囲の後へ再出現する非単調構成を拒否する', async () => {
     const bookDirectory = await copySampleBook();
     await updateMetadata(bookDirectory, (metadata) => {
@@ -386,8 +408,11 @@ describe('NoteAdapter', () => {
     assert.match(html, /x &lt; <a href="https:\/\/first\.example\/reference">shared<\/a> &gt; y/u);
     assert.match(html, /id="fnref-preface-1"/u);
     assert.match(html, /id="fn-preface-1"/u);
-    assert.match(html, /id="fnref-introduction-1"/u);
-    assert.match(html, /id="fn-introduction-1"/u);
+    assert.match(html, /id="fnref-introduction-2"/u);
+    assert.match(html, /id="fn-introduction-2"/u);
+    assert.match(html, /href="#fn-preface-1"[^>]*>\[1\]<\/a>/u);
+    assert.match(html, /href="#fn-introduction-2"[^>]*>\[2\]<\/a>/u);
+    assert.match(html, /<ol class="footnotes-list" start="2">/u);
     assert.doesNotMatch(html, />note-(?:preface|introduction)-ref-/u);
     assert.strictEqual(new Set([...html.matchAll(/id="(fn(?:ref)?-[^"]+)"/gu)]
       .map((match) => match[1])).size, 4);
@@ -433,7 +458,9 @@ describe('NoteAdapter', () => {
     assert.doesNotMatch(freeHtml, /ignored\.example\/duplicate/u);
     assert.doesNotMatch(paidHtml, /ignored\.example\/duplicate/u);
     assert.match(freeHtml, /id="fn-workflow-1"/u);
-    assert.match(paidHtml, /id="fn-workflow-1"/u);
+    assert.match(paidHtml, /id="fn-workflow-2"/u);
+    assert.match(paidHtml, /href="#fn-workflow-2"[^>]*>\[2\]<\/a>/u);
+    assert.match(paidHtml, /<ol class="footnotes-list" start="2">/u);
   });
 
   test('free fragmentから不可視なreferenceまたはfootnote定義への依存を拒否する', async () => {
@@ -507,11 +534,13 @@ describe('NoteAdapter', () => {
     const outputRoot = await temporaryDirectory('tmp-note-assets-');
     await fs.ensureDir(path.join(bookDirectory, 'assets/figures'));
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow.png'), 'png bytes');
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/flow#detail.png'), 'hash bytes');
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/vector.svg'), '<svg></svg>');
     await fs.writeFile(path.join(bookDirectory, 'assets/guide.pdf'), '%PDF-1.4\n');
     await appendWorkflow(
       bookDirectory,
       '\n![flow](../assets/figures/flow.png)\n' +
+        '![hash](../assets/figures/flow%23detail.png)\n' +
         '![vector](../assets/figures/vector.svg)\n' +
         '![external](https://assets.example/image.png)\n'
     );
@@ -527,11 +556,18 @@ describe('NoteAdapter', () => {
       ),
       { uniqueKeys: true }
     );
-    assert.deepStrictEqual(noteManifest.image_candidates, [{
-      source: 'assets/figures/flow.png',
-      destination: 'assets/figures/flow.png',
-      documents: ['manuscript/02-workflow.md']
-    }]);
+    assert.deepStrictEqual(noteManifest.image_candidates, [
+      {
+        source: 'assets/figures/flow#detail.png',
+        destination: 'assets/figures/flow#detail.png',
+        documents: ['manuscript/02-workflow.md']
+      },
+      {
+        source: 'assets/figures/flow.png',
+        destination: 'assets/figures/flow.png',
+        documents: ['manuscript/02-workflow.md']
+      }
+    ]);
     assert.deepStrictEqual(noteManifest.attachment_candidates, [{
       source: 'assets/guide.pdf',
       destination: 'assets/guide.pdf'
@@ -545,6 +581,7 @@ describe('NoteAdapter', () => {
         'callout_degraded_to_blockquote',
         'callout_degraded_to_blockquote',
         'image_requires_manual_upload',
+        'image_requires_manual_upload',
         'unsupported_image_requires_manual_conversion',
         'external_or_root_image_requires_manual_upload'
       ]
@@ -554,11 +591,17 @@ describe('NoteAdapter', () => {
       Buffer.from('png bytes')
     );
     assert.deepStrictEqual(
+      await fs.readFile(path.join(packageDirectory(result), 'assets/figures/flow#detail.png')),
+      Buffer.from('hash bytes')
+    );
+    assert.deepStrictEqual(
       await fs.readFile(path.join(packageDirectory(result), 'assets/guide.pdf')),
       Buffer.from('%PDF-1.4\n')
     );
     const html = await fs.readFile(path.join(packageDirectory(result), '02-paid-body.html'), 'utf8');
     assert.match(html, /src="assets\/figures\/flow\.png"/u);
+    assert.match(html, /src="assets\/figures\/flow%23detail\.png"/u);
+    assert.doesNotMatch(html, /src="assets\/figures\/flow#detail\.png"/u);
     assert.match(html, /\[画像を手動挿入: vector\]/u);
     assert.ok(!JSON.stringify(noteManifest).includes(bookDirectory));
   });
