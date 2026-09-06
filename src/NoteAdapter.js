@@ -598,7 +598,7 @@ function namespaceReferenceLabels(projection, namespace) {
         state.add(originalLabel);
         addLabelReplacement(replacements, source, cursor + 2, firstEnd, footnote);
       }
-      cursor = firstEnd + 1;
+      cursor = footnote ? firstEnd + 1 : cursor + 1;
       continue;
     }
 
@@ -615,7 +615,7 @@ function namespaceReferenceLabels(projection, namespace) {
     if (following === '[') {
       const secondEnd = findClosingBracket(source, firstEnd + 1, bracketSearchEnd);
       if (secondEnd === -1) {
-        cursor = firstEnd + 1;
+        cursor += 1;
         continue;
       }
       const secondLabel = source.slice(firstEnd + 2, secondEnd);
@@ -629,7 +629,7 @@ function namespaceReferenceLabels(projection, namespace) {
         );
         addLabelReplacement(replacements, source, firstEnd + 2, secondEnd, replacement);
       }
-      cursor = secondEnd + 1;
+      cursor = replacement ? secondEnd + 1 : cursor + 1;
       continue;
     }
 
@@ -663,7 +663,7 @@ function namespaceReferenceLabels(projection, namespace) {
         addLabelReplacement(replacements, source, firstEnd + 1, firstEnd + 1, `[${replacement}]`);
       }
     }
-    cursor = firstEnd + 1;
+    cursor = replacement ? firstEnd + 1 : cursor + 1;
   }
 
   let text = source;

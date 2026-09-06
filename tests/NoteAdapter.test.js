@@ -326,8 +326,9 @@ describe('NoteAdapter', () => {
     await fs.writeFile(
       path.join(bookDirectory, 'frontmatter/preface.md'),
       '# はじめに\n\n' +
-        '[first][shared] [shared][] [quoted][z-quoted] [metadata][zz-metadata] [^note]\n\n' +
+        '[first][shared] [shared][] [quoted][z-quoted] [metadata][zz-metadata] [^note] [^note]\n\n' +
         'x < [shared] > y\n\n' +
+        'Nested [outer [shared]] remains linked.\n\n' +
         'Text [shared]: remains visible.\n\n' +
         '`[shared] [^note]`\n\n' +
         '`literal\\` [after][shared] `later`\n\n' +
@@ -371,6 +372,10 @@ describe('NoteAdapter', () => {
     assert.match(markdown, /\[shared\]\[note-preface-free-ref-1\]/u);
     assert.match(markdown, /\[quoted\]\[note-preface-free-ref-2\]/u);
     assert.match(markdown, /x < \[shared\]\[note-preface-free-ref-1\] > y/u);
+    assert.match(
+      markdown,
+      /Nested \[outer \[shared\]\[note-preface-free-ref-1\]\] remains linked\./u
+    );
     assert.match(markdown, /Text \[shared\]\[note-preface-free-ref-1\]: remains visible\./u);
     assert.match(markdown, /\[\^note-preface-free-fn-1\]/u);
     assert.match(markdown, /\[note-preface-free-ref-1\]: https:\/\/first\.example\/reference/u);
@@ -407,15 +412,17 @@ describe('NoteAdapter', () => {
     assert.match(html, /href="https:\/\/second\.example\/reference"/u);
     assert.match(html, /x &lt; <a href="https:\/\/first\.example\/reference">shared<\/a> &gt; y/u);
     assert.match(html, /id="fnref-preface-1"/u);
+    assert.match(html, /id="fnref-preface-1:1"/u);
     assert.match(html, /id="fn-preface-1"/u);
     assert.match(html, /id="fnref-introduction-2"/u);
     assert.match(html, /id="fn-introduction-2"/u);
     assert.match(html, /href="#fn-preface-1"[^>]*>\[1\]<\/a>/u);
+    assert.match(html, /href="#fnref-preface-1:1" class="footnote-backref"/u);
     assert.match(html, /href="#fn-introduction-2"[^>]*>\[2\]<\/a>/u);
     assert.match(html, /<ol class="footnotes-list" start="2">/u);
     assert.doesNotMatch(html, />note-(?:preface|introduction)-ref-/u);
     assert.strictEqual(new Set([...html.matchAll(/id="(fn(?:ref)?-[^"]+)"/gu)]
-      .map((match) => match[1])).size, 4);
+      .map((match) => match[1])).size, 5);
   });
 
   test('freeとpaid fragmentへ可視なreferenceとfootnote定義を補完する', async () => {
