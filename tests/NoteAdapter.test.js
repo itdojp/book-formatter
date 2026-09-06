@@ -273,6 +273,9 @@ describe('NoteAdapter', () => {
         '```text\n[shared] [^note]\n```\n\n' +
         '<span data-test="1 > 0" data-label="[shared]">metadata</span>\n\n' +
         '<span\n data-label="[shared]">multiline metadata</span>\n\n' +
+        '<span title="\n\n' +
+        '[between-html][shared]\n\n' +
+        '">\n\n' +
         '[shared]: https://first.example/reference\n' +
         '> [z-quoted]: https://first.example/quoted\n' +
         '[shared]: https://ignored.example/duplicate\n' +
@@ -322,6 +325,7 @@ describe('NoteAdapter', () => {
     assert.match(markdown, /```text\n\[shared\] \[\^note\]\n```/u);
     assert.match(markdown, /<span data-test="1 > 0" data-label="\[shared\]">metadata<\/span>/u);
     assert.match(markdown, /<span\n data-label="\[shared\]">multiline metadata<\/span>/u);
+    assert.match(markdown, /\[between-html\]\[note-preface-free-ref-1\]/u);
     assert.match(markdown, /\[inline\]\(https:\/\/second\.example\/\[shared\]\)/u);
     assert.doesNotMatch(markdown, /^\[shared\]:/mu);
     assert.doesNotMatch(markdown, /^\[\^note\]:/mu);

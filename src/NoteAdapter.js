@@ -211,12 +211,12 @@ function mergeProtectedRanges(ranges) {
   return merged;
 }
 
-function parsedProtectedAngleEnd(source, start) {
-  const state = new SOURCE_MARKDOWN.inline.State(source, SOURCE_MARKDOWN, {}, []);
-  state.pos = start;
-  if (markdownAutolinkRule(state, true)) return state.pos;
-  state.pos = start;
-  if (markdownHtmlInlineRule(state, true)) return state.pos;
+function parsedProtectedAngleEnd(source, start, inlineScopeEnd) {
+  const scopedSource = source.slice(start, inlineScopeEnd);
+  const state = new SOURCE_MARKDOWN.inline.State(scopedSource, SOURCE_MARKDOWN, {}, []);
+  if (markdownAutolinkRule(state, true)) return start + state.pos;
+  state.pos = 0;
+  if (markdownHtmlInlineRule(state, true)) return start + state.pos;
   return -1;
 }
 
@@ -259,8 +259,17 @@ function collectProtectedMarkdownRanges(source) {
       cursor = protectedRange.end;
       continue;
     }
+    while (
+      inlineScopeIndex < uniqueInlineScopes.length &&
+      uniqueInlineScopes[inlineScopeIndex].end <= cursor
+    ) inlineScopeIndex += 1;
+    const inlineScope = uniqueInlineScopes[inlineScopeIndex];
+    if (!inlineScope || cursor < inlineScope.start || cursor >= inlineScope.end) {
+      cursor += 1;
+      continue;
+    }
     if (source[cursor] === '<' && !isBackslashEscaped(source, cursor)) {
-      const end = parsedProtectedAngleEnd(source, cursor);
+      const end = parsedProtectedAngleEnd(source, cursor, inlineScope.end);
       if (end !== -1) {
         inlineRanges.push({ start: cursor, end });
         cursor = end;
@@ -268,15 +277,6 @@ function collectProtectedMarkdownRanges(source) {
       }
     }
     if (source[cursor] !== '`' || isBackslashEscaped(source, cursor)) {
-      cursor += 1;
-      continue;
-    }
-    while (
-      inlineScopeIndex < uniqueInlineScopes.length &&
-      uniqueInlineScopes[inlineScopeIndex].end <= cursor
-    ) inlineScopeIndex += 1;
-    const inlineScope = uniqueInlineScopes[inlineScopeIndex];
-    if (!inlineScope || cursor < inlineScope.start || cursor >= inlineScope.end) {
       cursor += 1;
       continue;
     }
