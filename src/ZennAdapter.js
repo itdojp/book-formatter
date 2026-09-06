@@ -748,7 +748,7 @@ function collectAutolinkSyntaxSpans(segment) {
   const spans = [];
   let opening = null;
   for (let cursor = 0; cursor < segment.length; cursor += 1) {
-    if (segment[cursor] === '\\') {
+    if (segment[cursor] === '\\' && opening === null) {
       cursor += 1;
       continue;
     }

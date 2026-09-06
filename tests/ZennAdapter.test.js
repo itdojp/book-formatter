@@ -171,6 +171,8 @@ describe('ZennAdapter', () => {
         '![outer ![inner](missing.png)](../assets/figures/outer.png)\n' +
         '![x](../assets/figures/flow.png) ' +
         '<https://example.test/![x](../assets/figures/flow.png)>\n' +
+        '![y](../assets/figures/flow.png) ' +
+        '<https://example.test/![y](../assets/figures/flow.png)\\>\n' +
         '![metadata twin](../assets/figures/flow.png) ' +
         '[same metadata](https://example.test "literal ![metadata twin](../assets/figures/flow.png)")\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
@@ -249,6 +251,12 @@ describe('ZennAdapter', () => {
       workflow.includes(
         '![x](/images/standard-book-example/figures/flow.png) ' +
         '<https://example.test/![x](../assets/figures/flow.png)>'
+      )
+    );
+    assert.ok(
+      workflow.includes(
+        '![y](/images/standard-book-example/figures/flow.png) ' +
+        '<https://example.test/![y](../assets/figures/flow.png)\\>'
       )
     );
     assert.ok(
@@ -565,7 +573,8 @@ describe('ZennAdapter', () => {
     await fs.writeFile(
       path.join(bookDirectory, 'manuscript/02-workflow.md'),
       '# Warning positions\n' +
-        '<https://example.test/`b`/[fake](relative.md)> and `b` [real](relative.md)\n',
+        '<https://example.test/`a`/[fake](relative.md)> ' +
+        '<https://example.test/`b`/[fake2](relative2.md)\\> and `b` [real](relative.md)\n',
       'utf8'
     );
 
