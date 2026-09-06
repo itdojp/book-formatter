@@ -300,6 +300,11 @@ describe('ZennAdapter', () => {
         '![reference][asset]\n\n[asset]: /images/standard-book-example/missing.png',
         /Unsupported image syntax remained/
       ],
+      [
+        '![real](../assets/image.png)\n![reference][asset]\n\n' +
+          '[asset]: /images/standard-book-example/image.png',
+        /Unsupported image syntax remained/
+      ],
       ['![external](https://assets.example/image.png)', /External images are not supported/],
       ['![root](/images/existing.png)', /must be relative/],
       ['![outside](../../../outside.png)', /resolves outside the book root/],

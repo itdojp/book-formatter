@@ -36,14 +36,24 @@ for (const entry of (await readdir('.')).sort()) {
 if ((await readdir('.')).length !== 0) process.exit(74);
 `;
 const IDENTITY_BOUND_DIRECTORY_CREATE = `
-import { lstat, mkdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, mkdir, open } from 'node:fs/promises';
 const [expectedDev, expectedIno, name] = process.argv.slice(1);
 if (!name || name === '.' || name === '..' || /[\\/]/u.test(name)) process.exit(64);
 const parent = await lstat('.');
 if (String(parent.dev) !== expectedDev || String(parent.ino) !== expectedIno) process.exit(73);
 await mkdir(name, { mode: 0o700 });
-const created = await lstat(name);
-if (!created.isDirectory() || created.isSymbolicLink()) process.exit(74);
+const handle = await open(
+  name,
+  constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW
+);
+let created;
+try {
+  created = await handle.stat();
+  if (!created.isDirectory()) process.exit(74);
+} finally {
+  await handle.close();
+}
 process.stdout.write(JSON.stringify({ dev: String(created.dev), ino: String(created.ino) }));
 `;
 const IDENTITY_BOUND_EXCLUSIVE_WRITE = `
@@ -937,6 +947,7 @@ async function convertImagesAndAudit(source, {
   }
   const assetRootIdentity = { dev: assetRootStat.dev, ino: assetRootStat.ino };
   const convertedImageDestinations = new Set();
+  let convertedImageCount = 0;
   const resolvedImages = new Map();
   const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
   const sourceBlockTokens = SOURCE_AUDIT_MARKDOWN.parse(lines.join('\n'), {});
@@ -985,6 +996,7 @@ async function convertImagesAndAudit(source, {
       ].map(encodeZennPathComponent).join('/');
       copiedAssets.set(outputRelative, image.contents);
       convertedImageDestinations.add(`/${outputUrl}`);
+      convertedImageCount += 1;
       const alt = segment.slice(imageSyntax.labelStart, imageSyntax.labelEnd);
       rebuilt += `![${alt}](/${outputUrl})`;
       cursor = imageSyntax.end;
@@ -1012,6 +1024,7 @@ async function convertImagesAndAudit(source, {
   const blockTokens = SOURCE_AUDIT_MARKDOWN.parse(result, environment);
   const tokens = collectTokens(blockTokens, 1, { skipImageChildren: true });
   let relativeLinks = 0;
+  let auditedImages = 0;
   for (const { token, line } of tokens) {
     if (token.type === 'html_block' || token.type === 'html_inline') {
       throw new ZennAdapterError(
@@ -1041,6 +1054,7 @@ async function convertImagesAndAudit(source, {
     if (token.type === 'image' && !convertedImageDestinations.has(destination)) {
       throw new ZennAdapterError(`Unsupported image syntax remained after Zenn conversion: ${sourcePath}`);
     }
+    if (token.type === 'image') auditedImages += 1;
     if (token.type === 'link_open' && destination.startsWith('//')) {
       throw new ZennAdapterError(`Protocol-relative links are not supported by the Zenn adapter: ${sourcePath}`);
     }
@@ -1052,6 +1066,9 @@ async function convertImagesAndAudit(source, {
     ) {
       relativeLinks += 1;
     }
+  }
+  if (auditedImages !== convertedImageCount) {
+    throw new ZennAdapterError(`Unsupported image syntax remained after Zenn conversion: ${sourcePath}`);
   }
   const locatedRelativeLinks = await addRelativeLinkWarnings(
     result,
