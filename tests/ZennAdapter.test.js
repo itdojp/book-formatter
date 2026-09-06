@@ -147,6 +147,7 @@ describe('ZennAdapter', () => {
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a)b.png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a`b`.png'), image);
     await fs.writeFile(path.join(bookDirectory, 'assets/figures/a`b.png'), image);
+    await fs.writeFile(path.join(bookDirectory, 'assets/figures/outer.png'), image);
     await fs.writeFile(
       path.join(bookDirectory, 'assets/figures/a[docs](target.md).png'),
       image
@@ -167,6 +168,7 @@ describe('ZennAdapter', () => {
         '![a\\]b](../assets/figures/flow.png)\n' +
         '![[reference](http://example.test)](../assets/figures/flow.png)\n' +
         '![code alt `]`](../assets/figures/flow.png)\n' +
+        '![outer ![inner](missing.png)](../assets/figures/outer.png)\n' +
         '![metadata twin](../assets/figures/flow.png) ' +
         '[same metadata](https://example.test "literal ![metadata twin](../assets/figures/flow.png)")\n' +
         'text ` literal ![unmatched](../assets/figures/flow.png)\n\n' +
@@ -235,6 +237,11 @@ describe('ZennAdapter', () => {
     );
     assert.ok(
       workflow.includes('![code alt `]`](/images/standard-book-example/figures/flow.png)')
+    );
+    assert.ok(
+      workflow.includes(
+        '![outer ![inner](missing.png)](/images/standard-book-example/figures/outer.png)'
+      )
     );
     assert.ok(
       workflow.includes(

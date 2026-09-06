@@ -726,7 +726,11 @@ function collectInlineLinks(segment) {
 }
 
 function parsedInlineImages(source) {
-  return collectTokens(SOURCE_AUDIT_MARKDOWN.parseInline(source, {}))
+  return collectTokens(
+    SOURCE_AUDIT_MARKDOWN.parseInline(source, {}),
+    1,
+    { skipImageChildren: true }
+  )
     .map(({ token }) => token)
     .filter((token) => token.type === 'image');
 }
