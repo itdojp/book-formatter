@@ -1385,7 +1385,8 @@ function createNoteManifest({
 }
 
 function createPublishChecklist(noteManifest, escapedBookTitle) {
-  const tags = noteManifest.publication.hashtags.map((tag) => `#${tag}`).join(' ');
+  const tags = noteManifest.publication.hashtags
+    .map((tag) => `#${escapedGeneratedTitle(tag, 'note hashtag')}`).join(' ');
   return `# note公開前チェックリスト
 
 このpackageはnoteへ自動投稿しません。Markdownは正本照合用、HTMLは表示比較用です。noteの公式一括import形式ではないため、編集画面への転記と装飾確認を人間が行います。

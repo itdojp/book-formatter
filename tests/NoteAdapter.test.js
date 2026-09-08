@@ -652,6 +652,22 @@ describe('NoteAdapter', () => {
     assert.doesNotMatch(checklist, /\[Book\]\(https:\/\/book\.example\)/u);
   });
 
+  test('checklistのhashtagはMarkdown表示でも設定値を保持する', async () => {
+    const bookDirectory = await copySampleBook();
+    const hashtags = ['_draft_', '__draft__', '_', '__', 'a_b', '技術', 'ＡＩ'];
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.targets.note.hashtags = hashtags;
+    });
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-hashtags-'));
+    const output = packageDirectory(result);
+    const checklist = await fs.readFile(path.join(output, 'publish-checklist.md'), 'utf8');
+    const manifest = YAML.parse(await fs.readFile(path.join(output, 'note-publish-manifest.yaml'), 'utf8'));
+    const rendered = new MarkdownIt().render(checklist);
+    assert.ok(rendered.includes(`ハッシュタグを確認した: ${hashtags.map((tag) => `#${tag}`).join(' ')}`));
+    assert.doesNotMatch(rendered, /<(?:em|strong)>/u);
+    assert.deepStrictEqual(manifest.publication.hashtags, hashtags);
+  });
+
   test('画像とPDFを候補としてcopyし外部・非対応画像をredacted warningにする', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-note-assets-');
