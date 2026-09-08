@@ -3,6 +3,8 @@ import assert from 'node:assert';
 import path from 'node:path';
 
 import fs from 'fs-extra';
+import MarkdownIt from 'markdown-it';
+import markdownItFootnote from 'markdown-it-footnote';
 import YAML from 'yaml';
 
 import {
@@ -56,6 +58,120 @@ afterEach(async () => {
 });
 
 describe('NoteAdapter', () => {
+  for (const [fragment, owner, later, filename] of [
+    ['free', 'preface', 'introduction', '01-free-sample'],
+    ['paid', 'workflow', 'afterword', '02-paid-body']
+  ]) {
+    for (const placement of ['same-document', 'later-document']) {
+      test(`generated labelを${fragment}/${placement}の全candidateから隔離する`, async () => {
+        const bookDirectory = await copySampleBook();
+        const paths = {
+          preface: 'frontmatter/preface.md',
+          introduction: 'manuscript/01-introduction.md',
+          workflow: 'manuscript/02-workflow.md',
+          afterword: 'backmatter/afterword.md'
+        };
+        const prefix = `note-${owner}-${fragment}`;
+        const candidates = [
+          `[${prefix}-ref-1]`,
+          `[full][${prefix}-ref-2]`,
+          `[${prefix}-ref-3][]`,
+          `[  ${prefix.toUpperCase()}-REF-4  ]`,
+          `[outer [${prefix}-ref-5]]`,
+          `![image][${prefix}-ref-6]`,
+          `[^${prefix}-fn-1]`
+        ].join('\n\n');
+        await fs.writeFile(path.join(bookDirectory, paths[owner]),
+          '# Owner\n\n[real][shared] [^note] [^note]\n\n' +
+          (placement === 'same-document' ? `${candidates}\n\n` : '') +
+          '[shared]: https://docs.example/reference\n[^note]: Real note.\n');
+        if (placement === 'later-document') {
+          await fs.writeFile(path.join(bookDirectory, paths[later]), `# Later\n\n${candidates}\n`);
+        }
+        const outputRoot = await temporaryDirectory('tmp-note-reserved-labels-');
+        const result = await build(bookDirectory, outputRoot);
+        const output = packageDirectory(result);
+        const markdown = await fs.readFile(path.join(output, `${filename}.md`), 'utf8');
+        const html = await fs.readFile(path.join(output, `${filename}.html`), 'utf8');
+        assert.ok(markdown.includes(candidates));
+        assert.ok(markdown.includes(`[real][${prefix}-ref-7]`));
+        assert.ok(markdown.includes(`[^${prefix}-fn-2]`));
+        // Parse the combined Markdown too: HTML sections have separate envs,
+        // whereas pasted Markdown definitions can resolve across documents.
+        const combinedHtml = new MarkdownIt().use(markdownItFootnote).render(markdown);
+        for (const rendered of [html, combinedHtml]) {
+          assert.ok(rendered.includes(`[${prefix}-ref-1]`));
+          assert.ok(rendered.includes(`[^${prefix}-fn-1]`));
+          assert.strictEqual((rendered.match(/href="https:\/\/docs\.example\/reference"/gu) || []).length, 1);
+          assert.strictEqual((rendered.match(/class="footnote-ref"/gu) || []).length, 2);
+        }
+        await build(bookDirectory, outputRoot);
+        assert.strictEqual(await fs.readFile(path.join(output, `${filename}.md`), 'utf8'), markdown);
+        assert.strictEqual(await fs.readFile(path.join(output, `${filename}.html`), 'utf8'), html);
+      });
+    }
+  }
+
+  test('label予約はcode・escape・HTML/link metadataを再解釈しない', async () => {
+    const bookDirectory = await copySampleBook();
+    const label = '[note-preface-free-ref-1]';
+    const footnote = '[^note-preface-free-fn-1]';
+    const protectedText = `${label} ${footnote}`;
+    await fs.writeFile(path.join(bookDirectory, 'frontmatter/preface.md'),
+      '# Owner\n\n[real][shared] [^note]\n\n' +
+      `\\${label} \\${footnote}\n\n` +
+      `\`${protectedText}\`\n\n` +
+      `    ${protectedText}\n\n` +
+      `\`\`\`text\n${protectedText}\n\`\`\`\n\n` +
+      `<span title="${protectedText}">metadata</span>\n\n` +
+      `<!-- ${protectedText} -->\n\n` +
+      `<https://docs.example/${label}>\n\n` +
+      `[inline](https://docs.example/${label} "${protectedText}")\n\n` +
+      `![alt](https://images.example/image.png "${protectedText}")\n\n` +
+      `[shared]: https://docs.example/reference "${protectedText}"\n` +
+      '[^note]: Real note.\n');
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-protected-labels-'));
+    const markdown = await fs.readFile(path.join(packageDirectory(result), '01-free-sample.md'), 'utf8');
+    assert.ok(markdown.includes('[real][note-preface-free-ref-1]'));
+    assert.ok(markdown.includes('[^note-preface-free-fn-1]: Real note.'));
+    assert.ok(markdown.includes(`\\${label}`));
+    assert.ok(markdown.includes(`\`${protectedText}\``));
+  });
+
+  test('fragment予約はfree/paidを分離しinternal candidateを含めない', async () => {
+    const bookDirectory = await copySampleBook();
+    await fs.writeFile(path.join(bookDirectory, 'frontmatter/preface.md'),
+      '# Free\n\n[real][shared] [^note]\n\n' +
+      ':::internal\nInternal-only audit hint: [note-preface-free-ref-1] [^note-preface-free-fn-1]\n:::\n\n' +
+      '[shared]: https://docs.example/reference\n[^note]: Real note.\n');
+    await fs.writeFile(path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# Paid\n\nPaid-only audit hint: [note-preface-free-ref-1] [^note-preface-free-fn-1]\n');
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-fragment-reservations-'));
+    const output = packageDirectory(result);
+    const free = await fs.readFile(path.join(output, '01-free-sample.md'), 'utf8');
+    const paid = await fs.readFile(path.join(output, '02-paid-body.md'), 'utf8');
+    assert.ok(free.includes('[real][note-preface-free-ref-1]'));
+    assert.ok(paid.includes('[note-preface-free-ref-1] [^note-preface-free-fn-1]'));
+    assert.doesNotMatch(paid, /Real note|https:\/\/docs\.example\/reference/u);
+  });
+
+  test('paid側へ補完する可視footnote本文内のcandidateも割当前に予約する', async () => {
+    const bookDirectory = await copySampleBook();
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+    });
+    await fs.writeFile(path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# Split\n\nFree [^shared]\n\n' +
+      ':::paid\nPaid [real][reference] [^shared]\n:::\n\n' +
+      '[reference]: https://docs.example/reference\n' +
+      '[^shared]: Plain [note-workflow-paid-ref-1] and [^note-workflow-paid-fn-1].\n');
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-dependency-reservations-'));
+    const paid = await fs.readFile(path.join(packageDirectory(result), '02-paid-body.md'), 'utf8');
+    assert.ok(paid.includes('[real][note-workflow-paid-ref-2]'));
+    assert.ok(paid.includes('[^note-workflow-paid-fn-2]'));
+    assert.ok(paid.includes('Plain [note-workflow-paid-ref-1] and [^note-workflow-paid-fn-1].'));
+  });
+
   test('paid editionを無料・有料fragmentと手動公開packageへ決定的に分離する', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await temporaryDirectory('tmp-note-output-');

@@ -64,6 +64,8 @@ build対象editionは`visibility: paid`でなければならない。free sample
 
 複数文書を1つのfragmentへ連結するときは、reference linkとnamed footnoteのlabelを文書／fragment別にnamespaceする。各fragmentで参照する可視な定義は必要に応じて複製し、free fragmentからpaid/internal定義への依存はfail closedで拒否する。表示文字列とinline/fenced codeは変更せず、HTML比較fragmentのfootnote IDも文書ID別に分離する。生成見出しとchecklistへ使う書籍・構造titleは可視な単一行に限定し、Markdown punctuationをescapeする。
 
+namespaceの割当前に、各fragmentの全収録文書と補完する可視な定義を先行走査し、既存のshortcut/full/collapsed reference・named-footnote候補を予約する。未解決のlabelや後続文書のplain bracket textを、生成labelとの衝突によって意図せずlink/footnoteへ変換しない。予約集合はfree/paid別に保持し、候補収集はpinned `markdown-it` のinline処理を観測するだけで原稿やtokenを変更しない。code、escaped opener、HTML/autolink、inline-link destination/titleは既存parserの境界を利用して除外する。
+
 ```bash
 npm start build -- \
   --book examples/standard-book \

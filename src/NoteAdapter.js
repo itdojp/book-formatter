@@ -27,6 +27,55 @@ const NOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 const NOTE_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 const SAFE_IO = createAdapterSafeIO({ adapterName: 'note', target: 'note' });
 const REFERENCE_DEFINITION_RANGES = Symbol('note-reference-definition-ranges');
+const LABEL_RESERVATIONS = Symbol('note-label-reservations');
+
+// Observe only parser-visited inline candidates. Code, escaped openers, HTML,
+// autolinks and inline-link metadata are consumed by the existing parser rules.
+// Never consume input or observe silent lookahead (parseLinkLabel uses it).
+function captureLabelCandidates(markdown) {
+  markdown.inline.ruler.before('link', 'note_label_candidates', (state, silent) => {
+    const reservations = state.env[LABEL_RESERVATIONS];
+    if (silent || !reservations) return false;
+    const opening = state.src[state.pos] === '!' ? state.pos + 1 : state.pos;
+    if (state.src[opening] !== '[') return false;
+    const closing = state.md.helpers.parseLinkLabel(state, opening);
+    if (closing < 0) return false;
+    if (
+      state.src[closing + 1] === '(' &&
+      parsedInlineLinkEnd(state.src, opening, state.posMax) !== -1
+    ) return false;
+
+    const first = state.src.slice(opening + 1, closing);
+    reservations.references.add(markdown.utils.normalizeReference(first));
+    if (first.startsWith('^') && !/[ \n]/u.test(first)) {
+      reservations.footnotes.add(first.slice(1));
+    }
+    if (state.src[closing + 1] === '[') {
+      const secondEnd = state.md.helpers.parseLinkLabel(state, closing + 1);
+      if (secondEnd >= 0) {
+        reservations.references.add(markdown.utils.normalizeReference(
+          state.src.slice(closing + 2, secondEnd) || first
+        ));
+      }
+    }
+    return false;
+  });
+}
+
+function createLabelReservations() {
+  return { references: new Set(), footnotes: new Set() };
+}
+
+function reserveFragmentLabels(projection, reservations) {
+  const environment = { [LABEL_RESERVATIONS]: reservations };
+  SOURCE_MARKDOWN.parse(projection.text, environment);
+  for (const label of Object.keys(environment.references || {})) {
+    reservations.references.add(label);
+  }
+  for (const label of Object.keys(environment.footnotes?.refs || {})) {
+    if (label.startsWith(':')) reservations.footnotes.add(label.slice(1));
+  }
+}
 
 function acceptedReferenceLabel(state, startLine, endLine) {
   let source = '';
@@ -70,7 +119,7 @@ const SOURCE_MARKDOWN = new MarkdownIt({
   linkify: false,
   typographer: false,
   maxNesting: 128
-}).use(markdownItFootnote).use(captureReferenceDefinitionRanges);
+}).use(markdownItFootnote).use(captureReferenceDefinitionRanges).use(captureLabelCandidates);
 
 const HTML_FRAGMENT_MARKDOWN = new MarkdownIt({
   html: false,
@@ -171,16 +220,17 @@ function createUniqueLabel(existingLabels, prefix, index, normalize = (value) =>
   return candidate;
 }
 
-function createDocumentLabelNamespace(source, documentId) {
+function createDocumentLabelNamespace(source, documentId, reservations = createLabelReservations()) {
   const environment = {};
   const normalizedSource = String(source).replace(/\r\n?/g, '\n');
   const tokens = SOURCE_MARKDOWN.parse(normalizedSource, environment);
 
   const referenceLabels = Object.keys(environment.references || {}).sort(compareCodeUnits);
-  const existingReferences = new Set(referenceLabels);
+  const existingReferences = reservations.references;
+  for (const label of referenceLabels) existingReferences.add(label);
   const references = new Map(referenceLabels.map((label, index) => [
     label,
-    createUniqueLabel(
+    documentId === null ? label : createUniqueLabel(
       existingReferences,
       `note-${documentId}-ref`,
       index + 1,
@@ -192,10 +242,11 @@ function createDocumentLabelNamespace(source, documentId) {
     .filter((label) => label.startsWith(':'))
     .map((label) => label.slice(1))
     .sort(compareCodeUnits);
-  const existingFootnotes = new Set(footnoteLabels);
+  const existingFootnotes = reservations.footnotes;
+  for (const label of footnoteLabels) existingFootnotes.add(label);
   const footnotes = new Map(footnoteLabels.map((label, index) => [
     label,
-    createUniqueLabel(existingFootnotes, `note-${documentId}-fn`, index + 1)
+    documentId === null ? label : createUniqueLabel(existingFootnotes, `note-${documentId}-fn`, index + 1)
   ]));
 
   return {
@@ -1458,7 +1509,13 @@ export async function writeNotePackage({
     { pathLabel: 'note asset root' }
   );
   let paidBoundaryStarted = false;
+  const preparedDocuments = [];
+  const freeReservations = createLabelReservations();
+  const paidReservations = createLabelReservations();
 
+  // Complete the visibility-bound dependency closure without allocating new
+  // names first. Later documents and copied footnote bodies can reserve a name
+  // that an earlier document would otherwise generate in the same fragment.
   for (const entry of entries) {
     const paidReport = paidReports.get(entry.id);
     const freeReport = sampleReports.get(entry.id);
@@ -1473,10 +1530,9 @@ export async function writeNotePackage({
       entry.path,
       paidReport.sourceDigest
     );
-    const freeLabelNamespace = createDocumentLabelNamespace(source, `${entry.id}-free`);
-    const paidLabelNamespace = createDocumentLabelNamespace(source, `${entry.id}-paid`);
-    const nonReaderVisibleLines = definitionSourceLines(freeLabelNamespace);
-    for (const line of freeLabelNamespace.nonRenderedHtmlLines) {
+    const sourceNamespace = createDocumentLabelNamespace(source, null);
+    const nonReaderVisibleLines = definitionSourceLines(sourceNamespace);
+    for (const line of sourceNamespace.nonRenderedHtmlLines) {
       nonReaderVisibleLines.add(line);
     }
     const paidVisibleLines = visibleSourceLines(source, paidReport, entry.path);
@@ -1504,9 +1560,41 @@ export async function writeNotePackage({
       projectSourceLines(source, freeReport, entry.path),
       entry.path
     );
+    const paidProjected = removeLeadingCanonicalH1(
+      projectSourceLines(source, paidReport, entry.path, freeReport),
+      entry.path
+    );
+    const hasFree = hasReaderVisibleSourceLine(freeProjected, nonReaderVisibleLines);
+    const hasPaid = hasReaderVisibleSourceLine(paidProjected, nonReaderVisibleLines);
+    for (const [present, projection, allowedLines, reservations, fragment] of [
+      [hasFree, freeProjected, freeVisibleLines, freeReservations, 'free-sample fragment'],
+      [hasPaid, paidProjected, paidVisibleLines, paidReservations, 'paid-body fragment']
+    ]) {
+      if (!present) continue;
+      reserveFragmentLabels(completeDocumentReferences(
+        projection, sourceNamespace, allowedLines, entry.path, fragment
+      ), reservations);
+    }
+    preparedDocuments.push({
+      entry, source, freeProjected, paidProjected, freeVisibleLines, paidVisibleLines,
+      hasFree, hasPaid
+    });
+  }
+
+  for (const prepared of preparedDocuments) {
+    const {
+      entry, source, freeProjected, paidProjected, freeVisibleLines, paidVisibleLines,
+      hasFree, hasPaid
+    } = prepared;
+    const freeLabelNamespace = createDocumentLabelNamespace(
+      source, `${entry.id}-free`, freeReservations
+    );
+    const paidLabelNamespace = createDocumentLabelNamespace(
+      source, `${entry.id}-paid`, paidReservations
+    );
     if (
       freeProjected.text &&
-      hasReaderVisibleSourceLine(freeProjected, nonReaderVisibleLines)
+      hasFree
     ) {
       const body = convertStandardCallouts(
         completeDocumentReferences(
@@ -1540,13 +1628,9 @@ export async function writeNotePackage({
       }
     }
 
-    const paidProjected = removeLeadingCanonicalH1(
-      projectSourceLines(source, paidReport, entry.path, freeReport),
-      entry.path
-    );
     if (
       paidProjected.text &&
-      hasReaderVisibleSourceLine(paidProjected, nonReaderVisibleLines)
+      hasPaid
     ) {
       const body = convertStandardCallouts(
         completeDocumentReferences(
