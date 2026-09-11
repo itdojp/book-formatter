@@ -84,6 +84,12 @@ npm start build -- \
 - relative linkとreader-visible raw HTMLは、note編集画面での手動再設定・確認を要求するwarningにする。
 - PDF候補はcopyするだけで、upload、malware scan、権利確認、販売範囲設定を行わない。
 
+### Markdown metadataの保護境界
+
+referenceのnamespace変換では、lockfileの`markdown-it`が生成するcontainer除去済みinline contentに対して、既存ruleが消費したcode・HTML・autolink・inline-link spanを保護する。blockquoteやlistの元の物理行を別のHTMLとして再解釈せず、container markerやmetadataの値は維持する。
+
+保護spanの元原稿offsetは、parserの行map（table cellは親rowのmap）内の一意な文字列一致で証明する。独自のcontainer/indent/tab/rendererエミュレーションは行わない。たとえば同じ行の同一内容のcode入りtable cell、またはindent tabの部分展開で元原稿にliteral一致しないinline contentは、`cannot uniquely map protected inline content`で生成前にfail closedとする。保護対象を別段落へ移す、重複cellの内容を区別する、当該indentをspaceにする等で一意に対応できる形へ直す。破損したmetadataを黙って出力したり、他のeditionの定義を補うことはない。
+
 ## 手動公開gate
 
 `publish-checklist.md`に従い、少なくとも次を人間が確認する。

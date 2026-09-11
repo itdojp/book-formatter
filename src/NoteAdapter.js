@@ -5,7 +5,9 @@ import fs from 'fs-extra';
 import MarkdownIt from 'markdown-it';
 import markdownItFootnote from 'markdown-it-footnote';
 import markdownAutolinkRule from 'markdown-it/lib/rules_inline/autolink.mjs';
+import markdownBackticksRule from 'markdown-it/lib/rules_inline/backticks.mjs';
 import markdownHtmlInlineRule from 'markdown-it/lib/rules_inline/html_inline.mjs';
+import markdownImageRule from 'markdown-it/lib/rules_inline/image.mjs';
 import markdownLinkRule from 'markdown-it/lib/rules_inline/link.mjs';
 import markdownReferenceRule from 'markdown-it/lib/rules_block/reference.mjs';
 import YAML from 'yaml';
@@ -28,6 +30,34 @@ const NOTE_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 const SAFE_IO = createAdapterSafeIO({ adapterName: 'note', target: 'note' });
 const REFERENCE_DEFINITION_RANGES = Symbol('note-reference-definition-ranges');
 const LABEL_RESERVATIONS = Symbol('note-label-reservations');
+const PROTECTED_INLINE_SPANS = Symbol('note-protected-inline-spans');
+
+// Observe consumed spans in parser-produced inline content, never container-
+// prefixed physical lines. The original rules remain responsible for syntax.
+function captureProtectedInlineSpans(markdown) {
+  for (const [name, rule] of [
+    ['backticks', markdownBackticksRule],
+    ['autolink', markdownAutolinkRule],
+    ['html_inline', markdownHtmlInlineRule],
+    ['link', markdownLinkRule],
+    ['image', markdownImageRule]
+  ]) {
+    markdown.inline.ruler.at(name, (state, silent) => {
+      const start = state.pos;
+      const accepted = rule(state, silent);
+      const capture = state.env[PROTECTED_INLINE_SPANS];
+      if (!accepted || silent || !capture || capture.content !== state.src) return accepted;
+      if (name === 'link' || name === 'image') {
+        // Reference links are rewritten, not protected. An empty reference
+        // environment in this probe permits only actual inline destinations.
+        const opening = name === 'image' ? start + 1 : start;
+        if (parsedInlineLinkEnd(state.src, opening, state.pos) === -1) return accepted;
+      }
+      capture.ranges.push({ start, end: state.pos });
+      return accepted;
+    });
+  }
+}
 
 // Observe only parser-visited inline candidates. Code, escaped openers, HTML,
 // autolinks and inline-link metadata are consumed by the existing parser rules.
@@ -119,7 +149,8 @@ const SOURCE_MARKDOWN = new MarkdownIt({
   linkify: false,
   typographer: false,
   maxNesting: 128
-}).use(markdownItFootnote).use(captureReferenceDefinitionRanges).use(captureLabelCandidates);
+}).use(markdownItFootnote).use(captureReferenceDefinitionRanges)
+  .use(captureLabelCandidates).use(captureProtectedInlineSpans);
 
 const HTML_FRAGMENT_MARKDOWN = new MarkdownIt({
   html: false,
@@ -293,20 +324,53 @@ function mergeProtectedRanges(ranges) {
   return merged;
 }
 
-function parsedProtectedAngleEnd(source, start, inlineScopeEnd) {
-  const scopedSource = source.slice(start, inlineScopeEnd);
-  const state = new SOURCE_MARKDOWN.inline.State(scopedSource, SOURCE_MARKDOWN, {}, []);
-  if (markdownAutolinkRule(state, true)) return start + state.pos;
-  state.pos = 0;
-  if (markdownHtmlInlineRule(state, true)) return start + state.pos;
-  return -1;
+function mapProtectedInlineSpans(source, lineOffsets, content, map, spans) {
+  if (spans.length === 0) return [];
+  const fail = () => {
+    throw new NoteAdapterError(
+      'note cannot uniquely map protected inline content to source lines; ' +
+      'simplify the Markdown container or move the protected content to a separate paragraph.'
+    );
+  };
+  if (!map) fail();
+  const ranges = [];
+  let contentOffset = 0;
+  const lines = content.split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const intersections = spans.map((span) => ({
+      start: Math.max(span.start, contentOffset),
+      end: Math.min(span.end, contentOffset + line.length)
+    })).filter((span) => span.start < span.end);
+    if (intersections.length > 0) {
+      const sourceLine = map[0] + index;
+      if (sourceLine >= map[1]) fail();
+      const physical = source.slice(lineOffsets[sourceLine], lineOffsets[sourceLine + 1]);
+      const column = physical.indexOf(line);
+      // A unique literal match is the proof of the offset mapping. Do not
+      // guess container prefixes, expand tabs, decode escapes or reformat it.
+      if (column === -1 || physical.indexOf(line, column + 1) !== -1) fail();
+      for (const span of intersections) {
+        ranges.push({
+          start: lineOffsets[sourceLine] + column + span.start - contentOffset,
+          end: lineOffsets[sourceLine] + column + span.end - contentOffset
+        });
+      }
+    }
+    contentOffset += line.length + 1;
+  }
+  return ranges;
 }
 
 function collectProtectedMarkdownRanges(source) {
   const blockRanges = [];
   const inlineScopes = [];
+  const inlineRanges = [];
+  const parentMaps = [];
   const lineOffsets = sourceLineOffsets(source);
   for (const token of SOURCE_MARKDOWN.parse(source, {})) {
+    if (token.nesting === 1) parentMaps.push(token.map || parentMaps.at(-1));
+    if (token.nesting === -1) parentMaps.pop();
     if (
       ['code_block', 'fence', 'html_block'].includes(token.type) &&
       token.map
@@ -316,71 +380,26 @@ function collectProtectedMarkdownRanges(source) {
         end: lineOffsets[token.map[1]] ?? source.length
       });
     }
-    if (token.type === 'inline' && token.map) {
-      inlineScopes.push({
-        start: lineOffsets[token.map[0]],
-        end: lineOffsets[token.map[1]] ?? source.length
-      });
+    if (token.type === 'inline') {
+      const map = token.map || parentMaps.at(-1);
+      if (map) {
+        inlineScopes.push({ start: lineOffsets[map[0]], end: lineOffsets[map[1]] ?? source.length });
+      }
+      const capture = { content: token.content, ranges: [] };
+      SOURCE_MARKDOWN.inline.parse(token.content, SOURCE_MARKDOWN, {
+        [PROTECTED_INLINE_SPANS]: capture
+      }, []);
+      inlineRanges.push(...mapProtectedInlineSpans(
+        source, lineOffsets, token.content, map, capture.ranges
+      ));
     }
   }
 
-  const ranges = mergeProtectedRanges(blockRanges);
   const uniqueInlineScopes = [...new Map(
     inlineScopes.map((range) => [`${range.start}:${range.end}`, range])
   ).values()].sort((left, right) => left.start - right.start || left.end - right.end);
-  const inlineRanges = [];
-  let cursor = 0;
-  let rangeIndex = 0;
-  let inlineScopeIndex = 0;
-  while (cursor < source.length) {
-    while (rangeIndex < ranges.length && ranges[rangeIndex].end <= cursor) {
-      rangeIndex += 1;
-    }
-    const protectedRange = ranges[rangeIndex];
-    if (protectedRange && cursor >= protectedRange.start && cursor < protectedRange.end) {
-      cursor = protectedRange.end;
-      continue;
-    }
-    while (
-      inlineScopeIndex < uniqueInlineScopes.length &&
-      uniqueInlineScopes[inlineScopeIndex].end <= cursor
-    ) inlineScopeIndex += 1;
-    const inlineScope = uniqueInlineScopes[inlineScopeIndex];
-    if (!inlineScope || cursor < inlineScope.start || cursor >= inlineScope.end) {
-      cursor += 1;
-      continue;
-    }
-    if (source[cursor] === '<' && !isBackslashEscaped(source, cursor)) {
-      const end = parsedProtectedAngleEnd(source, cursor, inlineScope.end);
-      if (end !== -1) {
-        inlineRanges.push({ start: cursor, end });
-        cursor = end;
-        continue;
-      }
-    }
-    if (source[cursor] !== '`' || isBackslashEscaped(source, cursor)) {
-      cursor += 1;
-      continue;
-    }
-    let openingEnd = cursor + 1;
-    while (source[openingEnd] === '`') openingEnd += 1;
-    const markerLength = openingEnd - cursor;
-    let closing = source.indexOf('`', openingEnd);
-    while (closing !== -1 && closing < inlineScope.end) {
-      let closingEnd = closing + 1;
-      while (source[closingEnd] === '`') closingEnd += 1;
-      if (closingEnd <= inlineScope.end && closingEnd - closing === markerLength) break;
-      closing = source.indexOf('`', closingEnd);
-    }
-    if (closing === -1 || closing >= inlineScope.end) {
-      cursor = openingEnd;
-      continue;
-    }
-    inlineRanges.push({ start: cursor, end: closing + markerLength });
-    cursor = closing + markerLength;
-  }
   return {
-    protectedRanges: mergeProtectedRanges([...ranges, ...inlineRanges]),
+    protectedRanges: mergeProtectedRanges([...blockRanges, ...inlineRanges]),
     inlineScopes: uniqueInlineScopes
   };
 }
@@ -654,15 +673,6 @@ function namespaceReferenceLabels(projection, namespace) {
     }
 
     const following = source[firstEnd + 1];
-    if (following === '(') {
-      const destinationEnd = inlineScopeContainsCursor
-        ? parsedInlineLinkEnd(source, cursor, inlineScope.end)
-        : -1;
-      if (destinationEnd !== -1) {
-        cursor = destinationEnd;
-        continue;
-      }
-    }
     if (following === '[') {
       const secondEnd = findClosingBracket(source, firstEnd + 1, bracketSearchEnd);
       if (secondEnd === -1) {

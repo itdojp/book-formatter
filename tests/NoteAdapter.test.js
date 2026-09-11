@@ -58,6 +58,88 @@ afterEach(async () => {
 });
 
 describe('NoteAdapter', () => {
+  for (const [container, prefix, continuation] of [
+    ['quote', '> ', '> '],
+    ['quote-tab', '> \t', '> \t'],
+    ['nested-quote', '> > ', '> > '],
+    ['list', '- ', '  '],
+    ['ordered-list', '1. ', '   '],
+    ['quote-list', '> - ', '>   '],
+    ['list-quote', '- > ', '  > ']
+  ]) {
+    for (const [fragment, owner, file, outputName] of [
+      ['free', 'preface', 'frontmatter/preface.md', '01-free-sample'],
+      ['paid', 'workflow', 'manuscript/02-workflow.md', '02-paid-body']
+    ]) {
+      test(`container-stripped spanで${container}/${fragment}のmetadataを保持する`, async () => {
+        const bookDirectory = await copySampleBook();
+        const body = [
+          '[before][shared] Real [^note]',
+          '',
+          '<span',
+          'title="[shared] [^note]">metadata</span> [after-html][shared]',
+          '',
+          'Text <span',
+          'title="[shared] [^note]">inline metadata</span>',
+          '',
+          '`[shared]',
+          '[^note]` [after-code][shared]',
+          '',
+          '[inline](https://docs.example/[shared]',
+          ' "title [shared] [^note]") [after-link][shared]',
+          '',
+          '<https://docs.example/[shared]> [after-autolink][shared]'
+        ].map((line, index) => `${index === 0 ? prefix : continuation}${line}`).join('\n');
+        await fs.writeFile(path.join(bookDirectory, file),
+          `# Owner\n\n${body}\n\n[shared]: https://docs.example/reference\n[^note]: Real note.\n`);
+        const outputRoot = await temporaryDirectory('tmp-note-container-spans-');
+        const result = await build(bookDirectory, outputRoot);
+        const output = packageDirectory(result);
+        const markdown = await fs.readFile(path.join(output, `${outputName}.md`), 'utf8');
+        const html = await fs.readFile(path.join(output, `${outputName}.html`), 'utf8');
+        const expected = body
+          .replace(/\[(before|after-html|after-code|after-link|after-autolink)\]\[shared\]/gu,
+            `[$1][note-${owner}-${fragment}-ref-1]`)
+          .replace('Real [^note]', `Real [^note-${owner}-${fragment}-fn-1]`);
+        assert.ok(markdown.includes(expected), 'only actual references may change; container/metadata stay literal');
+        const combinedHtml = new MarkdownIt({ html: true }).use(markdownItFootnote).render(markdown);
+        assert.ok(combinedHtml.includes('title="[shared] [^note]"'));
+        for (const rendered of [html, combinedHtml]) {
+          assert.strictEqual((rendered.match(/href="https:\/\/docs\.example\/reference"/gu) || []).length, 5);
+          assert.strictEqual((rendered.match(/class="footnote-ref"/gu) || []).length, 1);
+        }
+        await build(bookDirectory, outputRoot);
+        assert.strictEqual(await fs.readFile(path.join(output, `${outputName}.md`), 'utf8'), markdown);
+        assert.strictEqual(await fs.readFile(path.join(output, `${outputName}.html`), 'utf8'), html);
+      });
+    }
+  }
+
+  test('table cellのparser親mapを利用してcodeとHTML metadataを保持する', async () => {
+    const bookDirectory = await copySampleBook();
+    const table = '| Code | HTML | Reference |\n| --- | --- | --- |\n' +
+      '| `[shared]` | <span title="[shared]">metadata</span> | [real][shared] |';
+    await fs.writeFile(path.join(bookDirectory, 'frontmatter/preface.md'),
+      `# Table\n\n${table}\n\n[shared]: https://docs.example/reference\n`);
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-table-spans-'));
+    const markdown = await fs.readFile(path.join(packageDirectory(result), '01-free-sample.md'), 'utf8');
+    assert.ok(markdown.includes(table.replace('[real][shared]', '[real][note-preface-free-ref-1]')));
+  });
+
+  for (const [name, text] of [
+    ['ambiguous table cell', '| A | B |\n| --- | --- |\n| `[shared]` | `[shared]` |'],
+    ['expanded tab', '- Text <span\n\ttitle="[shared]">metadata</span>']
+  ]) {
+    test(`一意のsource offsetが証明できない${name}はfail closed`, async () => {
+      const bookDirectory = await copySampleBook();
+      await fs.writeFile(path.join(bookDirectory, 'frontmatter/preface.md'),
+        `# Unmappable\n\n${text}\n\n[shared]: https://docs.example/reference\n`);
+      const outputRoot = await temporaryDirectory('tmp-note-unmappable-spans-');
+      await assert.rejects(build(bookDirectory, outputRoot), /cannot uniquely map protected inline content/u);
+      assert.deepStrictEqual(await fs.readdir(outputRoot), []);
+    });
+  }
+
   for (const [fragment, owner, later, filename] of [
     ['free', 'preface', 'introduction', '01-free-sample'],
     ['paid', 'workflow', 'afterword', '02-paid-body']
