@@ -59,6 +59,53 @@ afterEach(async () => {
 
 describe('NoteAdapter', () => {
   for (const [container, prefix, continuation] of [
+    ['plain', '', ''],
+    ['quote', '> ', '> '],
+    ['list', '- ', '  '],
+    ['nested-quote-list', '> - ', '>   ']
+  ]) {
+    for (const [fragment, owner, file, outputName] of [
+      ['free', 'preface', 'frontmatter/preface.md', '01-free-sample'],
+      ['paid', 'workflow', 'manuscript/02-workflow.md', '02-paid-body']
+    ]) {
+      test(`parser labelで${container}/${fragment}のmultiline shortcut/collapsed参照を解決する`, async () => {
+        const bookDirectory = await copySampleBook();
+        const body = `${prefix}[shared\n${continuation}label] and ` +
+          `[shared\n${continuation}label][] and [display\n${continuation}text][shared label] and ` +
+          `[literal][unknown\n${continuation}label]`;
+        await fs.writeFile(path.join(bookDirectory, file),
+          `# Owner\n\n${body}\n\n[shared label]: https://docs.example/reference\n`);
+        const outputRoot = await temporaryDirectory('tmp-note-multiline-labels-');
+        const result = await build(bookDirectory, outputRoot);
+        const output = packageDirectory(result);
+        const markdown = await fs.readFile(path.join(output, `${outputName}.md`), 'utf8');
+        const html = await fs.readFile(path.join(output, `${outputName}.html`), 'utf8');
+        const label = `note-${owner}-${fragment}-ref-1`;
+        assert.ok(markdown.includes(`${prefix}[shared\n${continuation}label][${label}]`));
+        assert.ok(markdown.includes(`[shared\n${continuation}label][${label}] and ` +
+          `[display\n${continuation}text][${label}]`));
+        assert.ok(markdown.includes(`[literal][unknown\n${continuation}label]`));
+        const combinedHtml = new MarkdownIt({ html: true }).render(markdown);
+        for (const rendered of [html, combinedHtml]) {
+          assert.strictEqual((rendered.match(/href="https:\/\/docs\.example\/reference"/gu) || []).length, 3);
+        }
+        await build(bookDirectory, outputRoot);
+        assert.strictEqual(await fs.readFile(path.join(output, `${outputName}.md`), 'utf8'), markdown);
+      });
+
+      test(`source行所有権を変える${container}/${fragment}のmultiline explicit labelはfail closed`, async () => {
+        const bookDirectory = await copySampleBook();
+        await fs.writeFile(path.join(bookDirectory, file),
+          `# Owner\n\n${prefix}[text][shared\n${continuation}label]\n\n` +
+          '[shared label]: https://docs.example/reference\n');
+        const outputRoot = await temporaryDirectory('tmp-note-multiline-explicit-');
+        await assert.rejects(build(bookDirectory, outputRoot), /multiline explicit reference label/u);
+        assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'note')), false);
+      });
+    }
+  }
+
+  for (const [container, prefix, continuation] of [
     ['quote', '> ', '> '],
     ['quote-tab', '> \t', '> \t'],
     ['nested-quote', '> > ', '> > '],

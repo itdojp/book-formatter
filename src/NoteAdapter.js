@@ -386,7 +386,8 @@ function mapProtectedInlineSpans(source, lineOffsets, content, map, spans) {
       for (const span of intersections) {
         ranges.push({
           start: lineOffsets[sourceLine] + column + span.start - contentOffset,
-          end: lineOffsets[sourceLine] + column + span.end - contentOffset
+          end: lineOffsets[sourceLine] + column + span.end - contentOffset,
+          contentStart: span.start
         });
       }
     }
@@ -399,6 +400,7 @@ function collectProtectedMarkdownRanges(source) {
   const blockRanges = [];
   const inlineScopes = [];
   const inlineRanges = [];
+  const inlineContents = [];
   const parentMaps = [];
   const lineOffsets = sourceLineOffsets(source);
   const environment = { [PROTECTED_BLOCK_TOKENS]: true };
@@ -419,6 +421,7 @@ function collectProtectedMarkdownRanges(source) {
       const map = token.map || parentMaps.at(-1);
       if (map) {
         inlineScopes.push({ start: lineOffsets[map[0]], end: lineOffsets[map[1]] ?? source.length });
+        inlineContents.push({ content: token.content, map });
       }
       const capture = { content: token.content, ranges: [] };
       SOURCE_MARKDOWN.inline.parse(token.content, SOURCE_MARKDOWN, {
@@ -435,8 +438,33 @@ function collectProtectedMarkdownRanges(source) {
   ).values()].sort((left, right) => left.start - right.start || left.end - right.end);
   return {
     protectedRanges: mergeProtectedRanges([...blockRanges, ...inlineRanges]),
-    inlineScopes: uniqueInlineScopes
+    inlineScopes: uniqueInlineScopes,
+    inlineContents
   };
+}
+
+function readInlineLabel(source, start, end, inlineContents, lineOffsets) {
+  const raw = source.slice(start, end);
+  if (!raw.includes('\n')) return raw;
+  const labels = [];
+  for (const { content, map } of inlineContents) {
+    if (start < lineOffsets[map[0]] || end >= lineOffsets[map[1]]) continue;
+    // Reuse the same literal source-map proof as protected metadata. Never
+    // normalize a physical container prefix as part of a reference label.
+    const ranges = mapProtectedInlineSpans(source, lineOffsets, content, map, [
+      { start: 0, end: content.length }
+    ]);
+    const first = ranges.find((range) => start >= range.start && start <= range.end);
+    const last = ranges.find((range) => end >= range.start && end <= range.end);
+    if (first && last) {
+      labels.push(content.slice(
+        first.contentStart + start - first.start,
+        last.contentStart + end - last.start
+      ));
+    }
+  }
+  if (labels.length !== 1) failInlineSourceMap();
+  return labels[0];
 }
 
 function findClosingBracket(source, opening, end = source.length) {
@@ -642,7 +670,7 @@ function namespaceReferenceLabels(projection, namespace) {
   }
   const source = projection.text;
   const lineOffsets = sourceLineOffsets(source);
-  const { protectedRanges, inlineScopes } = collectProtectedMarkdownRanges(source);
+  const { protectedRanges, inlineScopes, inlineContents } = collectProtectedMarkdownRanges(source);
   const replacements = [];
   let protectedIndex = 0;
   let inlineScopeIndex = 0;
@@ -683,7 +711,7 @@ function namespaceReferenceLabels(projection, namespace) {
       cursor += 1;
       continue;
     }
-    const firstLabel = source.slice(cursor + 1, firstEnd);
+    const firstLabel = readInlineLabel(source, cursor + 1, firstEnd, inlineContents, lineOffsets);
     if (firstLabel.startsWith('^')) {
       const originalLabel = firstLabel.slice(1);
       const footnote = namespace.footnotes.get(originalLabel);
@@ -714,12 +742,21 @@ function namespaceReferenceLabels(projection, namespace) {
         cursor += 1;
         continue;
       }
-      const secondLabel = source.slice(firstEnd + 2, secondEnd);
+      const secondLabel = readInlineLabel(source, firstEnd + 2, secondEnd, inlineContents, lineOffsets);
       const effectiveLabel = secondLabel || firstLabel;
       const replacement = namespace.references.get(
         SOURCE_MARKDOWN.utils.normalizeReference(effectiveLabel)
       );
       if (replacement) {
+        // Collapsing this metadata would join physical lines (and their
+        // ownership/warning provenance). Do not guess a container-preserving
+        // rewrite. Multiline display labels can still use a single-line ID.
+        if (source.slice(firstEnd + 2, secondEnd).includes('\n')) {
+          throw new NoteAdapterError(
+            'note cannot namespace a multiline explicit reference label without changing source-line ownership; ' +
+            'write its reference ID on one physical line.'
+          );
+        }
         labelState.usedReferences.add(
           SOURCE_MARKDOWN.utils.normalizeReference(effectiveLabel)
         );
