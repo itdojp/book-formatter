@@ -86,9 +86,9 @@ npm start build -- \
 
 ### Markdown metadataの保護境界
 
-referenceのnamespace変換では、lockfileの`markdown-it`が生成するcontainer除去済みinline contentに対して、既存ruleが消費したcode・HTML・autolink・inline-link spanを保護する。blockquoteやlistの元の物理行を別のHTMLとして再解釈せず、container markerやmetadataの値は維持する。
+referenceのnamespace変換では、lockfileの`markdown-it`が生成するcontainer除去済みinline contentに対して、既存ruleが消費したcode・HTML・autolink・inline-link spanを保護する。blockquoteやlistの元の物理行を別のHTMLとして再解釈せず、container markerやmetadataの値は維持する。脚注定義はfootnote tailへの移動・未参照定義の削除より前のblock mapを保持し、補完する定義本文にも同じ保護を適用する。
 
-保護spanの元原稿offsetは、parserの行map（table cellは親rowのmap）内の一意な文字列一致で証明する。独自のcontainer/indent/tab/rendererエミュレーションは行わない。たとえば同じ行の同一内容のcode入りtable cell、またはindent tabの部分展開で元原稿にliteral一致しないinline contentは、`cannot uniquely map protected inline content`で生成前にfail closedとする。保護対象を別段落へ移す、重複cellの内容を区別する、当該indentをspaceにする等で一意に対応できる形へ直す。破損したmetadataを黙って出力したり、他のeditionの定義を補うことはない。
+pluginが部分文字列を再parseするinline footnote等では、親inline content内の一意な一致でoffsetを引き継ぐ。保護spanの元原稿offsetは、parserの行map（table cellは親rowのmap）内の一意な文字列一致で証明する。独自のcontainer/indent/tab/rendererエミュレーションは行わない。たとえば同じ行の同一内容のcode入りtable cell、親内で重複するinline child content、またはindent tabの部分展開で元原稿にliteral一致しないinline contentは、`cannot uniquely map protected inline content`で生成前にfail closedとする。保護対象を別段落へ移す、重複cellの内容を区別する、当該indentをspaceにする等で一意に対応できる形へ直す。破損したmetadataを黙って出力したり、他のeditionの定義を補うことはない。
 
 ## 手動公開gate
 

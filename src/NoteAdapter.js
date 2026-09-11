@@ -31,10 +31,49 @@ const SAFE_IO = createAdapterSafeIO({ adapterName: 'note', target: 'note' });
 const REFERENCE_DEFINITION_RANGES = Symbol('note-reference-definition-ranges');
 const LABEL_RESERVATIONS = Symbol('note-label-reservations');
 const PROTECTED_INLINE_SPANS = Symbol('note-protected-inline-spans');
+const PROTECTED_BLOCK_TOKENS = Symbol('note-protected-block-tokens');
+
+function failInlineSourceMap() {
+  throw new NoteAdapterError(
+    'note cannot uniquely map protected inline content to source lines; ' +
+    'simplify the Markdown container or move the protected content to a separate paragraph.'
+  );
+}
 
 // Observe consumed spans in parser-produced inline content, never container-
 // prefixed physical lines. The original rules remain responsible for syntax.
 function captureProtectedInlineSpans(markdown) {
+  const parseInline = markdown.inline.parse;
+  markdown.inline.parse = function (content, md, env, tokens) {
+    const capture = env[PROTECTED_INLINE_SPANS];
+    if (!capture || content.length === 0) return parseInline.call(this, content, md, env, tokens);
+    const parent = capture.context;
+    const firstRange = capture.ranges.length;
+    // Plugins may parse a substring (inline footnotes/image labels). Preserve
+    // its offset only when the parent-to-child mapping is also unambiguous.
+    capture.context = { content };
+    try {
+      const result = parseInline.call(this, content, md, env, tokens);
+      if (parent && capture.ranges.length > firstRange) {
+        const offset = parent.content.indexOf(content);
+        if (offset === -1 || parent.content.indexOf(content, offset + 1) !== -1) failInlineSourceMap();
+        for (let index = firstRange; index < capture.ranges.length; index += 1) {
+          capture.ranges[index].start += offset;
+          capture.ranges[index].end += offset;
+        }
+      }
+      return result;
+    } finally {
+      capture.context = parent;
+    }
+  };
+  // Keep original block maps, including definitions later removed/moved by
+  // footnote_tail. Generated footnote-tail inline tokens have no source map.
+  markdown.core.ruler.before('inline', 'note_protection_blocks', (state) => {
+    if (state.env[PROTECTED_BLOCK_TOKENS] === true) {
+      state.env[PROTECTED_BLOCK_TOKENS] = state.tokens.slice();
+    }
+  });
   for (const [name, rule] of [
     ['backticks', markdownBackticksRule],
     ['autolink', markdownAutolinkRule],
@@ -46,7 +85,7 @@ function captureProtectedInlineSpans(markdown) {
       const start = state.pos;
       const accepted = rule(state, silent);
       const capture = state.env[PROTECTED_INLINE_SPANS];
-      if (!accepted || silent || !capture || capture.content !== state.src) return accepted;
+      if (!accepted || silent || !capture || capture.context?.content !== state.src) return accepted;
       if (name === 'link' || name === 'image') {
         // Reference links are rewritten, not protected. An empty reference
         // environment in this probe permits only actual inline destinations.
@@ -326,13 +365,7 @@ function mergeProtectedRanges(ranges) {
 
 function mapProtectedInlineSpans(source, lineOffsets, content, map, spans) {
   if (spans.length === 0) return [];
-  const fail = () => {
-    throw new NoteAdapterError(
-      'note cannot uniquely map protected inline content to source lines; ' +
-      'simplify the Markdown container or move the protected content to a separate paragraph.'
-    );
-  };
-  if (!map) fail();
+  if (!map) failInlineSourceMap();
   const ranges = [];
   let contentOffset = 0;
   const lines = content.split('\n');
@@ -344,12 +377,12 @@ function mapProtectedInlineSpans(source, lineOffsets, content, map, spans) {
     })).filter((span) => span.start < span.end);
     if (intersections.length > 0) {
       const sourceLine = map[0] + index;
-      if (sourceLine >= map[1]) fail();
+      if (sourceLine >= map[1]) failInlineSourceMap();
       const physical = source.slice(lineOffsets[sourceLine], lineOffsets[sourceLine + 1]);
       const column = physical.indexOf(line);
       // A unique literal match is the proof of the offset mapping. Do not
       // guess container prefixes, expand tabs, decode escapes or reformat it.
-      if (column === -1 || physical.indexOf(line, column + 1) !== -1) fail();
+      if (column === -1 || physical.indexOf(line, column + 1) !== -1) failInlineSourceMap();
       for (const span of intersections) {
         ranges.push({
           start: lineOffsets[sourceLine] + column + span.start - contentOffset,
@@ -368,7 +401,9 @@ function collectProtectedMarkdownRanges(source) {
   const inlineRanges = [];
   const parentMaps = [];
   const lineOffsets = sourceLineOffsets(source);
-  for (const token of SOURCE_MARKDOWN.parse(source, {})) {
+  const environment = { [PROTECTED_BLOCK_TOKENS]: true };
+  SOURCE_MARKDOWN.parse(source, environment);
+  for (const token of environment[PROTECTED_BLOCK_TOKENS]) {
     if (token.nesting === 1) parentMaps.push(token.map || parentMaps.at(-1));
     if (token.nesting === -1) parentMaps.pop();
     if (

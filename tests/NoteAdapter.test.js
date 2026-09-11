@@ -126,8 +126,35 @@ describe('NoteAdapter', () => {
     assert.ok(markdown.includes(table.replace('[real][shared]', '[real][note-preface-free-ref-1]')));
   });
 
+  test('dependencyとして補完するfootnote定義の保護metadataも元のblock mapへ束縛する', async () => {
+    const bookDirectory = await copySampleBook();
+    await updateMetadata(bookDirectory, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+    });
+    const definition = '[^note]: `literal [shared]`\n\n    <span\n    title="[shared]">metadata</span>';
+    await fs.writeFile(path.join(bookDirectory, 'manuscript/02-workflow.md'),
+      '# Split\n\nFree [^note]\n\n:::paid\nPaid [real][shared] [^note]\n:::\n\n' +
+      `[shared]: https://docs.example/reference\n${definition}\n`);
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-definition-spans-'));
+    for (const [fragment, file] of [['free', '01-free-sample.md'], ['paid', '02-paid-body.md']]) {
+      const markdown = await fs.readFile(path.join(packageDirectory(result), file), 'utf8');
+      assert.ok(markdown.includes(definition.replace('[^note]', `[^note-workflow-${fragment}-fn-1]`)));
+    }
+  });
+
+  test('inline footnote内のcodeはsource mapを持たない生成tailと混同しない', async () => {
+    const bookDirectory = await copySampleBook();
+    await fs.writeFile(path.join(bookDirectory, 'frontmatter/preface.md'),
+      '# Inline note\n\nInline ^[code `[shared]`] [real][shared]\n\n' +
+      '[shared]: https://docs.example/reference\n');
+    const result = await build(bookDirectory, await temporaryDirectory('tmp-note-inline-footnote-spans-'));
+    const markdown = await fs.readFile(path.join(packageDirectory(result), '01-free-sample.md'), 'utf8');
+    assert.ok(markdown.includes('Inline ^[code `[shared]`] [real][note-preface-free-ref-1]'));
+  });
+
   for (const [name, text] of [
     ['ambiguous table cell', '| A | B |\n| --- | --- |\n| `[shared]` | `[shared]` |'],
+    ['ambiguous inline child', 'code `[shared]` plus ^[code `[shared]`]'],
     ['expanded tab', '- Text <span\n\ttitle="[shared]">metadata</span>']
   ]) {
     test(`一意のsource offsetが証明できない${name}はfail closed`, async () => {
