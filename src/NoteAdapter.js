@@ -565,6 +565,7 @@ function collectReferenceDefinitions(source, parsedReferences, referenceLabels, 
     definitions.set(normalizedLabel, {
       text,
       sourceLines: [range.start + 1],
+      effectiveStartLine: range.start + 1,
       visibilityLines: Array.from(
         { length: range.end - range.start },
         (_value, offset) => range.start + offset + 1
@@ -596,6 +597,7 @@ function collectFootnoteDefinitions(source, definitionRanges) {
       text: lines.slice(start, end).join('\n'),
       sourceLines,
       visibilityLines: sourceLines,
+      effectiveStartLine: start + 1,
       definitionStartLines: ranges.map((range) => range.start + 1),
       acceptedDefinitionLines: ranges.flatMap((range) => Array.from(
         { length: range.end - range.start }, (_value, offset) => range.start + offset + 1
@@ -681,6 +683,13 @@ function isKnownDefinitionStart(
   return (definition.definitionStartLines || definition.sourceLines).includes(sourceLine);
 }
 
+// Accepted duplicates stay parser definitions, but only a fully retained
+// effective range can satisfy the original document's binding.
+function retainsEffectiveDefinition(definition, projection, sourceLine) {
+  return sourceLine === definition.effectiveStartLine &&
+    definition.visibilityLines.every((line) => projection.sourceLines.includes(line));
+}
+
 function knownReferenceDefinitionRange(
   projection,
   lineOffsets,
@@ -757,7 +766,7 @@ function namespaceReferenceLabels(projection, namespace) {
       const originalLabel = firstLabel.slice(1);
       const footnote = namespace.footnotes.get(originalLabel);
       if (footnote) {
-        const state = isKnownDefinitionStart(
+        const isDefinition = isKnownDefinitionStart(
           source,
           projection,
           lineOffsets,
@@ -766,10 +775,15 @@ function namespaceReferenceLabels(projection, namespace) {
           firstEnd,
           'footnote',
           originalLabel
-        )
-          ? labelState.definedFootnotes
-          : labelState.usedFootnotes;
-        state.add(originalLabel);
+        );
+        if (!isDefinition) {
+          labelState.usedFootnotes.add(originalLabel);
+        } else if (retainsEffectiveDefinition(
+          namespace.footnoteDefinitions.get(originalLabel), projection,
+          projectedSourceLineAtOffset(lineOffsets, projection.sourceLines, cursor)
+        )) {
+          labelState.definedFootnotes.add(originalLabel);
+        }
         addLabelReplacement(replacements, source, cursor + 2, firstEnd, footnote);
       }
       cursor = footnote ? firstEnd + 1 : cursor + 1;
@@ -820,9 +834,11 @@ function namespaceReferenceLabels(projection, namespace) {
         normalizedLabel
       );
       if (definitionRange) {
-        labelState.definedReferences.add(
-          normalizedLabel
-        );
+        if (retainsEffectiveDefinition(
+          namespace.referenceDefinitions.get(normalizedLabel), projection, definitionRange.startLine
+        )) {
+          labelState.definedReferences.add(normalizedLabel);
+        }
         addLabelReplacement(replacements, source, cursor + 1, firstEnd, replacement);
         cursor = projectedOffsetAtSourceLine(
           projection,
@@ -877,6 +893,11 @@ function appendProjectionBlock(projection, block) {
   };
 }
 
+function prependProjectionBlock(projection, block) {
+  const combined = appendProjectionBlock(block, projection);
+  return { ...projection, text: combined.text, sourceLines: combined.sourceLines };
+}
+
 function completeDocumentReferences(
   projection,
   namespace,
@@ -891,6 +912,16 @@ function completeDocumentReferences(
   const maximumPasses = namespace.references.size + namespace.footnotes.size + 1;
 
   for (let pass = 0; pass < maximumPasses; pass += 1) {
+    // Even a retained definition must pass the global effective binding's
+    // visibility gate; a visible duplicate is never an alternative authority.
+    for (const [kind, used, definitions] of [
+      ['reference', labelState.usedReferences, namespace.referenceDefinitions],
+      ['footnote', labelState.usedFootnotes, namespace.footnoteDefinitions]
+    ]) {
+      for (const label of [...used].sort(compareCodeUnits)) {
+        assertDefinitionVisible(definitions.get(label), allowedLines, sourcePath, fragmentName, kind, label);
+      }
+    }
     const references = missingLabels(
       labelState.usedReferences,
       labelState.definedReferences
@@ -914,7 +945,9 @@ function completeDocumentReferences(
           `note ${fragmentName} has a cyclic reference definition dependency: ${sourcePath} [${label}]`
         );
       }
-      completed = appendProjectionBlock(completed, definition);
+      // markdown-it references are first-wins. Prepend the effective binding
+      // so a retained non-effective duplicate cannot capture this dependency.
+      completed = prependProjectionBlock(completed, definition);
       labelState.definedReferences.add(label);
       appendedReferences.add(label);
       appended = true;
@@ -935,6 +968,7 @@ function completeDocumentReferences(
           `note ${fragmentName} has a cyclic footnote definition dependency: ${sourcePath} [${label}]`
         );
       }
+      // Named footnotes are last-wins in the pinned plugin: append instead.
       const namespacedDefinition = namespaceReferenceLabels(definition, namespace);
       completed = appendProjectionBlock(completed, namespacedDefinition);
       mergeLabelState(labelState, namespacedDefinition.labelState);

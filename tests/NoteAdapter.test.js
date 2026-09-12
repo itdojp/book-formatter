@@ -58,6 +58,67 @@ afterEach(async () => {
 });
 
 describe('NoteAdapter', () => {
+  // Global parser binding must survive local duplicate definitions in either projection.
+  for (const kind of ['reference', 'footnote']) {
+    for (const [container, prefix] of [['plain', ''], ['quote', '> '], ['list', '- '], ['nested', '> - ']]) {
+      for (const mode of ['same-free', 'same-paid', 'visible-effective-elsewhere', 'hidden-effective', 'hidden-control']) {
+        test(`effective-definition closure/${kind}/${container}/${mode}`, async () => {
+          const book = await copySampleBook();
+          await updateMetadata(book, (metadata) => {
+            metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+          });
+          const isReference = kind === 'reference';
+          const use = isReference ? 'Read [Shared label].' : 'Read [^shared].';
+          const first = prefix + (isReference
+            ? '[SHARED LABEL]: https://first.example/ "first title"'
+            : '[^shared]: Earlier synthetic note.');
+          const last = prefix + (isReference
+            ? '[shared label]: https://second.example/ "second title"'
+            : '[^shared]: Later synthetic note.');
+          const paid = (text) => `:::paid\n\n${text}\n\n:::`;
+          let body;
+          if (mode === 'same-free' || mode === 'same-paid') {
+            const same = `${first}\n\n${use}\n\n${last}`;
+            body = mode === 'same-free' ? same : `Free before.\n\n${paid(same)}`;
+          } else if (mode === 'visible-effective-elsewhere') {
+            body = isReference
+              ? `Free before.\n\n${first}\n\n${paid(`${use}\n\n${last}`)}`
+              : `Free before.\n\n${paid(`${first}\n\n${use}`)}\n\n${last}`;
+          } else {
+            const duplicate = mode === 'hidden-control' ? '' : isReference ? last : first;
+            body = isReference
+              ? `${paid(first)}\n\n${use}\n\n${duplicate}`
+              : `${use}\n\n${duplicate}\n\n${paid(last)}`;
+          }
+          const source = `# Probe\n\n${body}\n`;
+          await fs.writeFile(path.join(book, 'manuscript/02-workflow.md'), source);
+          const render = (text) => new MarkdownIt({ html: true }).use(markdownItFootnote).render(text);
+          const binding = (html) => isReference
+            ? [...html.matchAll(/href="(https:\/\/(?:first|second)\.example\/)" title="([^"]+)"/gu)]
+              .map((match) => [match[1], match[2]])
+            : [...html.matchAll(/(?:Earlier|Later) synthetic note\./gu)].map((match) => match[0]);
+          const expected = isReference
+            ? [['https://first.example/', 'first title']]
+            : ['Later synthetic note.'];
+          assert.deepStrictEqual(binding(render(source)), expected, 'pinned original parser binding');
+          const out = await temporaryDirectory('tmp-note-effective-');
+          if (mode.startsWith('hidden-')) {
+            await assert.rejects(build(book, out), new RegExp(`${kind} definition is outside its visible source`, 'u'));
+            assert.ok(!(await fs.pathExists(path.join(out, 'note'))));
+            return;
+          }
+          const result = await build(book, out);
+          const fragment = mode === 'same-free' ? '01-free-sample' : '02-paid-body';
+          const md = await fs.readFile(path.join(packageDirectory(result), `${fragment}.md`), 'utf8');
+          const html = await fs.readFile(path.join(packageDirectory(result), `${fragment}.html`), 'utf8');
+          assert.deepStrictEqual(binding(html), expected, 'comparison HTML');
+          assert.deepStrictEqual(binding(render(md)), expected, 'combined Markdown');
+          assert.doesNotMatch(html, /\[shared label\]:|\[SHARED LABEL\]:|\[\^shared\]:/u);
+        });
+      }
+    }
+  }
+
   for (const [container, prefix] of [
     ['plain', ''], ['quote', '> '], ['list', '- '], ['nested', '> - ']
   ]) {
