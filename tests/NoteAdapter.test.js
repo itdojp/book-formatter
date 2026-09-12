@@ -58,6 +58,98 @@ afterEach(async () => {
 });
 
 describe('NoteAdapter', () => {
+  for (const [fragment, owner, file, outputName] of [
+    ['free', 'preface', 'frontmatter/preface.md', '01-free-sample'],
+    ['paid', 'workflow', 'manuscript/02-workflow.md', '02-paid-body']
+  ]) {
+    for (const image of ['![cover][image]', '![image][]', '![image]']) {
+      test(`inline link label内の参照画像 ${image}/${fragment} を変換・stageする`, async () => {
+        const bookDirectory = await copySampleBook();
+        await fs.outputFile(path.join(bookDirectory, 'assets/cover.png'), 'synthetic png bytes');
+        await fs.outputFile(path.join(bookDirectory, 'assets/standalone.png'), 'control png bytes');
+        const metadata = '(https://download.example/[image] "title [image]")';
+        const code = '`![cover][image]`';
+        const htmlMetadata = '<span title="![cover][image]">metadata</span>';
+        const standalone = image.replaceAll('image', 'standalone');
+        const body = `[download ${image}]${metadata}\n\n${standalone}\n\n` +
+          `[download]${metadata}\n\n${code} ${htmlMetadata}\n\n` +
+          '[download]: https://unused.example/\n[image]: ../assets/cover.png\n' +
+          '[standalone]: ../assets/standalone.png\n';
+        await fs.writeFile(path.join(bookDirectory, file), `# Owner\n\n${body}`);
+        const result = await build(bookDirectory, await temporaryDirectory('tmp-note-linked-image-'));
+        const output = packageDirectory(result);
+        const markdown = await fs.readFile(path.join(output, `${outputName}.md`), 'utf8');
+        const html = await fs.readFile(path.join(output, `${outputName}.html`), 'utf8');
+        const label = `note-${owner}-${fragment}-ref-2`;
+        const converted = image === '![cover][image]' ? `![cover][${label}]` : `![image][${label}]`;
+        assert.ok(markdown.includes(`[download ${converted}]${metadata}`));
+        const control = image === '![cover][image]'
+          ? `![cover][note-${owner}-${fragment}-ref-3]` : `![standalone][note-${owner}-${fragment}-ref-3]`;
+        assert.ok(markdown.includes(`\n${control}\n`), 'standalone image remains resolved');
+        assert.ok(markdown.includes(`[download]${metadata}`), 'inline label is not a shortcut reference');
+        assert.ok(markdown.includes(code));
+        assert.ok(markdown.includes(htmlMetadata));
+        const combinedHtml = new MarkdownIt({ html: true }).render(markdown);
+        for (const rendered of [html, combinedHtml]) {
+          assert.strictEqual((rendered.match(/<img /gu) || []).length, 2);
+          assert.match(rendered, /<a [^>]+>download <img [^>]+><\/a>/u);
+        }
+        assert.match(html, /src="assets\/cover.png"/u);
+        const manifestFile = path.join(output, 'note-publish-manifest.yaml');
+        const manifest = await fs.readFile(manifestFile, 'utf8');
+        assert.deepStrictEqual(YAML.parse(manifest).image_candidates, [{
+          source: 'assets/cover.png', destination: 'assets/cover.png', documents: [file]
+        }, {
+          source: 'assets/standalone.png', destination: 'assets/standalone.png', documents: [file]
+        }]);
+        assert.strictEqual(await fs.readFile(path.join(output, 'assets/cover.png'), 'utf8'), 'synthetic png bytes');
+        assert.strictEqual(await fs.readFile(path.join(output, 'assets/standalone.png'), 'utf8'), 'control png bytes');
+        await build(bookDirectory, path.dirname(result.outputDirectory));
+        assert.strictEqual(await fs.readFile(path.join(output, `${outputName}.md`), 'utf8'), markdown);
+        assert.strictEqual(await fs.readFile(path.join(output, `${outputName}.html`), 'utf8'), html);
+        assert.strictEqual(await fs.readFile(manifestFile, 'utf8'), manifest);
+      });
+    }
+
+    test(`parserが拒否するnested reference linkをinline linkに変えない/${fragment}`, async () => {
+      const bookDirectory = await copySampleBook();
+      const body = '[outer [inner][reference]](https://download.example/)';
+      const source = `# Owner\n\n${body}\n\n[reference]: https://docs.example/\n`;
+      const originalHtml = new MarkdownIt().render(source);
+      assert.strictEqual((originalHtml.match(/<a /gu) || []).length, 1);
+      assert.ok(!originalHtml.includes('href="https://download.example/"'));
+      await fs.writeFile(path.join(bookDirectory, file), source);
+      const result = await build(bookDirectory, await temporaryDirectory('tmp-note-nested-link-'));
+      const output = packageDirectory(result);
+      const markdown = await fs.readFile(path.join(output, `${outputName}.md`), 'utf8');
+      assert.ok(markdown.includes(body.replace('[reference]', `[note-${owner}-${fragment}-ref-1]`)));
+      for (const rendered of [
+        await fs.readFile(path.join(output, `${outputName}.html`), 'utf8'),
+        new MarkdownIt().render(markdown)
+      ]) {
+        assert.match(rendered, /href="https:\/\/docs\.example\/">inner<\/a>/u);
+        assert.ok(!rendered.includes('href="https://download.example/"'));
+        assert.doesNotMatch(rendered, /<a [^>]+>[^<]*<a /u);
+      }
+    });
+  }
+
+  for (const hidden of ['paid', 'internal']) {
+    test(`inline link内の画像が不可視${hidden}定義へ依存すると拒否する`, async () => {
+      const bookDirectory = await copySampleBook();
+      await updateMetadata(bookDirectory, (metadata) => {
+        metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+      });
+      await fs.outputFile(path.join(bookDirectory, 'assets/cover.png'), 'synthetic png bytes');
+      await fs.writeFile(path.join(bookDirectory, 'manuscript/02-workflow.md'),
+        '# Owner\n\n[download ![cover][image]](https://download.example/)\n\n' +
+        `:::${hidden}\n\n[image]: ../assets/cover.png\nhidden body\n\n:::\n`);
+      const outputRoot = await temporaryDirectory('tmp-note-hidden-linked-image-');
+      await assert.rejects(build(bookDirectory, outputRoot), /reference definition is outside its visible source/u);
+      assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'note')), false);
+    });
+  }
+
   for (const [container, prefix, continuation] of [
     ['plain', '', ''],
     ['quote', '> ', '> '],

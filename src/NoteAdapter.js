@@ -87,10 +87,19 @@ function captureProtectedInlineSpans(markdown) {
       const capture = state.env[PROTECTED_INLINE_SPANS];
       if (!accepted || silent || !capture || capture.context?.content !== state.src) return accepted;
       if (name === 'link' || name === 'image') {
-        // Reference links are rewritten, not protected. An empty reference
-        // environment in this probe permits only actual inline destinations.
+        // The accepted parser rule owns label boundaries, including its
+        // reference environment and nested-link restrictions. Only actual
+        // inline destination/title metadata is protected from rewriting.
         const opening = name === 'image' ? start + 1 : start;
-        if (parsedInlineLinkEnd(state.src, opening, state.pos) === -1) return accepted;
+        const labelEnd = state.md.helpers.parseLinkLabel(state, opening, name === 'link');
+        if (labelEnd < 0 || state.src[labelEnd + 1] !== '(' ||
+          parsedInlineLinkEnd(state.src, opening, state.pos) !== state.pos) return accepted;
+        if (name === 'link') {
+          // Skip the outer opener so it cannot become a shortcut reference,
+          // but visit the label: reference images inside it must be renamed.
+          capture.ranges.push({ start, end: start + 1 }, { start: labelEnd, end: state.pos });
+          return accepted;
+        }
       }
       capture.ranges.push({ start, end: state.pos });
       return accepted;
@@ -322,6 +331,7 @@ function createDocumentLabelNamespace(source, documentId, reservations = createL
   return {
     references,
     footnotes,
+    parserReferences: environment.references || {},
     referenceDefinitions: collectReferenceDefinitions(
       normalizedSource,
       environment.references || {},
@@ -396,14 +406,17 @@ function mapProtectedInlineSpans(source, lineOffsets, content, map, spans) {
   return ranges;
 }
 
-function collectProtectedMarkdownRanges(source) {
+function collectProtectedMarkdownRanges(source, parserReferences) {
   const blockRanges = [];
   const inlineScopes = [];
   const inlineRanges = [];
   const inlineContents = [];
   const parentMaps = [];
   const lineOffsets = sourceLineOffsets(source);
-  const environment = { [PROTECTED_BLOCK_TOKENS]: true };
+  // Preserve parser acceptance even when a projected fragment needs a
+  // definition appended later. Visibility is enforced by dependency closure,
+  // not by silently reparsing with an empty/different reference environment.
+  const environment = { [PROTECTED_BLOCK_TOKENS]: true, references: { ...parserReferences } };
   SOURCE_MARKDOWN.parse(source, environment);
   for (const token of environment[PROTECTED_BLOCK_TOKENS]) {
     if (token.nesting === 1) parentMaps.push(token.map || parentMaps.at(-1));
@@ -425,7 +438,8 @@ function collectProtectedMarkdownRanges(source) {
       }
       const capture = { content: token.content, ranges: [] };
       SOURCE_MARKDOWN.inline.parse(token.content, SOURCE_MARKDOWN, {
-        [PROTECTED_INLINE_SPANS]: capture
+        [PROTECTED_INLINE_SPANS]: capture,
+        references: environment.references
       }, []);
       inlineRanges.push(...mapProtectedInlineSpans(
         source, lineOffsets, token.content, map, capture.ranges
@@ -670,7 +684,9 @@ function namespaceReferenceLabels(projection, namespace) {
   }
   const source = projection.text;
   const lineOffsets = sourceLineOffsets(source);
-  const { protectedRanges, inlineScopes, inlineContents } = collectProtectedMarkdownRanges(source);
+  const { protectedRanges, inlineScopes, inlineContents } = collectProtectedMarkdownRanges(
+    source, namespace.parserReferences
+  );
   const replacements = [];
   let protectedIndex = 0;
   let inlineScopeIndex = 0;
