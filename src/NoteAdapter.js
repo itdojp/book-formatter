@@ -29,6 +29,7 @@ const NOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 const NOTE_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 const SAFE_IO = createAdapterSafeIO({ adapterName: 'note', target: 'note' });
 const REFERENCE_DEFINITION_RANGES = Symbol('note-reference-definition-ranges');
+const FOOTNOTE_DEFINITION_RANGES = Symbol('note-footnote-definition-ranges');
 const LABEL_RESERVATIONS = Symbol('note-label-reservations');
 const PROTECTED_INLINE_SPANS = Symbol('note-protected-inline-spans');
 const PROTECTED_BLOCK_TOKENS = Symbol('note-protected-block-tokens');
@@ -94,12 +95,10 @@ function captureProtectedInlineSpans(markdown) {
         const labelEnd = state.md.helpers.parseLinkLabel(state, opening, name === 'link');
         if (labelEnd < 0 || state.src[labelEnd + 1] !== '(' ||
           parsedInlineLinkEnd(state.src, opening, state.pos) !== state.pos) return accepted;
-        if (name === 'link') {
-          // Skip the outer opener so it cannot become a shortcut reference,
-          // but visit the label: reference images inside it must be renamed.
-          capture.ranges.push({ start, end: start + 1 }, { start: labelEnd, end: state.pos });
-          return accepted;
-        }
+        // Skip the outer opener so it cannot become a shortcut reference,
+        // but visit link labels and image ALT: both can contain references.
+        capture.ranges.push({ start, end: opening + 1 }, { start: labelEnd, end: state.pos });
+        return accepted;
       }
       capture.ranges.push({ start, end: state.pos });
       return accepted;
@@ -192,12 +191,35 @@ function captureReferenceDefinitionRanges(markdown) {
   });
 }
 
+// Observe the installed plugin rule, including unused/empty definitions.
+// Its parser owns indentation, containers, labels and consumed line ranges.
+function captureFootnoteDefinitionRanges(markdown) {
+  const rule = markdown.block.ruler.getRules('').find((candidate) => candidate.name === 'footnote_def');
+  if (!rule) throw new Error('note requires the pinned markdown-it-footnote definition rule');
+  markdown.block.ruler.at('footnote_def', (state, startLine, endLine, silent) => {
+    const firstToken = state.tokens.length;
+    const accepted = rule(state, startLine, endLine, silent);
+    if (!accepted || silent) return accepted;
+    const token = state.tokens[firstToken];
+    if (token?.type !== 'footnote_reference_open' || !token.meta?.label) {
+      throw new Error('note cannot map the accepted footnote definition');
+    }
+    const ranges = state.env[FOOTNOTE_DEFINITION_RANGES] || new Map();
+    state.env[FOOTNOTE_DEFINITION_RANGES] = ranges;
+    const acceptedRanges = ranges.get(token.meta.label) || [];
+    acceptedRanges.push({ start: startLine, end: state.line });
+    ranges.set(token.meta.label, acceptedRanges);
+    return accepted;
+  }, { alt: ['paragraph', 'reference'] });
+}
+
 const SOURCE_MARKDOWN = new MarkdownIt({
   html: true,
   linkify: false,
   typographer: false,
   maxNesting: 128
-}).use(markdownItFootnote).use(captureReferenceDefinitionRanges)
+}).use(markdownItFootnote).use(captureFootnoteDefinitionRanges)
+  .use(captureReferenceDefinitionRanges)
   .use(captureLabelCandidates).use(captureProtectedInlineSpans);
 
 const HTML_FRAGMENT_MARKDOWN = new MarkdownIt({
@@ -338,7 +360,9 @@ function createDocumentLabelNamespace(source, documentId, reservations = createL
       references,
       environment[REFERENCE_DEFINITION_RANGES] || new Map()
     ),
-    footnoteDefinitions: collectFootnoteDefinitions(normalizedSource, tokens),
+    footnoteDefinitions: collectFootnoteDefinitions(
+      normalizedSource, environment[FOOTNOTE_DEFINITION_RANGES] || new Map()
+    ),
     nonRenderedHtmlLines: collectStandaloneHtmlCommentLines(normalizedSource, tokens)
   };
 }
@@ -553,29 +577,22 @@ function collectReferenceDefinitions(source, parsedReferences, referenceLabels, 
   return definitions;
 }
 
-function collectFootnoteDefinitions(source, tokens) {
+function collectFootnoteDefinitions(source, definitionRanges) {
   const { lines } = normalizedLines(source);
   const definitions = new Map();
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token.type !== 'footnote_open' || !token.meta?.label) continue;
-    const mapped = [];
-    let cursor = index + 1;
-    for (; cursor < tokens.length && tokens[cursor].type !== 'footnote_close'; cursor += 1) {
-      if (tokens[cursor].map) mapped.push(tokens[cursor].map);
-    }
-    if (mapped.length === 0) continue;
-    const start = Math.min(...mapped.map((range) => range[0]));
-    const end = Math.max(...mapped.map((range) => range[1]));
-    definitions.set(token.meta.label, {
+  for (const [label, ranges] of definitionRanges) {
+    // The pinned plugin uses the last definition for a repeated label.
+    const { start, end } = ranges.at(-1);
+    const sourceLines = Array.from({ length: end - start }, (_value, offset) => start + offset + 1);
+    definitions.set(label, {
       text: lines.slice(start, end).join('\n'),
-      sourceLines: Array.from({ length: end - start }, (_value, offset) => start + offset + 1),
-      visibilityLines: Array.from(
-        { length: end - start },
-        (_value, offset) => start + offset + 1
-      )
+      sourceLines,
+      visibilityLines: sourceLines,
+      definitionStartLines: ranges.map((range) => range.start + 1),
+      acceptedDefinitionLines: ranges.flatMap((range) => Array.from(
+        { length: range.end - range.start }, (_value, offset) => range.start + offset + 1
+      ))
     });
-    index = cursor;
   }
   return definitions;
 }
@@ -1038,14 +1055,13 @@ function removeLeadingCanonicalH1(projection, sourcePath) {
   const [startLine, endLine] = topLevelH1[0].map || [];
   if (
     startLine !== 0 ||
-    endLine !== 1 ||
-    !/^\s{0,3}#[\t ]+\S/u.test(lines[0] || '')
+    !Number.isInteger(endLine) || endLine <= startLine || endLine > lines.length
   ) {
     throw new NoteAdapterError(
       `note fragment h1 must be the first content block: ${sourcePath}`
     );
   }
-  return trimProjection(lines.slice(1), projection.sourceLines.slice(1));
+  return trimProjection(lines.slice(endLine), projection.sourceLines.slice(endLine));
 }
 
 function addWarning(warnings, code, file, line) {

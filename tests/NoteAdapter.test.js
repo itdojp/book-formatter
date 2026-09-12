@@ -62,6 +62,122 @@ describe('NoteAdapter', () => {
     ['free', 'preface', 'frontmatter/preface.md', '01-free-sample'],
     ['paid', 'workflow', 'manuscript/02-workflow.md', '02-paid-body']
   ]) {
+    for (const reference of ['[credit][shared]', '[shared][]', '[shared]']) {
+      test(`inline image ALT参照を保持する/${reference}/${fragment}`, async () => {
+        const book = await copySampleBook();
+        await fs.outputFile(path.join(book, 'assets/cover.png'), 'synthetic image');
+        const image = `![cover ${reference}](../assets/cover.png "title [shared]")`;
+        const protectedImage = '![code `[shared]`](../assets/cover.png)';
+        const body = `${image}\n\n[download ${image}](https://download.example/)\n\n` +
+          `${protectedImage}\n\n[shared]: https://credit.example/\n`;
+        const sourceHtml = new MarkdownIt().render(body);
+        await fs.writeFile(path.join(book, file), `# Owner\n\n${body}`);
+        const result = await build(book, await temporaryDirectory('tmp-note-alt-'));
+        const output = packageDirectory(result);
+        const md = await fs.readFile(path.join(output, `${outputName}.md`), 'utf8');
+        const html = await fs.readFile(path.join(output, `${outputName}.html`), 'utf8');
+        const altValues = (text) => [...text.matchAll(/<img [^>]*alt="([^"]*)"/gu)].map((match) => match[1]);
+        assert.deepStrictEqual(altValues(html), altValues(sourceHtml));
+        assert.deepStrictEqual(altValues(new MarkdownIt().render(md)), altValues(sourceHtml));
+        assert.ok(md.includes(`[note-${owner}-${fragment}-ref-1]`));
+        assert.ok(md.includes('"title [shared]"'));
+        assert.ok(md.includes(protectedImage));
+        assert.match(html, /<a href="https:\/\/download.example\/">download <img /u);
+        const manifestPath = path.join(output, 'note-publish-manifest.yaml');
+        const manifest = await fs.readFile(manifestPath, 'utf8');
+        assert.deepStrictEqual(YAML.parse(manifest).image_candidates, [{
+          source: 'assets/cover.png', destination: 'assets/cover.png', documents: [file]
+        }]);
+        assert.strictEqual(await fs.readFile(path.join(output, 'assets/cover.png'), 'utf8'), 'synthetic image');
+        await build(book, path.dirname(result.outputDirectory));
+        assert.strictEqual(await fs.readFile(path.join(output, `${outputName}.md`), 'utf8'), md);
+        assert.strictEqual(await fs.readFile(path.join(output, `${outputName}.html`), 'utf8'), html);
+        assert.strictEqual(await fs.readFile(manifestPath, 'utf8'), manifest);
+      });
+    }
+
+    for (const heading of ['# Chapter', 'Chapter\n=======', 'Chapter\ncontinued\n=======']) {
+      test(`先頭H1のparser map全行を除去する/${heading}/${fragment}`, async () => {
+        const book = await copySampleBook();
+        const body = 'Visible line  \nhard break.\n\nSection\n-------\n\n```text\n# code heading\n```\n';
+        const source = `\n\n${heading}\n\n${body}\n:::note\nA note.\n:::\n`;
+        await fs.writeFile(path.join(book, file), source);
+        const result = await build(book, await temporaryDirectory('tmp-note-setext-'));
+        const output = packageDirectory(result);
+        const md = await fs.readFile(path.join(output, `${outputName}.md`), 'utf8');
+        assert.ok(md.includes(body.trimEnd()), 'body, hard break, Setext H2 and fenced code preserved');
+        assert.ok(!md.includes('Chapter'), 'canonical H1 removed in full');
+        assert.ok(!md.includes('continued'));
+        const html = await fs.readFile(path.join(output, `${outputName}.html`), 'utf8');
+        assert.match(html, /Visible line<br>\nhard break/u);
+        assert.match(html, /<h2>Section<\/h2>/u);
+        const manifest = YAML.parse(await fs.readFile(path.join(output, 'note-publish-manifest.yaml'), 'utf8'));
+        assert.deepStrictEqual(manifest.warnings.filter((warning) => warning.file === file), [{
+          code: 'callout_degraded_to_blockquote', file,
+          line: source.split('\n').indexOf(':::note') + 1
+        }], 'warnings retain the physical source line after multi-line H1 removal');
+      });
+    }
+
+    test(`非先頭Setext H1を拒否する/${fragment}`, async () => {
+      const book = await copySampleBook();
+      await fs.writeFile(path.join(book, file), 'Visible before.\n\nChapter\n=======\n\nBody.\n');
+      await assert.rejects(build(book, await temporaryDirectory('tmp-note-late-h1-')), /h1 must be the first content block/u);
+    });
+  }
+
+  for (const hidden of ['paid', 'internal']) {
+    test(`inline image ALTの不可視${hidden}参照定義を拒否する`, async () => {
+      const book = await copySampleBook();
+      await fs.outputFile(path.join(book, 'assets/cover.png'), 'synthetic image');
+      await updateMetadata(book, (metadata) => metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow'));
+      await fs.writeFile(path.join(book, 'manuscript/02-workflow.md'),
+        '# Owner\n\n![cover [credit][shared]](../assets/cover.png)\n\n' +
+        `:::${hidden}\n\n[shared]: https://credit.example/\n\n:::\n`);
+      const output = await temporaryDirectory('tmp-note-hidden-alt-');
+      await assert.rejects(build(book, output), /reference definition is outside its visible source/u);
+      assert.strictEqual(await fs.pathExists(path.join(output, 'note')), false);
+    });
+  }
+
+  for (const definition of [
+    '[^unused]: Synthetic unused note.',
+    '[^unused]: First paragraph.\n\n    Second paragraph.',
+    '[^unused]:',
+    '[^unused]: First definition.\n\n[^unused]: Last definition.'
+  ]) {
+    test(`未参照脚注定義はpaid reader境界を開始しない/${definition}`, async () => {
+      const book = await copySampleBook();
+      await updateMetadata(book, (metadata) => metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow'));
+      await fs.writeFile(path.join(book, 'manuscript/02-workflow.md'),
+        `# Probe\n\nFree before.\n\n:::paid\n\n${definition}\n\n:::\n\nFree after.\n`);
+      const result = await build(book, await temporaryDirectory('tmp-note-unused-footnote-'));
+      const output = packageDirectory(result);
+      const free = await fs.readFile(path.join(output, '01-free-sample.html'), 'utf8');
+      const paid = await fs.readFile(path.join(output, '02-paid-body.html'), 'utf8');
+      assert.match(free, /Free before\./u);
+      assert.match(free, /Free after\./u);
+      assert.doesNotMatch(free + paid, /unused|First paragraph|Second paragraph|First definition|Last definition/u);
+    });
+  }
+
+  for (const paidBody of [
+    '[^unused]: Hidden.\n\nActual paid prose.',
+    '```text\n[^unused]: Literal code.\n```'
+  ]) {
+    test(`脚注風code/実際のpaid本文は境界を開始する/${paidBody}`, async () => {
+      const book = await copySampleBook();
+      await updateMetadata(book, (metadata) => metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow'));
+      await fs.writeFile(path.join(book, 'manuscript/02-workflow.md'),
+        `# Probe\n\nFree before.\n\n:::paid\n\n${paidBody}\n\n:::\n\nFree after.\n`);
+      await assert.rejects(build(book, await temporaryDirectory('tmp-note-visible-footnote-control-')), /single prefix/u);
+    });
+  }
+
+  for (const [fragment, owner, file, outputName] of [
+    ['free', 'preface', 'frontmatter/preface.md', '01-free-sample'],
+    ['paid', 'workflow', 'manuscript/02-workflow.md', '02-paid-body']
+  ]) {
     for (const image of ['![cover][image]', '![image][]', '![image]']) {
       test(`inline link label内の参照画像 ${image}/${fragment} を変換・stageする`, async () => {
         const bookDirectory = await copySampleBook();

@@ -90,6 +90,12 @@ referenceのnamespace変換では、lockfileの`markdown-it`が生成するconta
 
 inline linkは外側の区切りとdestination/titleだけを保護し、表示labelに含まれるreference image（full/collapsed/shortcut）をnamespace変換する。たとえば`[download ![cover][image]](https://download.example/)`の画像参照は、単独画像と同様に定義・比較用HTML・画像候補manifest・stageへ接続する。表示label全体を保護したり、outer linkをshortcut referenceとして追加変換したりしない。保護probeは元文書のparserが受理したreference環境を共有し、reference linkを内包するためparserが拒否するouter linkを、空のreference環境で別のinline linkとして再解釈しない。定義が当該fragmentから不可視の場合は、従来のdependency closureが生成前に拒否する。metadata内や隣接するcode/HTML内の画像風文字列は変換しない。
 
+inline画像もopenerとclosing destination/titleだけを保護する。たとえば`![cover [credit][shared]](../assets/cover.png)`ではALT内部のreferenceをnamespace化し、元parserと同じALT表示を比較HTMLと連結Markdownで維持する。画像内code/metadataの保護、image-in-link、不可視定義の拒否、asset stageの契約は共通である。
+
+named footnoteの定義範囲は、固定pluginのblock ruleが受理したlabelと消費行を観測して記録する。参照済み・未参照・空の定義を含み、tail生成後のtokenの有無では判定しない。未参照定義だけではpaid reader boundaryを開始しないが、定義外のpaid本文やfenced codeは開始する。同じlabelの複数定義は固定pluginと同じ最後の定義を補完に使い、全定義の元行は非表示行として記録する。
+
+先頭のtop-level H1は固定parserのheading map全行を除去するため、ATXとSetextの双方を扱う。本文・hard break・Setext H2・codeの元行対応は保持し、非先頭または複数のtop-level H1は従来どおり拒否する。
+
 pluginが部分文字列を再parseするinline footnote等では、親inline content内の一意な一致でoffsetを引き継ぐ。保護spanの元原稿offsetは、parserの行map（table cellは親rowのmap）内の一意な文字列一致で証明する。独自のcontainer/indent/tab/rendererエミュレーションは行わない。たとえば同じ行の同一内容のcode入りtable cell、親内で重複するinline child content、またはindent tabの部分展開で元原稿にliteral一致しないinline contentは、`cannot uniquely map protected inline content`で生成前にfail closedとする。保護対象を別段落へ移す、重複cellの内容を区別する、当該indentをspaceにする等で一意に対応できる形へ直す。破損したmetadataを黙って出力したり、他のeditionの定義を補うことはない。
 
 複数行のreference labelも、同じ一意な対応を用いてcontainer除去済みinline contentから読み取る。shortcut/collapsed referenceの表示文字列は元の改行・containerを保持したまま、単一行の生成IDを付ける。ただしfull referenceの明示ID（`[表示][参照ID]`の後半）が複数の物理行へ分かれる場合は、`multiline explicit reference label`で生成前に拒否する。後半を単一行へ縮約するとsource-line所有権とwarning行番号が変わるため、暗黙の行結合は行わない。原稿の参照IDを`[表示][shared label]`のように1物理行へ置くこと。表示側の改行は保持できる。この制限はfree/paid共通であり、未解決のliteral bracket textを別のlinkへ変えるものではない。
