@@ -96,6 +96,8 @@ named footnoteの定義範囲は、固定pluginのblock ruleが受理したlabel
 
 先頭のtop-level H1は固定parserのheading map全行を除去するため、ATXとSetextの双方を扱う。本文・hard break・Setext H2・codeの元行対応は保持し、非先頭または複数のtop-level H1は従来どおり拒否する。
 
+表示labelの括弧探索も同じparser-produced保護spanを参照する。code/HTML等の内部にある`[` / `]`をlabelの深さ・終端へ数えず、外側の参照IDだけをnamespace化する。新たなcode/HTML/container parserは追加しない。
+
 pluginが部分文字列を再parseするinline footnote等では、親inline content内の一意な一致でoffsetを引き継ぐ。保護spanの元原稿offsetは、parserの行map（table cellは親rowのmap）内の一意な文字列一致で証明する。独自のcontainer/indent/tab/rendererエミュレーションは行わない。たとえば同じ行の同一内容のcode入りtable cell、親内で重複するinline child content、またはindent tabの部分展開で元原稿にliteral一致しないinline contentは、`cannot uniquely map protected inline content`で生成前にfail closedとする。保護対象を別段落へ移す、重複cellの内容を区別する、当該indentをspaceにする等で一意に対応できる形へ直す。破損したmetadataを黙って出力したり、他のeditionの定義を補うことはない。
 
 複数行のreference labelも、同じ一意な対応を用いてcontainer除去済みinline contentから読み取る。shortcut/collapsed referenceの表示文字列は元の改行・containerを保持したまま、単一行の生成IDを付ける。ただしfull referenceの明示ID（`[表示][参照ID]`の後半）が複数の物理行へ分かれる場合は、`multiline explicit reference label`で生成前に拒否する。後半を単一行へ縮約するとsource-line所有権とwarning行番号が変わるため、暗黙の行結合は行わない。原稿の参照IDを`[表示][shared label]`のように1物理行へ置くこと。表示側の改行は保持できる。この制限はfree/paid共通であり、未解決のliteral bracket textを別のlinkへ変えるものではない。

@@ -58,6 +58,44 @@ afterEach(async () => {
 });
 
 describe('NoteAdapter', () => {
+  for (const [container, prefix] of [
+    ['plain', ''], ['quote', '> '], ['list', '- '], ['nested', '> - ']
+  ]) {
+    for (const [fragment, file, outputName] of [
+      ['free', 'frontmatter/preface.md', '01-free-sample'],
+      ['paid', 'manuscript/02-workflow.md', '02-paid-body']
+    ]) {
+      test(`label境界はparserの保護span内の括弧を無視する/${container}/${fragment}`, async () => {
+        const book = await copySampleBook();
+        await fs.outputFile(path.join(book, 'assets/cover.png'), 'synthetic image');
+        const labels = [
+          '[text `]`][shared]',
+          '[text `[`][shared]',
+          '[text <span title="]">HTML</span>][shared]',
+          '![image `]`][image]'
+        ];
+        const source = labels.map((label) => `${prefix}${label}`).join('\n\n') +
+          '\n\n[shared]: https://reference.example/\n[image]: ../assets/cover.png\n';
+        const expected = new MarkdownIt({ html: true }).render(source);
+        assert.strictEqual((expected.match(/href="https:\/\/reference.example\/"/gu) || []).length, 3);
+        assert.match(expected, /alt="image "/u);
+        await fs.writeFile(path.join(book, file), `# Owner\n\n${source}`);
+        const result = await build(book, await temporaryDirectory('tmp-note-label-boundary-'));
+        const output = packageDirectory(result);
+        const md = await fs.readFile(path.join(output, `${outputName}.md`), 'utf8');
+        const html = await fs.readFile(path.join(output, `${outputName}.html`), 'utf8');
+        for (const rendered of [html, new MarkdownIt().render(md)]) {
+          assert.strictEqual((rendered.match(/href="https:\/\/reference.example\/"/gu) || []).length, 3);
+          assert.match(rendered, /text <code>\]<\/code><\/a>/u);
+          assert.match(rendered, /text <code>\[<\/code><\/a>/u);
+          assert.match(rendered, /alt="image "/u);
+        }
+        assert.ok(md.includes('<span title="]">HTML</span>'));
+        assert.strictEqual(await fs.readFile(path.join(output, 'assets/cover.png'), 'utf8'), 'synthetic image');
+      });
+    }
+  }
+
   for (const [fragment, owner, file, outputName] of [
     ['free', 'preface', 'frontmatter/preface.md', '01-free-sample'],
     ['paid', 'workflow', 'manuscript/02-workflow.md', '02-paid-body']

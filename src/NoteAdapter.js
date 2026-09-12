@@ -505,9 +505,17 @@ function readInlineLabel(source, start, end, inlineContents, lineOffsets) {
   return labels[0];
 }
 
-function findClosingBracket(source, opening, end = source.length) {
+function findClosingBracket(source, opening, end, protectedRanges, protectedIndex) {
   let depth = 0;
   for (let cursor = opening; cursor < end; cursor += 1) {
+    while (protectedIndex < protectedRanges.length && protectedRanges[protectedIndex].end <= cursor) {
+      protectedIndex += 1;
+    }
+    const range = protectedRanges[protectedIndex];
+    if (range && cursor >= range.start && cursor < range.end) {
+      cursor = range.end - 1;
+      continue;
+    }
     if (isBackslashEscaped(source, cursor)) continue;
     if (source[cursor] === '[') depth += 1;
     if (source[cursor] !== ']') continue;
@@ -739,7 +747,7 @@ function namespaceReferenceLabels(projection, namespace) {
     const bracketSearchEnd = inlineScopeContainsCursor
       ? inlineScope.end
       : physicalLineEnd === -1 ? source.length : physicalLineEnd;
-    const firstEnd = findClosingBracket(source, cursor, bracketSearchEnd);
+    const firstEnd = findClosingBracket(source, cursor, bracketSearchEnd, protectedRanges, protectedIndex);
     if (firstEnd === -1) {
       cursor += 1;
       continue;
@@ -770,7 +778,7 @@ function namespaceReferenceLabels(projection, namespace) {
 
     const following = source[firstEnd + 1];
     if (following === '[') {
-      const secondEnd = findClosingBracket(source, firstEnd + 1, bracketSearchEnd);
+      const secondEnd = findClosingBracket(source, firstEnd + 1, bracketSearchEnd, protectedRanges, protectedIndex);
       if (secondEnd === -1) {
         cursor += 1;
         continue;
