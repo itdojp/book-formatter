@@ -58,6 +58,69 @@ afterEach(async () => {
 });
 
 describe('NoteAdapter', () => {
+  for (const mode of ['free', 'paid']) {
+    const sourcePath = mode === 'free' ? 'frontmatter/preface.md' : 'manuscript/02-workflow.md';
+    for (const close of ['---', '...']) {
+      for (const format of ['LF', 'BOM-CRLF']) {
+        for (const h1 of [false, true]) {
+          test(`source front matter/reject/${mode}/${close}/${format}/h1=${h1}`, async () => {
+            const book = await copySampleBook();
+            let source = `--- \t\nsource_marker: NOTE_SYNTHETIC_FRONTMATTER_ONLY\n${close} \t\n\n${h1 ? '# Probe\n\n' : ''}Visible body.\n`;
+            if (format === 'BOM-CRLF') source = '\uFEFF' + source.replace(/\n/g, '\r\n');
+            await fs.writeFile(path.join(book, sourcePath), source);
+            const out = await temporaryDirectory('tmp-note-frontmatter-');
+            await assert.rejects(() => build(book, out), (error) => {
+              assert.ok(error instanceof AdapterBuildError);
+              assert.ok(error.message.includes('Source YAML Front Matter is not supported by the note adapter'));
+              assert.ok(error.message.includes(sourcePath));
+              assert.ok(error.message.includes('book.yaml'));
+              assert.ok(!error.message.includes('NOTE_SYNTHETIC_FRONTMATTER_ONLY'));
+              return true;
+            });
+            assert.deepStrictEqual(await fs.readdir(out), []);
+          });
+        }
+      }
+    }
+    for (const [kind, source] of [
+      ['invalid', '---\nbroken: [\n---\nVisible body.\n'],
+      ['duplicate', '---\nkey: one\nkey: two\n...\nVisible body.\n'],
+      ['unclosed', '---\nsource_marker: NOTE_SYNTHETIC_FRONTMATTER_ONLY\n']
+    ]) {
+      test(`source front matter/visibility-reject/${mode}/${kind}`, async () => {
+        const book = await copySampleBook();
+        await fs.writeFile(path.join(book, sourcePath), source);
+        const out = await temporaryDirectory('tmp-note-frontmatter-');
+        await assert.rejects(() => build(book, out), AdapterBuildError);
+        assert.deepStrictEqual(await fs.readdir(out), []);
+      });
+    }
+    for (const [kind, source] of [
+      ['ATX', '# Probe\n\nVisible body.\n'],
+      ['Setext', 'Probe\n=====\n\nVisible body.\n'],
+      ['plain', 'Visible body.\n'],
+      ['thematic-break', 'Visible body.\n\n---\nOther paragraph.\n'],
+      ['fenced-literal', '# Probe\n\nVisible body.\n\n```yaml\n---\nsource_marker: NOTE_SYNTHETIC_LITERAL\n...\n```\n']
+    ]) {
+      test(`source front matter/no-metadata/${mode}/${kind}`, async () => {
+        const book = await copySampleBook();
+        await fs.writeFile(path.join(book, sourcePath), source);
+        const result = await build(book, await temporaryDirectory('tmp-note-frontmatter-'));
+        const fragment = mode === 'free' ? '01-free-sample' : '02-paid-body';
+        const directory = packageDirectory(result);
+        const markdown = await fs.readFile(path.join(directory, `${fragment}.md`), 'utf8');
+        const html = await fs.readFile(path.join(directory, `${fragment}.html`), 'utf8');
+        assert.ok(markdown.includes('Visible body.'));
+        assert.ok(html.includes('Visible body.'));
+        assert.ok(!markdown.includes('NOTE_SYNTHETIC_FRONTMATTER_ONLY'));
+        if (kind === 'thematic-break') assert.ok(html.includes('<hr>'));
+        if (kind === 'fenced-literal') {
+          assert.ok(markdown.includes('source_marker: NOTE_SYNTHETIC_LITERAL'));
+          assert.ok(html.includes('<code class="language-yaml">'));
+        }
+      });
+    }
+  }
   for (const shape of ['named-plain', 'named-quote', 'named-multiline', 'inline', 'inline-after-multiline', 'after-multiline']) {
     for (const mode of ['free', 'paid']) {
       test(`footnote warning provenance/${shape}/${mode}`, async () => {

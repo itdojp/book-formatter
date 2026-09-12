@@ -86,6 +86,8 @@ npm start build -- \
 
 ### Markdown metadataの保護境界
 
+原稿先頭のYAML Front Matter（`---`で開始、`---`または`...`で終了）は生成前に明示拒否する。書籍・章metadataは`book.yaml`へ置く。visibility検査がmetadataとして扱う行を記事本文へ混入させたり、H1の有無で扱いを変えたりしない。先頭BOM・CRLFも同じ境界で判定し、不正・未閉鎖YAMLは既存visibility検査で拒否する。本文途中のthematic breakやfenced code内のYAML例はsource Front Matterではない。任意のmetadata stripやMarkdown再解釈は行わない。
+
 referenceのnamespace変換では、lockfileの`markdown-it`が生成するcontainer除去済みinline contentに対して、既存ruleが消費したcode・HTML・autolink、およびinline linkのdestination/titleを保護する。blockquoteやlistの元の物理行を別のHTMLとして再解釈せず、container markerやmetadataの値は維持する。脚注定義はfootnote tailへの移動・未参照定義の削除より前のblock mapを保持し、補完する定義本文にも同じ保護を適用する。
 
 inline linkは外側の区切りとdestination/titleだけを保護し、表示labelに含まれるreference image（full/collapsed/shortcut）をnamespace変換する。たとえば`[download ![cover][image]](https://download.example/)`の画像参照は、単独画像と同様に定義・比較用HTML・画像候補manifest・stageへ接続する。表示label全体を保護したり、outer linkをshortcut referenceとして追加変換したりしない。保護probeは元文書のparserが受理したreference環境を共有し、reference linkを内包するためparserが拒否するouter linkを、空のreference環境で別のinline linkとして再解釈しない。定義が当該fragmentから不可視の場合は、従来のdependency closureが生成前に拒否する。metadata内や隣接するcode/HTML内の画像風文字列は変換しない。

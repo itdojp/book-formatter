@@ -1030,6 +1030,19 @@ function escapedGeneratedTitle(title, context) {
   return title.replace(/[!-/:-@[-`{-~]/gu, '\\$&');
 }
 
+// Match the visibility checker's metadata boundary before fragment projection.
+// Source metadata must never become reader-visible note article content.
+function rejectSourceFrontMatter(source, sourcePath) {
+  const { lines } = normalizedLines(String(source).replace(/^\uFEFF/u, ''));
+  if (!/^---[\t ]*$/u.test(lines[0] || '')) return;
+  if (lines.slice(1).some((line) => /^(?:---|\.\.\.)[\t ]*$/u.test(line))) {
+    throw new NoteAdapterError(
+      `Source YAML Front Matter is not supported by the note adapter: ${sourcePath}. ` +
+      'Place book and chapter metadata in book.yaml.'
+    );
+  }
+}
+
 function normalizedLines(source) {
   const normalized = String(source).replace(/\r\n?/g, '\n');
   const trailingNewline = normalized.endsWith('\n');
@@ -1716,6 +1729,7 @@ export async function writeNotePackage({
       entry.path,
       paidReport.sourceDigest
     );
+    rejectSourceFrontMatter(source, entry.path);
     const sourceNamespace = createDocumentLabelNamespace(source, null);
     const nonReaderVisibleLines = definitionSourceLines(sourceNamespace);
     for (const line of sourceNamespace.nonRenderedHtmlLines) {
