@@ -1113,7 +1113,7 @@ function projectSourceLines(source, report, sourcePath, subtractReport = null) {
   return trimProjection(projectedLines, sourceLines);
 }
 
-function removeLeadingCanonicalH1(projection, sourcePath) {
+function removeLeadingCanonicalH1(projection, sourcePath, firstSourceContentLine) {
   const normalized = String(projection.text).replace(/\r\n?/g, '\n');
   if (!normalized.trim()) return { text: '', sourceLines: [] };
   const lines = normalized.split('\n');
@@ -1129,6 +1129,7 @@ function removeLeadingCanonicalH1(projection, sourcePath) {
   const [startLine, endLine] = topLevelH1[0].map || [];
   if (
     startLine !== 0 ||
+    projection.sourceLines[startLine] !== firstSourceContentLine ||
     !Number.isInteger(endLine) || endLine <= startLine || endLine > lines.length
   ) {
     throw new NoteAdapterError(
@@ -1756,13 +1757,15 @@ export async function writeNotePackage({
       }
     }
 
+    // Projection cannot turn a later source H1 into the canonical title.
+    const firstSourceContentLine = sourceLines.findIndex((line) => line.trim()) + 1;
     const freeProjected = removeLeadingCanonicalH1(
       projectSourceLines(source, freeReport, entry.path),
-      entry.path
+      entry.path, firstSourceContentLine
     );
     const paidProjected = removeLeadingCanonicalH1(
       projectSourceLines(source, paidReport, entry.path, freeReport),
-      entry.path
+      entry.path, firstSourceContentLine
     );
     const hasFree = hasReaderVisibleSourceLine(freeProjected, nonReaderVisibleLines);
     const hasPaid = hasReaderVisibleSourceLine(paidProjected, nonReaderVisibleLines);

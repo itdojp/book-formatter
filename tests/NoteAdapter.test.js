@@ -58,6 +58,44 @@ afterEach(async () => {
 });
 
 describe('NoteAdapter', () => {
+  for (const heading of ['# Late heading', 'Late heading\n============']) {
+    for (const prefix of ['Free prose.', '# Canonical\n\nFree prose.']) {
+      test(`source-leading H1/reject projected late/${heading}/${prefix}`, async () => {
+        const book = await copySampleBook();
+        await updateMetadata(book, (metadata) => {
+          metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+        });
+        await fs.writeFile(path.join(book, 'manuscript/02-workflow.md'),
+          `${prefix}\n\n:::paid\n\n${heading}\n\nPaid prose.\n\n:::\n`);
+        const out = await temporaryDirectory('tmp-note-source-h1-');
+        await assert.rejects(() => build(book, out), /h1 must be the first content block/u);
+        assert.deepStrictEqual(await fs.readdir(out), []);
+      });
+    }
+    for (const mode of ['split', 'paid-only']) {
+      test(`source-leading H1/preserve canonical/${heading}/${mode}`, async () => {
+        const book = await copySampleBook();
+        if (mode === 'split') {
+          await updateMetadata(book, (metadata) => {
+            metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+          });
+        }
+        const body = mode === 'split' ? 'Free prose.\n\n:::paid\n\nPaid prose.\n\n:::' : 'Paid prose.';
+        await fs.writeFile(path.join(book, 'manuscript/02-workflow.md'), `\n\n${heading}\n\n${body}\n`);
+        const result = await build(book, await temporaryDirectory('tmp-note-source-h1-'));
+        for (const extension of ['md', 'html']) {
+          const paid = await fs.readFile(path.join(packageDirectory(result), `02-paid-body.${extension}`), 'utf8');
+          assert.ok(paid.includes('Paid prose.'));
+          assert.ok(!paid.includes('Late heading'));
+          if (mode === 'split') {
+            const free = await fs.readFile(path.join(packageDirectory(result), `01-free-sample.${extension}`), 'utf8');
+            assert.ok(free.includes('Free prose.'));
+            assert.ok(!free.includes('Late heading'));
+          }
+        }
+      });
+    }
+  }
   for (const mode of ['free', 'paid']) {
     const sourcePath = mode === 'free' ? 'frontmatter/preface.md' : 'manuscript/02-workflow.md';
     for (const close of ['---', '...']) {

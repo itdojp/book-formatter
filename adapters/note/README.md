@@ -100,7 +100,7 @@ named footnoteの定義範囲は、固定pluginのblock ruleが受理したlabel
 
 警告inspectionではnamed footnoteの元block mapを維持する。mapを持たないinline footnoteの生成tailはparserのfootnote IDと元の参照位置へ束縛し、後続の無関係な段落の位置を警告行として引き継がない。固定inline footnote ruleの消費start/endから行offsetと消費改行数を観測し、複数行のinline脚注に続く参照や本文の警告位置も保持する。
 
-先頭のtop-level H1は固定parserのheading map全行を除去するため、ATXとSetextの双方を扱う。本文・hard break・Setext H2・codeの元行対応は保持し、非先頭または複数のtop-level H1は従来どおり拒否する。
+先頭のtop-level H1は固定parserのheading map全行を除去するため、ATXとSetextの双方を扱う。削除対象はprojectionの先頭だけでなく、元原稿の先頭非空行に対応することもsourceLinesで照合する。visibility分割で後方H1がfragment先頭へ移動してもcanonical titleへ昇格させず拒否する。本文・hard break・Setext H2・codeの元行対応は保持し、非先頭または複数のtop-level H1は従来どおり拒否する。
 
 表示labelの括弧探索も同じparser-produced保護spanを参照する。code/HTML等の内部にある`[` / `]`をlabelの深さ・終端へ数えず、外側の参照IDだけをnamespace化する。新たなcode/HTML/container parserは追加しない。
 
