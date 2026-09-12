@@ -58,6 +58,36 @@ afterEach(async () => {
 });
 
 describe('NoteAdapter', () => {
+  for (const shape of ['named-plain', 'named-quote', 'named-multiline', 'inline', 'inline-after-multiline', 'after-multiline']) {
+    for (const mode of ['free', 'paid']) {
+      test(`footnote warning provenance/${shape}/${mode}`, async () => {
+        const book = await copySampleBook();
+        await updateMetadata(book, (metadata) => {
+          metadata.editions.find((edition) => edition.id === 'sample').documents.push('workflow');
+        });
+        await fs.outputFile(path.join(book, 'assets/cover.png'), 'synthetic image');
+        const detail = '[relative](./next.md) <span>synthetic</span> ![local](../assets/cover.png)';
+        const body = shape === 'inline' ? `Read ^[${detail}].`
+          : shape === 'inline-after-multiline' ? `Read ^[First\nsecond] and ^[${detail}].`
+            : shape === 'after-multiline' ? `Read ^[First\nsecond] and ${detail}.`
+              : shape === 'named-multiline'
+                ? `Read [^shared].\n\n[^shared]: First sentence.\n    ${detail}`
+                : `Read [^shared].\n\n${shape === 'named-quote' ? '> ' : ''}[^shared]: ${detail}`;
+        const [use, ...definition] = body.split('\n\n');
+        const source = mode === 'free' ? `# Probe\n\n${body}\n\nUnrelated final paragraph.\n`
+          : `# Probe\n\nFree before.\n\n:::paid\n\n${use}\n\nUnrelated paid paragraph.\n\n:::\n\n${definition.join('\n\n')}\n`;
+        await fs.writeFile(path.join(book, 'manuscript/02-workflow.md'), source);
+        const result = await build(book, await temporaryDirectory('tmp-note-warning-'));
+        const manifest = YAML.parse(await fs.readFile(path.join(packageDirectory(result), 'note-publish-manifest.yaml'), 'utf8'));
+        const line = source.split('\n').findIndex((value) => value.includes('[relative]')) + 1;
+        assert.deepStrictEqual(manifest.warnings.filter((warning) => warning.file === 'manuscript/02-workflow.md'),
+          ['image_requires_manual_upload', 'raw_html_requires_manual_review', 'relative_link_requires_manual_review']
+            .map((code) => ({ code, file: 'manuscript/02-workflow.md', line })));
+        assert.ok(await fs.pathExists(path.join(packageDirectory(result), 'assets/cover.png')));
+      });
+    }
+  }
+
   // Global parser binding must survive local duplicate definitions in either projection.
   for (const kind of ['reference', 'footnote']) {
     for (const [container, prefix] of [['plain', ''], ['quote', '> '], ['list', '- '], ['nested', '> - ']]) {

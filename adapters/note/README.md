@@ -96,6 +96,8 @@ named footnoteの定義範囲は、固定pluginのblock ruleが受理したlabel
 
 文書全体で有効な定義と、fragmentに残る重複定義は区別する。通常referenceは固定`markdown-it`の最初の定義、named footnoteは固定pluginの最後の定義を有効bindingとする。全used labelについて有効定義の全元行をvisibility検証し、不可視なら可視duplicateへの代替をせず拒否する。可視だが別fragmentにある場合、referenceは前方・footnoteは後方へ補完して優先順位を保持する。非effective duplicateは定義のまま非表示で残し、それだけで依存閉包を満たしたとは扱わない。定義本文のcontainerを削除したり、元の物理行を結合する独自parserは追加しない。
 
+警告inspectionではnamed footnoteの元block mapを維持する。mapを持たないinline footnoteの生成tailはparserのfootnote IDと元の参照位置へ束縛し、後続の無関係な段落の位置を警告行として引き継がない。固定inline footnote ruleの消費start/endから行offsetと消費改行数を観測し、複数行のinline脚注に続く参照や本文の警告位置も保持する。
+
 先頭のtop-level H1は固定parserのheading map全行を除去するため、ATXとSetextの双方を扱う。本文・hard break・Setext H2・codeの元行対応は保持し、非先頭または複数のtop-level H1は従来どおり拒否する。
 
 表示labelの括弧探索も同じparser-produced保護spanを参照する。code/HTML等の内部にある`[` / `]`をlabelの深さ・終端へ数えず、外側の参照IDだけをnamespace化する。新たなcode/HTML/container parserは追加しない。

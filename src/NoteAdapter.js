@@ -213,13 +213,32 @@ function captureFootnoteDefinitionRanges(markdown) {
   }, { alt: ['paragraph', 'reference'] });
 }
 
+const INLINE_FOOTNOTE_POSITION = Symbol('note.inline-footnote-position');
+
+function captureInlineFootnotePositions(markdown) {
+  const rule = markdown.inline.ruler.getRules('').find((candidate) => candidate.name === 'footnote_inline');
+  if (!rule) throw new Error('note requires the pinned inline footnote rule');
+  markdown.inline.ruler.at('footnote_inline', (state, silent) => {
+    const start = state.pos;
+    const accepted = rule(state, silent);
+    if (accepted && !silent) {
+      // Observe consumed source only; the plugin still owns all syntax.
+      state.tokens.at(-1)[INLINE_FOOTNOTE_POSITION] = {
+        lineOffset: state.src.slice(0, start).split('\n').length - 1,
+        consumedLines: state.src.slice(start, state.pos).split('\n').length - 1
+      };
+    }
+    return accepted;
+  });
+}
+
 const SOURCE_MARKDOWN = new MarkdownIt({
   html: true,
   linkify: false,
   typographer: false,
   maxNesting: 128
 }).use(markdownItFootnote).use(captureFootnoteDefinitionRanges)
-  .use(captureReferenceDefinitionRanges)
+  .use(captureReferenceDefinitionRanges).use(captureInlineFootnotePositions)
   .use(captureLabelCandidates).use(captureProtectedInlineSpans);
 
 const HTML_FRAGMENT_MARKDOWN = new MarkdownIt({
@@ -1173,15 +1192,25 @@ function convertStandardCallouts(projection, sourcePath, warnings) {
   return trimProjection(output, sourceLines);
 }
 
-function collectTokens(tokens, inheritedLine = 1) {
+function collectTokens(tokens, inheritedLine = 1, footnoteLines = new Map()) {
   const output = [];
   let line = inheritedLine;
   for (const token of tokens) {
-    const tokenLine = token.map ? token.map[0] + 1 : line;
+    // Named definitions keep their block maps. Inline footnotes have a
+    // generated tail without maps; bind it to the parser's original ref ID.
+    const inlineFootnoteLine = token.type === 'footnote_open' && !token.meta?.label
+      ? footnoteLines.get(token.meta?.id) : undefined;
+    const position = token[INLINE_FOOTNOTE_POSITION];
+    const tokenLine = token.map ? token.map[0] + 1
+      : position ? inheritedLine + position.lineOffset : inlineFootnoteLine ?? line;
+    if (token.type === 'footnote_ref' && !footnoteLines.has(token.meta.id)) {
+      footnoteLines.set(token.meta.id, tokenLine);
+    }
     line = tokenLine;
     output.push({ token, line: tokenLine });
-    if (token.children) output.push(...collectTokens(token.children, tokenLine));
+    if (token.children) output.push(...collectTokens(token.children, tokenLine, footnoteLines));
     if (token.type === 'softbreak' || token.type === 'hardbreak') line += 1;
+    if (position) line += position.consumedLines;
   }
   return output;
 }
