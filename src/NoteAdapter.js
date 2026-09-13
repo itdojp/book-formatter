@@ -1730,11 +1730,14 @@ export async function writeNotePackage({
     if (paidReport.sourceDigest !== freeReport.sourceDigest) {
       throw new NoteAdapterError(`Visibility reports disagree on source digest: ${entry.path}`);
     }
-    const source = await SAFE_IO.readVisibilityBoundSource(
+    const rawSource = await SAFE_IO.readVisibilityBoundSource(
       standardBook.bookRoot,
       entry.path,
       paidReport.sourceDigest
     );
+    // Verify the original bytes first; one leading BOM is an encoding marker,
+    // not reader text. Removing it preserves all physical source line numbers.
+    const source = rawSource.replace(/^\uFEFF/u, '');
     rejectSourceFrontMatter(source, entry.path);
     const sourceNamespace = createDocumentLabelNamespace(source, null);
     const nonReaderVisibleLines = definitionSourceLines(sourceNamespace);

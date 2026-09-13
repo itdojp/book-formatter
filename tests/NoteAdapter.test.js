@@ -59,6 +59,49 @@ afterEach(async () => {
 
 describe('NoteAdapter', () => {
   for (const mode of ['free', 'paid']) {
+    const file = mode === 'free' ? 'frontmatter/preface.md' : 'manuscript/02-workflow.md';
+    for (const [kind, opening] of [['ATX', '# Owner'], ['Setext', 'Owner\n====='], ['prose', 'Opening prose.']]) {
+      for (const eol of ['\n', '\r\n']) {
+        test(`source BOM parity/${mode}/${kind}/${JSON.stringify(eol)}`, async () => {
+          const book = await copySampleBook();
+          const source = `${opening}\n\nBody [review](../guide).\n`.replace(/\n/gu, eol);
+          const output = await temporaryDirectory('tmp-note-bom-');
+          const snapshot = async () => {
+            const result = await build(book, output);
+            const contents = { 'manifest.json': await fs.readFile(result.manifestPath, 'utf8') };
+            for (const name of (await fs.readdir(packageDirectory(result))).sort()) {
+              contents[name] = await fs.readFile(path.join(packageDirectory(result), name), 'utf8');
+            }
+            assert.strictEqual(Object.keys(contents).length, 7);
+            return contents;
+          };
+          await fs.writeFile(path.join(book, file), source);
+          const plain = await snapshot();
+          await fs.writeFile(path.join(book, file), `\uFEFF${source}`);
+          assert.deepStrictEqual(await snapshot(), plain);
+          assert.strictEqual(await fs.readFile(path.join(book, file), 'utf8'), `\uFEFF${source}`);
+        });
+      }
+    }
+    test(`source BOM preserves interior/literal/${mode}`, async () => {
+      const book = await copySampleBook();
+      const body = 'Body \uFEFFmiddle.\n\n```text\n\uFEFF# Code\n```\n\n\\uFEFF# Literal\n';
+      await fs.writeFile(path.join(book, file), `\uFEFF# Owner\n\n${body}`);
+      const result = await build(book, await temporaryDirectory('tmp-note-bom-inner-'));
+      const name = mode === 'free' ? '01-free-sample.md' : '02-paid-body.md';
+      const markdown = await fs.readFile(path.join(packageDirectory(result), name), 'utf8');
+      assert.ok(!markdown.includes('# Owner'));
+      assert.ok(markdown.includes(body.trimEnd()));
+    });
+    test(`source BOM rejects later H1/${mode}`, async () => {
+      const book = await copySampleBook();
+      await fs.writeFile(path.join(book, file), '\uFEFFOpening prose.\n\n# Later heading\n\nBody.\n');
+      const output = await temporaryDirectory('tmp-note-bom-late-');
+      await assert.rejects(() => build(book, output), /h1 must be the first content block/u);
+      assert.deepStrictEqual(await fs.readdir(output), []);
+    });
+  }
+  for (const mode of ['free', 'paid']) {
     for (const [kind, child, expectedCodes] of [
       ['link', '[credit](../credit)', ['relative_link_requires_manual_review']],
       ['html', '<span>credit</span>', ['raw_html_requires_manual_review']],
