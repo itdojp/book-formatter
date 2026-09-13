@@ -1,0 +1,9 @@
+/* Candidate only: no renderer is invoked by the plan-only adapter. */
+@page { size: A5; margin: 15mm; }
+body { font-family: sans-serif; line-height: 1.65; }
+img, svg { max-width: 100%; height: auto; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; }
+th, td { overflow-wrap: anywhere; }
+h1, h2, h3 { break-after: avoid; }
+a { color: #164c80; }

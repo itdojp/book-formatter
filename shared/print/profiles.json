@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "id": "screen-pdf",
+      "target": "pdf",
+      "format": "pdf",
+      "intended_file": "book-screen.pdf",
+      "stylesheet": "shared/print/screen-pdf.css",
+      "layout": "A5 portrait; screen reading; linked contents",
+      "validation": "Fonts, links, text extraction, accessibility and desktop/mobile visual inspection remain required."
+    },
+    {
+      "id": "print-pdf",
+      "target": "pdf",
+      "format": "pdf",
+      "intended_file": "book-print.pdf",
+      "stylesheet": "shared/print/print-pdf.css",
+      "layout": "A5 portrait candidate; mirrored margins; printer specification not yet selected",
+      "validation": "Trim, bleed, color profile, font embedding and PDF/X requirements must be agreed with the printer; not print-ready."
+    },
+    {
+      "id": "epub",
+      "target": "kindle",
+      "format": "epub",
+      "intended_file": "book.epub",
+      "stylesheet": "shared/print/epub.css",
+      "layout": "Reflowable EPUB 3 candidate; reader font and viewport preferences",
+      "validation": "EPUBCheck, navigation, reading order, images, language metadata and Kindle Previewer inspection remain required."
+    }
+  ]
+}

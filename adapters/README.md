@@ -12,9 +12,9 @@
 | `web-jekyll-legacy` | 既存Jekyll / GitHub Pages互換 | skeleton / legacy support contract | [#96](https://github.com/itdojp/book-formatter/issues/96) |
 | `zenn` | Zenn book | `zenn-v1` | [#98](https://github.com/itdojp/book-formatter/issues/98) |
 | `note` | note手動投稿package | `note-v1` | [#99](https://github.com/itdojp/book-formatter/issues/99) |
-| `kindle` | EPUB / Kindle | skeleton | [#100](https://github.com/itdojp/book-formatter/issues/100) |
+| `kindle` | EPUB / Kindle | skeleton / plan-only | [#100](https://github.com/itdojp/book-formatter/issues/100) |
 | `booth` | BOOTH販売パッケージ | skeleton | [#101](https://github.com/itdojp/book-formatter/issues/101) |
-| `pdf` | screen / print PDF | skeleton | [#100](https://github.com/itdojp/book-formatter/issues/100) |
+| `pdf` | screen / print PDF | skeleton / plan-only | [#100](https://github.com/itdojp/book-formatter/issues/100) |
 
 Target IDは有限集合です。CLI、実装、directory、testの追加を同じPRで行い、未知targetを黙って受理しないでください。
 
@@ -56,7 +56,7 @@ npm start build -- \
 2. `target` と `edition` を有限契約に照合する。
 3. Edition visibility検査を実行し、findingが1件でもあれば停止する。
 4. 時刻、絶対path、除外本文を含まない決定的なmanifestを組み立てる。
-5. dry-runでなければtarget実装を実行する。skeletonはmanifestだけを書き、実adapterは所有manifestを伴うstaging出力でtarget directoryを置換する。
+5. dry-runでなければtarget実装を実行する。manifest-only skeletonはmanifestだけを書く。`pdf`/`kindle`のplan-only基盤と実adapterは所有manifestを伴うstaging出力でtarget directoryを置換する。
 
 Manifestは変換判断の証跡であり、単独では公開可能性を保証しません。各実adapterは生成後の成果物をvisibility検査へ渡し、target固有の構造・link・accessibility・publication検査を追加する責任があります。`web-mdbook`、`zenn`、`note`の具体契約は各adapter READMEを参照してください。
 
@@ -64,7 +64,7 @@ Manifestは変換判断の証跡であり、単独では公開可能性を保証
 
 - 標準原稿、`book.yaml`、別targetの成果物を変更しない。
 - network、deploy、投稿、販売登録をadapter buildへ混在させない。
-- 出力先の既存fileを所有manifestなしで一括削除しない。skeletonは `manifest.json` 以外を書かない。
+- 出力先の既存fileを所有manifestなしで一括削除しない。manifest-only skeletonは `manifest.json` 以外を書かない。`pdf`/`kindle`のplan-only出力だけは、対応契約で列挙したplaceholder/checklistも生成する。
 - symbolic linkを経由する出力やcanonical source directory内への出力を拒否する。
 - manifestのkey順、document順、改行を決定的に保つ。
 - 有償・internal本文やcredentialをmanifest / log / test fixtureへ複製しない。
@@ -82,3 +82,5 @@ Version 1は次を記録します。
 - 文書内visibility blockの開始・終了行、visibility、SHA-256 digest、include/exclude decision（本文は含めない）
 
 破壊的なfield変更は `manifest_version` を上げます。追加fieldもconsumer互換性を確認し、fixtureとREADMEを同じPRで更新してください。
+
+`pdf` / `kindle`はprofile別placeholderと公開前checklistを出すplan-only基盤です。実PDF/EPUBや公開承認ではありません。詳細は[PDF/EPUB/Kindle基盤](../docs/pdf-epub-kindle.md)を参照してください。
