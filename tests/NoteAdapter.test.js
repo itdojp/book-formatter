@@ -58,6 +58,69 @@ afterEach(async () => {
 });
 
 describe('NoteAdapter', () => {
+  for (const mode of ['free', 'paid']) {
+    const file = mode === 'free' ? 'frontmatter/preface.md' : 'manuscript/02-workflow.md';
+    const outputName = mode === 'free' ? '01-free-sample' : '02-paid-body';
+    for (const syntax of ['inline', 'reference']) {
+      for (const state of ['missing', 'present', 'oversize', 'symlink', 'external', 'outside']) {
+        test(`nonrendered ALT image/${mode}/${syntax}/${state}`, async (context) => {
+          if (state === 'symlink' && process.platform === 'win32') return context.skip('symlink permissions are platform-dependent');
+          const book = await copySampleBook();
+          await fs.writeFile(path.join(book, 'assets/outer.png'), 'synthetic outer');
+          const innerPath = path.join(book, 'assets/inner.png');
+          if (state === 'present' || state === 'oversize') await fs.writeFile(innerPath, 'synthetic inner');
+          if (state === 'oversize') await fs.truncate(innerPath, 20 * 1024 * 1024 + 1);
+          if (state === 'symlink') await fs.symlink('outer.png', innerPath);
+          const destination = state === 'external' ? 'https://assets.example/inner.png'
+            : state === 'outside' ? '../../inner.png' : '../assets/inner.png';
+          const inner = syntax === 'inline' ? `![inner](${destination})` : '![inner][nested]';
+          const image = `![outer ${inner}](../assets/outer.png)`;
+          const body = `${image}\n\n[download ${image}](https://download.example/)\n\n` +
+            (syntax === 'reference' ? `[nested]: ${destination}\n` : '');
+          const source = `# Owner\n\n${body}`;
+          const parser = new MarkdownIt();
+          const alts = (text) => [...text.matchAll(/<img [^>]*alt="([^"]*)"/gu)].map((match) => match[1]);
+          const expected = alts(parser.render(body));
+          assert.deepStrictEqual(expected, ['outer inner', 'outer inner']);
+          await fs.writeFile(path.join(book, file), source);
+          const result = await build(book, await temporaryDirectory('tmp-note-alt-child-'));
+          const output = packageDirectory(result);
+          const markdown = await fs.readFile(path.join(output, `${outputName}.md`), 'utf8');
+          const html = await fs.readFile(path.join(output, `${outputName}.html`), 'utf8');
+          assert.deepStrictEqual(alts(html), expected);
+          assert.deepStrictEqual(alts(parser.render(markdown)), expected);
+          assert.match(html, /<a href="https:\/\/download.example\/">download <img /u);
+          const manifest = YAML.parse(await fs.readFile(path.join(output, 'note-publish-manifest.yaml'), 'utf8'));
+          assert.deepStrictEqual(manifest.image_candidates, [{
+            source: 'assets/outer.png', destination: 'assets/outer.png', documents: [file]
+          }]);
+          assert.deepStrictEqual(manifest.warnings.filter((warning) => warning.file === file), [
+            { code: 'image_requires_manual_upload', file, line: 3 },
+            { code: 'image_requires_manual_upload', file, line: 5 }
+          ]);
+          assert.deepStrictEqual(await fs.readdir(path.join(output, 'assets')), ['outer.png']);
+          assert.strictEqual(await fs.readFile(path.join(output, 'assets/outer.png'), 'utf8'), 'synthetic outer');
+        });
+      }
+    }
+    for (const state of ['missing', 'oversize', 'symlink']) {
+      test(`rendered outer image still rejects/${mode}/${state}`, async (context) => {
+        if (state === 'symlink' && process.platform === 'win32') return context.skip('symlink permissions are platform-dependent');
+        const book = await copySampleBook();
+        const outerPath = path.join(book, 'assets/outer.png');
+        await fs.writeFile(path.join(book, 'assets/inner.png'), 'synthetic inner');
+        if (state === 'oversize') {
+          await fs.writeFile(outerPath, 'synthetic outer');
+          await fs.truncate(outerPath, 20 * 1024 * 1024 + 1);
+        }
+        if (state === 'symlink') await fs.symlink('inner.png', outerPath);
+        await fs.writeFile(path.join(book, file), '# Owner\n\n![outer ![inner](../assets/inner.png)](../assets/outer.png)\n');
+        const output = await temporaryDirectory('tmp-note-alt-outer-');
+        await assert.rejects(() => build(book, output), AdapterBuildError);
+        assert.deepStrictEqual(await fs.readdir(output), []);
+      });
+    }
+  }
   for (const heading of ['# Late heading', 'Late heading\n============']) {
     for (const prefix of ['Free prose.', '# Canonical\n\nFree prose.']) {
       test(`source-leading H1/reject projected late/${heading}/${prefix}`, async () => {

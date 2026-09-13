@@ -1206,7 +1206,7 @@ function convertStandardCallouts(projection, sourcePath, warnings) {
   return trimProjection(output, sourceLines);
 }
 
-function collectTokens(tokens, inheritedLine = 1, footnoteLines = new Map()) {
+function collectTokens(tokens, inheritedLine = 1, footnoteLines = new Map(), inImageAlt = false) {
   const output = [];
   let line = inheritedLine;
   for (const token of tokens) {
@@ -1221,8 +1221,12 @@ function collectTokens(tokens, inheritedLine = 1, footnoteLines = new Map()) {
       footnoteLines.set(token.meta.id, tokenLine);
     }
     line = tokenLine;
-    output.push({ token, line: tokenLine });
-    if (token.children) output.push(...collectTokens(token.children, tokenLine, footnoteLines));
+    output.push({ token, line: tokenLine, inImageAlt });
+    // The renderer consumes image children as ALT text, not independent images.
+    // Retain traversal for provenance; asset collection owns the exclusion.
+    if (token.children) {
+      output.push(...collectTokens(token.children, tokenLine, footnoteLines, inImageAlt || token.type === 'image'));
+    }
     if (token.type === 'softbreak' || token.type === 'hardbreak') line += 1;
     if (position) line += position.consumedLines;
   }
@@ -1313,8 +1317,8 @@ async function collectImageCandidates({
 }) {
   const tokens = inspectReaderVisibleMarkdown(projection, sourcePath, warnings);
   const destinations = new Map();
-  for (const { token, line } of tokens) {
-    if (token.type !== 'image') continue;
+  for (const { token, line, inImageAlt } of tokens) {
+    if (token.type !== 'image' || inImageAlt) continue;
     const sourceLine = projection.sourceLines[line - 1] ?? line;
     const destination = token.attrGet('src') || '';
     if (
