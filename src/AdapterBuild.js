@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'fs-extra';
 
 import { AdapterSafeIOError } from './AdapterSafeIO.js';
+import { writePrintPublicationPlan } from './PrintPublicationPlan.js';
 import {
   checkBookVisibility,
   VISIBILITY_CONTRACT_VERSION
@@ -475,6 +476,17 @@ export async function buildStandardBookAdapter(options) {
       if (error instanceof NoteAdapterError || error instanceof AdapterSafeIOError) {
         throw new AdapterBuildError(error.message);
       }
+      throw error;
+    }
+  } else if (target === 'pdf' || target === 'kindle') {
+    try {
+      await writePrintPublicationPlan({
+        standardBook, edition, manifest, outputDirectory,
+        revalidateOutputDestination, revalidateReplacementDirectory,
+        validateOnly: dryRun
+      });
+    } catch (error) {
+      if (error instanceof AdapterSafeIOError) throw new AdapterBuildError(error.message);
       throw error;
     }
   } else if (!dryRun) {

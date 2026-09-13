@@ -1,0 +1,6 @@
+/* Reflowable candidate: no fixed page/viewport dimensions or bundled fonts. */
+body { line-height: 1.65; }
+img, svg { max-width: 100%; height: auto; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+th, td { overflow-wrap: anywhere; }
+h1, h2, h3 { break-after: avoid; }

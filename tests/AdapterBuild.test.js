@@ -186,7 +186,7 @@ describe('AdapterBuild', () => {
     assert.ok(metadataReads >= 2);
   });
 
-  test('通常buildはtarget配下へmanifestだけを原子的かつ決定的に出力する', async () => {
+  test('通常buildはtarget配下へmanifestと計画を原子的かつ決定的に出力する', async () => {
     const bookDirectory = await copySampleBook();
     const outputRoot = await createTemporaryDirectory('tmp-adapter-output-');
     await fs.writeFile(path.join(outputRoot, 'preserve.txt'), 'keep\n');
@@ -210,7 +210,9 @@ describe('AdapterBuild', () => {
     assert.strictEqual(first.manifestPath, path.join(outputRoot, 'kindle', 'manifest.json'));
     assert.strictEqual(secondContent, firstContent);
     assert.deepStrictEqual(JSON.parse(firstContent), first.manifest);
-    assert.deepStrictEqual(await fs.readdir(path.join(outputRoot, 'kindle')), ['manifest.json']);
+    assert.deepStrictEqual((await fs.readdir(path.join(outputRoot, 'kindle'))).sort(), [
+      'epub.placeholder.json', 'manifest.json', 'publication-checklist.md'
+    ]);
     assert.strictEqual(await fs.readFile(path.join(outputRoot, 'preserve.txt'), 'utf8'), 'keep\n');
     assert.ok(!firstContent.includes(bookDirectory));
 

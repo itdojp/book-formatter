@@ -12,9 +12,9 @@
 | `web-jekyll-legacy` | 既存Jekyll / GitHub Pages互換 | skeleton / legacy support contract | 既存consumerの互換保守に限定 | [#96](https://github.com/itdojp/book-formatter/issues/96) |
 | `zenn` | Zenn book | `zenn-v1` | Zenn CLI / GitHub連携へ渡す生成project | [#98](https://github.com/itdojp/book-formatter/issues/98) |
 | `note` | note手動投稿package | `note-v1` | paid editionとfree sample editionから手動公開packageを生成 | [#99](https://github.com/itdojp/book-formatter/issues/99) |
-| `kindle` | EPUB / Kindle | skeleton | adapter実装後に選択 | [#100](https://github.com/itdojp/book-formatter/issues/100) |
+| `kindle` | EPUB / Kindle | skeleton / plan-only | 出力計画のみ（実artifact未生成） | [#100](https://github.com/itdojp/book-formatter/issues/100) |
 | `booth` | BOOTH販売package | skeleton | adapter実装後に選択 | [#101](https://github.com/itdojp/book-formatter/issues/101) |
-| `pdf` | screen / print PDF | skeleton | adapter実装後に選択 | [#100](https://github.com/itdojp/book-formatter/issues/100) |
+| `pdf` | screen / print PDF | skeleton / plan-only | 出力計画のみ（実artifact未生成） | [#100](https://github.com/itdojp/book-formatter/issues/100) |
 
 `implementation: skeleton`のmanifestは、入力schema、edition visibility、target選択を検証したbuild planである。target固有成果物の生成、公開可能性、deploy成功を示さない。
 
@@ -95,3 +95,5 @@ Jekyll consumerを標準Web出力へ移行する場合は、少なくとも次�
 7. rollback条件と旧Jekyll経路の終了条件を記録する。
 
 全書籍への一括適用、mutableな`main`参照、未検証targetのdeployは行わない。
+
+`pdf` / `kindle`はprofile別placeholderと公開前checklistを出すplan-only基盤です。実PDF/EPUBや公開承認ではありません。詳細は[PDF/EPUB/Kindle基盤](./pdf-epub-kindle.md)を参照してください。
