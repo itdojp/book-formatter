@@ -59,6 +59,57 @@ describe('PrintPublicationPlan', () => {
     });
   }
 
+  for (const field of ['id', 'target', 'format', 'intended_file', 'stylesheet', 'layout', 'validation']) {
+    for (const [kind, value] of [['missing', undefined], ['null', null], ['number', 7], ['empty', ''], ['blank', '  ']]) {
+      test(`profile contract: ${field}/${kind} fails closed`, async () => {
+        const profiles = await loadPrintProfiles();
+        if (value === undefined) delete profiles[0][field];
+        else profiles[0][field] = value;
+        const original = fs.readJson;
+        fs.readJson = async () => ({ schema_version: 1, profiles });
+        try { await assert.rejects(loadPrintProfiles(), AdapterSafeIOError); }
+        finally { fs.readJson = original; }
+      });
+    }
+  }
+
+  for (const [kind, mutate] of [
+    ['unknown registry key', (data) => { data.extra = true; }],
+    ['unknown profile key', (data) => { data.profiles[0].extra = true; }],
+    ['wrong target', (data) => { data.profiles[0].target = 'kindle'; }],
+    ['wrong format', (data) => { data.profiles[0].format = 'epub'; }],
+    ['wrong stylesheet', (data) => { data.profiles[0].stylesheet = '../foreign.css'; }],
+    ['wrong intended filename', (data) => { data.profiles[0].intended_file = '../foreign.pdf'; }]
+  ]) {
+    test(`profile contract: ${kind} fails closed`, async () => {
+      const data = { schema_version: 1, profiles: await loadPrintProfiles() };
+      mutate(data);
+      const original = fs.readJson;
+      fs.readJson = async () => data;
+      try { await assert.rejects(loadPrintProfiles(), AdapterSafeIOError); }
+      finally { fs.readJson = original; }
+    });
+  }
+
+  for (const target of ['pdf', 'kindle']) {
+    test(`profile contract: ${target} refuses a missing profile field before output`, async () => {
+      const { book, outputRoot } = await fixture();
+      const original = fs.readJson;
+      fs.readJson = async (...args) => {
+        const data = await original(...args);
+        if (String(args[0]).endsWith('shared/print/profiles.json')) {
+          delete data.profiles.find((profile) => profile.target === target).layout;
+        }
+        return data;
+      };
+      try {
+        await assert.rejects(buildStandardBookAdapter({ bookDirectory: book, target, editionId: 'paid', outputRoot }),
+          (error) => error instanceof AdapterBuildError && /Invalid finite print/.test(error.message));
+      } finally { fs.readJson = original; }
+      assert.equal(await fs.pathExists(outputRoot), false);
+    });
+  }
+
   for (const target of ['pdf', 'kindle']) {
     for (const editionId of ['free', 'paid']) {
       test(`${target}/${editionId}: deterministic plan, metadata, no actual artifact/body`, async () => {

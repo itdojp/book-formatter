@@ -9,15 +9,23 @@ import { AdapterSafeIOError, createAdapterSafeIO } from './AdapterSafeIO.js';
 export const PRINT_PLAN_VERSION = 1;
 const PROFILE_PATH = fileURLToPath(new URL('../shared/print/profiles.json', import.meta.url));
 const PROFILE_IDS = ['screen-pdf', 'print-pdf', 'epub'];
+const PROFILE_FIELDS = ['id', 'target', 'format', 'intended_file', 'stylesheet', 'layout', 'validation'];
+const PROFILE_FILES = ['book-screen.pdf', 'book-print.pdf', 'book.epub'];
 
 export async function loadPrintProfiles() {
   const data = await fs.readJson(PROFILE_PATH);
   if (
     data?.schema_version !== PRINT_PLAN_VERSION ||
+    Object.keys(data).sort().join(',') !== 'profiles,schema_version' ||
     !Array.isArray(data.profiles) ||
-    data.profiles.some((profile) => !profile || typeof profile !== 'object') ||
-    data.profiles.map((profile) => profile.id).join(',') !== PROFILE_IDS.join(',') ||
     data.profiles.some((profile) =>
+      !profile || typeof profile !== 'object' ||
+      Object.keys(profile).length !== PROFILE_FIELDS.length ||
+      PROFILE_FIELDS.some((field) => typeof profile[field] !== 'string' || !profile[field].trim())
+    ) ||
+    data.profiles.map((profile) => profile.id).join(',') !== PROFILE_IDS.join(',') ||
+    data.profiles.some((profile, index) =>
+      profile.intended_file !== PROFILE_FILES[index] ||
       profile.target !== (profile.id === 'epub' ? 'kindle' : 'pdf') ||
       profile.format !== (profile.id === 'epub' ? 'epub' : 'pdf') ||
       profile.stylesheet !== `shared/print/${profile.id}.css`

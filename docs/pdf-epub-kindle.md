@@ -8,7 +8,7 @@
 
 ## Profiles
 
-正本は[`shared/print/profiles.json`](../shared/print/profiles.json)、plan versionは`1`。CLI targetとは別の有限profile集合である。
+正本は[`shared/print/profiles.json`](../shared/print/profiles.json)、plan versionは`1`。CLI targetとは別の有限profile集合である。registryは`schema_version`と`profiles`のみ、各profileは`id`/`target`/`format`/`intended_file`/`stylesheet`/`layout`/`validation`の7必須nonblank stringのみを受理する。有限IDと対応するtarget/format/filename/stylesheetを固定照合し、欠落・型違い・未知key・対応ずれを出力前に拒否する。
 
 | profile | target | 将来の主成果物 | 用途と未完了条件 |
 | --- | --- | --- | --- |
