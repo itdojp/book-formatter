@@ -54,7 +54,7 @@ standard-book/
 | `license` | SPDX identifierまたは明示的なproject license表現 |
 | `version` | 正本のSemantic Version |
 
-`targets`はoptionalなtarget固有metadataである。未指定でも標準書籍として有効だが、対応targetをbuildするときはそのtargetのfieldを要求する。現在実装済みの`targets.zenn`は、Zennのstable slug、公開summary、topics、paid priceを管理する。生成済み`config.yaml`、credential、account、公開状態は保存しない。
+`targets`はoptionalなtarget固有metadataである。未指定でも標準書籍として有効だが、対応targetをbuildするときはそのtargetのfieldを要求する。現在実装済みの`targets.zenn`はZennのstable slug、公開summary、topics、paid priceを管理し、`targets.note`はlocal package slug、free sample edition、予定価格、hashtag、任意PDF候補を管理する。credential、account、決済情報、公開状態は保存しない。
 
 ```yaml
 targets:
@@ -63,9 +63,14 @@ targets:
     summary: 標準書籍フォーマットと出力手順を確認する最小例
     topics: [markdown, publishing]
     price: 500
+  note:
+    slug: standard-book-example
+    free_sample_edition: sample
+    price: 500
+    hashtags: [Markdown, 技術書]
 ```
 
-`targets.zenn`の機械契約とfree/paidの扱いは[`zenn` adapter](../adapters/zenn/README.md)を参照する。これは既存version 1 metadataへ追加できるoptional extensionであり、target未使用のconsumerを変更しない。
+`targets.zenn`の機械契約とfree/paidの扱いは[`zenn` adapter](../adapters/zenn/README.md)、`targets.note`のfree/paid fragmentと手動公開境界は[`note` adapter](../adapters/note/README.md)を参照する。これは既存version 1 metadataへ追加できるoptional extensionであり、target未使用のconsumerを変更しない。
 
 `structure.frontmatter`、`structure.chapters`、`structure.backmatter`の配列順が正本の読書順である。各要素の`id`と`path`は書籍内で一意でなければならない。chapterは1件以上必要であり、各pathは対応する`source` directory配下の実在するMarkdown fileを指す。
 

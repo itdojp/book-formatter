@@ -1,6 +1,6 @@
 # Adapter開発契約
 
-`adapters/` は、標準書籍フォーマットを出力先ごとの成果物へ変換する責務を分離するための入口です。Issue #94で共通CLIとmanifest契約を実装し、#95で`web-mdbook`、#98で`zenn`を実adapterにしました。`web-jekyll-legacy`は既存consumerの互換境界を文書化したlegacy support targetであり、build実装はskeletonのままです。その他のtargetもskeletonです。
+`adapters/` は、標準書籍フォーマットを出力先ごとの成果物へ変換する責務を分離するための入口です。Issue #94で共通CLIとmanifest契約を実装し、#95で`web-mdbook`、#98で`zenn`、#99で`note`を実adapterにしました。`web-jekyll-legacy`は既存consumerの互換境界を文書化したlegacy support targetであり、build実装はskeletonのままです。その他のtargetもskeletonです。
 
 新規書籍とlegacy consumerのtarget選択は[出力target方針](../docs/output-targets.md)を参照してください。
 
@@ -11,7 +11,7 @@
 | `web-mdbook` | 標準Web / mdBook | `web-mdbook-v1` | [#95](https://github.com/itdojp/book-formatter/issues/95) |
 | `web-jekyll-legacy` | 既存Jekyll / GitHub Pages互換 | skeleton / legacy support contract | [#96](https://github.com/itdojp/book-formatter/issues/96) |
 | `zenn` | Zenn book | `zenn-v1` | [#98](https://github.com/itdojp/book-formatter/issues/98) |
-| `note` | note投稿用成果物 | skeleton | [#99](https://github.com/itdojp/book-formatter/issues/99) |
+| `note` | note手動投稿package | `note-v1` | [#99](https://github.com/itdojp/book-formatter/issues/99) |
 | `kindle` | EPUB / Kindle | skeleton | [#100](https://github.com/itdojp/book-formatter/issues/100) |
 | `booth` | BOOTH販売パッケージ | skeleton | [#101](https://github.com/itdojp/book-formatter/issues/101) |
 | `pdf` | screen / print PDF | skeleton | [#100](https://github.com/itdojp/book-formatter/issues/100) |
@@ -48,6 +48,7 @@ npm start build -- \
 
 - [`web-mdbook`](web-mdbook/README.md)
 - [`zenn`](zenn/README.md)
+- [`note`](note/README.md)
 
 ## 共通処理順序
 
@@ -57,7 +58,7 @@ npm start build -- \
 4. 時刻、絶対path、除外本文を含まない決定的なmanifestを組み立てる。
 5. dry-runでなければtarget実装を実行する。skeletonはmanifestだけを書き、実adapterは所有manifestを伴うstaging出力でtarget directoryを置換する。
 
-Manifestは変換判断の証跡であり、単独では公開可能性を保証しません。各実adapterは生成後の成果物をvisibility検査へ渡し、target固有の構造・link・accessibility・publication検査を追加する責任があります。`web-mdbook`の具体契約は[web-mdbook adapter](web-mdbook/README.md)を参照してください。
+Manifestは変換判断の証跡であり、単独では公開可能性を保証しません。各実adapterは生成後の成果物をvisibility検査へ渡し、target固有の構造・link・accessibility・publication検査を追加する責任があります。`web-mdbook`、`zenn`、`note`の具体契約は各adapter READMEを参照してください。
 
 ## 開発規約
 

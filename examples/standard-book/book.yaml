@@ -89,3 +89,10 @@ targets:
       - markdown
       - publishing
     price: 500
+  note:
+    slug: standard-book-example
+    free_sample_edition: sample
+    price: 500
+    hashtags:
+      - Markdown
+      - 技術書

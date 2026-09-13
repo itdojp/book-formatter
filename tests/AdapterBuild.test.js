@@ -68,7 +68,8 @@ describe('AdapterBuild', () => {
       assert.match(readme, new RegExp(`^# ${target} adapter`, 'm'));
       const implementations = {
         'web-mdbook': 'web-mdbook-v1',
-        zenn: 'zenn-v1'
+        zenn: 'zenn-v1',
+        note: 'note-v1'
       };
       assert.match(
         readme,
@@ -192,38 +193,38 @@ describe('AdapterBuild', () => {
 
     const first = await buildStandardBookAdapter({
       bookDirectory,
-      target: 'note',
+      target: 'kindle',
       editionId: 'free',
       outputRoot
     });
     const firstContent = await fs.readFile(first.manifestPath, 'utf8');
     const second = await buildStandardBookAdapter({
       bookDirectory,
-      target: 'note',
+      target: 'kindle',
       editionId: 'free',
       outputRoot
     });
     const secondContent = await fs.readFile(second.manifestPath, 'utf8');
 
     assert.strictEqual(first.written, true);
-    assert.strictEqual(first.manifestPath, path.join(outputRoot, 'note', 'manifest.json'));
+    assert.strictEqual(first.manifestPath, path.join(outputRoot, 'kindle', 'manifest.json'));
     assert.strictEqual(secondContent, firstContent);
     assert.deepStrictEqual(JSON.parse(firstContent), first.manifest);
-    assert.deepStrictEqual(await fs.readdir(path.join(outputRoot, 'note')), ['manifest.json']);
+    assert.deepStrictEqual(await fs.readdir(path.join(outputRoot, 'kindle')), ['manifest.json']);
     assert.strictEqual(await fs.readFile(path.join(outputRoot, 'preserve.txt'), 'utf8'), 'keep\n');
     assert.ok(!firstContent.includes(bookDirectory));
 
     const defaultBuild = await buildStandardBookAdapter({
       bookDirectory,
-      target: 'kindle',
+      target: 'booth',
       editionId: 'free'
     });
     assert.strictEqual(
       defaultBuild.manifestPath,
-      path.join(bookDirectory, 'dist', 'kindle', 'manifest.json')
+      path.join(bookDirectory, 'dist', 'booth', 'manifest.json')
     );
     assert.deepStrictEqual(
-      await fs.readdir(path.join(bookDirectory, 'dist', 'kindle')),
+      await fs.readdir(path.join(bookDirectory, 'dist', 'booth')),
       ['manifest.json']
     );
   });
@@ -365,6 +366,20 @@ describe('AdapterBuild', () => {
     assert.strictEqual(
       await fs.pathExists(
         path.join(outputRoot, 'zenn', 'books', 'standard-book-example', 'config.yaml')
+      ),
+      true
+    );
+
+    const noteBuilt = runCli([
+      '--book', bookDirectory,
+      '--target', 'note',
+      '--edition', 'paid',
+      '--out-dir', outputRoot
+    ]);
+    assert.strictEqual(noteBuilt.status, 0, noteBuilt.stderr);
+    assert.strictEqual(
+      await fs.pathExists(
+        path.join(outputRoot, 'note', 'standard-book-example', 'note-publish-manifest.yaml')
       ),
       true
     );

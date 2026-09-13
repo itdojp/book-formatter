@@ -3,11 +3,17 @@ import path from 'node:path';
 
 import fs from 'fs-extra';
 
+import { AdapterSafeIOError } from './AdapterSafeIO.js';
 import {
   checkBookVisibility,
   VISIBILITY_CONTRACT_VERSION
 } from './VisibilityChecker.js';
 import { validateStandardBook } from './StandardBookValidator.js';
+import {
+  NOTE_IMPLEMENTATION,
+  NoteAdapterError,
+  writeNotePackage
+} from './NoteAdapter.js';
 import {
   DEFAULT_WEB_MDBOOK_CSS,
   WEB_MDBOOK_COMPATIBILITY_VERSION,
@@ -294,7 +300,9 @@ function createManifest(metadata, target, edition, visibilityReport) {
         ? WEB_MDBOOK_IMPLEMENTATION
         : target === 'zenn'
           ? ZENN_IMPLEMENTATION
-          : 'skeleton',
+          : target === 'note'
+            ? NOTE_IMPLEMENTATION
+            : 'skeleton',
       ...(target === 'web-mdbook'
         ? {
           project_format: 'mdbook',
@@ -433,7 +441,40 @@ export async function buildStandardBookAdapter(options) {
         validateOnly: dryRun
       });
     } catch (error) {
-      if (error instanceof ZennAdapterError) throw new AdapterBuildError(error.message);
+      if (error instanceof ZennAdapterError || error instanceof AdapterSafeIOError) {
+        throw new AdapterBuildError(error.message);
+      }
+      throw error;
+    }
+  } else if (target === 'note') {
+    try {
+      await writeNotePackage({
+        standardBook,
+        edition,
+        visibilityReport,
+        outputDirectory,
+        manifest,
+        getVisibilityReport: (requestedEditionId) => checkBookVisibility(
+          standardBook.bookRoot,
+          requestedEditionId,
+          { expectedMetadataDigest: standardBook.metadataDigest }
+        ),
+        revalidateOutputDestination,
+        revalidateReplacementDirectory,
+        verifyArtifact: (requestedEditionId, artifactPath) => checkBookVisibility(
+          standardBook.bookRoot,
+          requestedEditionId,
+          {
+            artifactPath,
+            expectedMetadataDigest: standardBook.metadataDigest
+          }
+        ),
+        validateOnly: dryRun
+      });
+    } catch (error) {
+      if (error instanceof NoteAdapterError || error instanceof AdapterSafeIOError) {
+        throw new AdapterBuildError(error.message);
+      }
       throw error;
     }
   } else if (!dryRun) {
