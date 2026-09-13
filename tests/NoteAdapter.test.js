@@ -59,6 +59,38 @@ afterEach(async () => {
 
 describe('NoteAdapter', () => {
   for (const mode of ['free', 'paid']) {
+    for (const [kind, child, expectedCodes] of [
+      ['link', '[credit](../credit)', ['relative_link_requires_manual_review']],
+      ['html', '<span>credit</span>', ['raw_html_requires_manual_review']],
+      ['both', '[credit](../credit) <span>label</span>', ['raw_html_requires_manual_review', 'relative_link_requires_manual_review']]
+    ]) {
+      test(`ALT-only rendered warnings/${mode}/${kind}`, async () => {
+        const book = await copySampleBook();
+        const file = mode === 'free' ? 'frontmatter/preface.md' : 'manuscript/02-workflow.md';
+        await fs.writeFile(path.join(book, 'assets/cover.png'), 'synthetic cover');
+        const body = `![cover ${child}](../assets/cover.png)\n\n${child}\n`;
+        await fs.writeFile(path.join(book, file), `# Owner\n\n${body}`);
+        const result = await build(book, await temporaryDirectory('tmp-note-alt-warning-'));
+        const output = packageDirectory(result);
+        const name = mode === 'free' ? '01-free-sample' : '02-paid-body';
+        const markdown = await fs.readFile(path.join(output, `${name}.md`), 'utf8');
+        const html = await fs.readFile(path.join(output, `${name}.html`), 'utf8');
+        const parser = new MarkdownIt();
+        const alts = (text) => [...text.matchAll(/<img [^>]*alt="([^"]*)"/gu)].map((match) => match[1]);
+        const expected = alts(parser.render(body));
+        assert.strictEqual(expected.length, 1);
+        assert.deepStrictEqual(alts(html), expected);
+        assert.deepStrictEqual(alts(parser.render(markdown)), expected);
+        const manifest = YAML.parse(await fs.readFile(path.join(output, 'note-publish-manifest.yaml'), 'utf8'));
+        assert.deepStrictEqual(manifest.warnings.filter((warning) => warning.file === file), [
+          { code: 'image_requires_manual_upload', file, line: 3 },
+          ...expectedCodes.map((code) => ({ code, file, line: 5 }))
+        ]);
+        assert.deepStrictEqual(await fs.readdir(path.join(output, 'assets')), ['cover.png']);
+      });
+    }
+  }
+  for (const mode of ['free', 'paid']) {
     const file = mode === 'free' ? 'frontmatter/preface.md' : 'manuscript/02-workflow.md';
     const outputName = mode === 'free' ? '01-free-sample' : '02-paid-body';
     for (const syntax of ['inline', 'reference']) {

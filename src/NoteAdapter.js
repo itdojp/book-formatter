@@ -1284,7 +1284,8 @@ function resolveAssetPath(bookRoot, assetRoot, sourcePath, destination, kind) {
 
 function inspectReaderVisibleMarkdown(projection, sourcePath, warnings) {
   const tokens = collectTokens(SOURCE_MARKDOWN.parse(projection.text, {}));
-  for (const { token, line } of tokens) {
+  for (const { token, line, inImageAlt } of tokens) {
+    if (inImageAlt) continue;
     const sourceLine = projection.sourceLines[line - 1] ?? line;
     if (token.type === 'html_block' || token.type === 'html_inline') {
       addWarning(warnings, 'raw_html_requires_manual_review', sourcePath, sourceLine);

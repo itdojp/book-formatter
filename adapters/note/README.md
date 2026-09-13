@@ -81,7 +81,7 @@ npm start build -- \
 - `note` / `tip` / `warning` calloutはblockquoteへ劣化変換し、`callout_degraded_to_blockquote`を記録する。
 - local画像は`source.assets`配下のJPG/JPEG/PNG/GIF/HEIC、20MB以下だけを候補としてcopyする。Markdown内の画像syntaxは正本照合のため維持し、HTML fragmentだけをlocal候補pathへ向ける。
 - 外部/root-relative画像、未対応形式はdownload/変換せずwarningにする。
-- 画像ALT内の子画像tokenは固定rendererでALT文字列にのみ使われるため、独立したasset候補としてread/copy/warnしない。ALT文字列、reference namespace、不可視定義の拒否、元行情報は保持する。inline link内の本当に描画される画像と外側画像の安全検査は従来どおり行う。
+- 画像ALT内の子tokenは固定rendererでALT文字列にのみ使われるため、独立したasset候補としてread/copy/warnせず、子link/HTMLにも描画要素向けの手動確認warningを出さない。画像外のlink/HTML警告は元行付きで維持する。ALT文字列、reference namespace、不可視定義の拒否、元行情報は保持する。inline link内の本当に描画される画像と外側画像の安全検査は従来どおり行う。
 - relative linkとreader-visible raw HTMLは、note編集画面での手動再設定・確認を要求するwarningにする。
 - PDF候補はcopyするだけで、upload、malware scan、権利確認、販売範囲設定を行わない。
 
