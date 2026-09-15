@@ -482,7 +482,7 @@ export async function buildStandardBookAdapter(options) {
   } else if (target === 'booth') {
     try {
       await writeBoothPackage({
-        standardBook, edition, manifest, outputDirectory,
+        standardBook, edition, manifest, visibilityReport, outputDirectory,
         getVisibilityReport: (requestedEditionId) => checkBookVisibility(
           standardBook.bookRoot, requestedEditionId,
           { expectedMetadataDigest: standardBook.metadataDigest }

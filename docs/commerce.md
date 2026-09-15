@@ -58,7 +58,7 @@ ZIPには4つの説明/計画ファイルのみ入ります。外側`manifest.js
 - 初版は設定されたpaid full版だけを選択できます。free/sample/internal CLI選択は拒否し、有償計画をfree targetへ出しません。sample版を単独で商品化する機能ではありません。
 - fullとsampleの両editionに既存visibility検査を実行します。internal等が不正に含まれる選択を出力前に拒否します。本文はこの初版ではコピーしません。
 - 商品用metadata自体は公開可能な情報だけを記載してください。私有情報の自動分類器ではありません。任意文言はMarkdown上のliteralとしてentity encodeします。
-- configは64KiB上限の[held-tree read](adapter-safe-io.md)で読み、YAML重複key/過剰aliasを拒否します。book.yamlとconfigのsnapshotをcommit前に再確認します。
+- configは64KiB上限の[held-tree read](adapter-safe-io.md)で読み、YAML重複key/過剰aliasを拒否します。book.yamlとconfig、およびfull/sample両visibility reportの文書digestをcommit前に再確認します。両report間のsource変更も拒否し、旧snapshotを新sourceの検証結果として再利用しません。
 - owned adapter manifestのある出力だけをstaging全置換し、unknown producer、source重複、symlinkを拒否します。兄弟targetは保持します。手動成果物をowned `booth/`内に置かないでください。
 - 既存の同一UID hostile writer境界[#138](https://github.com/itdojp/book-formatter/issues/138)は別課題です。sandbox保証やrenderer安全性を付加したとは主張しません。
 

@@ -81,10 +81,11 @@ function packageFiles(config, manifest, sample, metadata) {
 }
 
 export async function writeBoothPackage({
-  standardBook, edition, manifest, outputDirectory, getVisibilityReport,
+  standardBook, edition, manifest, visibilityReport, outputDirectory, getVisibilityReport,
   revalidateOutputDestination, revalidateReplacementDirectory, validateOnly = false
 }) {
   if (manifest.adapter.target !== 'booth' || manifest.visibility.safe !== true ||
+      visibilityReport?.summary.safe !== true || visibilityReport.edition.id !== edition.id ||
       typeof getVisibilityReport !== 'function' || typeof revalidateOutputDestination !== 'function' ||
       typeof revalidateReplacementDirectory !== 'function') {
     throw new AdapterSafeIOError('BOOTH package requires validated visibility and safe output callbacks.');
@@ -102,9 +103,21 @@ export async function writeBoothPackage({
   const sample = await validateBoothCommerce(config, metadata, edition);
   const report = await getVisibilityReport(sample.id);
   if (!report.summary.safe) throw new AdapterSafeIOError('BOOTH sample visibility check failed.');
+  const sourceDigests = new Map();
+  for (const snapshot of [visibilityReport, report]) {
+    for (const document of snapshot.documents) {
+      if (sourceDigests.has(document.path) && sourceDigests.get(document.path) !== document.sourceDigest) {
+        throw new AdapterSafeIOError('BOOTH full/sample source snapshots disagree.');
+      }
+      sourceDigests.set(document.path, document.sourceDigest);
+    }
+  }
   const revalidateMetadataSnapshot = async () => {
     await io.readVisibilityBoundSource(bookRoot, path.relative(bookRoot, standardBook.metadataPath), standardBook.metadataDigest);
     if (!(await readConfig()).equals(bytes)) throw new AdapterSafeIOError('BOOTH commerce changed after validation.');
+    for (const [sourcePath, digest] of sourceDigests) {
+      await io.readVisibilityBoundSource(bookRoot, sourcePath, digest);
+    }
   };
   await revalidateMetadataSnapshot();
   Object.assign(manifest.adapter, {

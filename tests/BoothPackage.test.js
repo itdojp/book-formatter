@@ -3,27 +3,30 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import fs from 'fs-extra';
 import YAML from 'yaml';
 import MarkdownIt from 'markdown-it';
+import { parseFragment } from 'parse5';
 import { unzipSync } from 'fflate';
 
 import { buildStandardBookAdapter, AdapterBuildError } from '../src/AdapterBuild.js';
 import { BOOTH_IMPLEMENTATION, BOOTH_PLAN_VERSION, validateBoothCommerce } from '../src/BoothPackage.js';
 import { AdapterSafeIOError } from '../src/AdapterSafeIO.js';
 
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const roots = [];
 const configRelative = 'editions/booth.yaml';
 async function fixture() {
-  const root = await fs.mkdtemp(path.resolve('tests/tmp-booth-'));
+  const root = await fs.mkdtemp(path.join(ROOT, 'tests/tmp-booth-'));
   roots.push(root);
   const book = path.join(root, 'book');
-  await fs.copy(path.resolve('examples/standard-book'), book);
+  await fs.copy(path.join(ROOT, 'examples/standard-book'), book);
   return { root, book, outputRoot: path.join(root, 'dist') };
 }
 const build = ({ book, outputRoot }, overrides = {}) => buildStandardBookAdapter({ bookDirectory: book, target: 'booth', editionId: 'paid', outputRoot, ...overrides });
 async function update(book, file, mutate) {
-  const p = path.join(book, file); const data = YAML.parse(await fs.readFile(p, 'utf8'));
+  const p = path.join(book, file); const data = YAML.parse(await fs.readFile(p, 'utf8'), { uniqueKeys: true, maxAliasCount: 100 });
   mutate(data); await fs.writeFile(p, YAML.stringify(data));
 }
 async function snapshot(dir) {
@@ -49,8 +52,10 @@ describe('BOOTH plan-only package', () => {
     assert.equal(plan.commerce.price, 500); assert.equal(plan.commerce.sku, 'STANDARD-BOOK-FULL');
     assert.equal(plan.full_edition.id, 'paid'); assert.equal(plan.sample_edition.id, 'sample');
     assert.equal(plan.generated, false); assert.equal(plan.rights_approval, 'pending');
-    assert.deepEqual(plan.artifacts.map((a) => [a.role, a.edition, a.status, a.sha256]), [
-      ['full', 'paid', 'not-generated', null], ['full', 'paid', 'not-generated', null], ['sample', 'sample', 'not-generated', null]
+    assert.deepEqual(plan.artifacts.map((a) => [a.role, a.edition, a.format, a.intended_file, a.status, a.sha256]), [
+      ['full', 'paid', 'pdf', 'full/book-screen.pdf', 'not-generated', null],
+      ['full', 'paid', 'epub', 'full/book.epub', 'not-generated', null],
+      ['sample', 'sample', 'pdf', 'sample/book-sample.pdf', 'not-generated', null]
     ]);
     for (const [name, bytes] of Object.entries(files)) {
       const text = Buffer.from(bytes).toString();
@@ -151,6 +156,32 @@ describe('BOOTH plan-only package', () => {
     assert.equal(changed, true); assert.deepEqual(await snapshot(first.outputDirectory), before);
     assert.deepEqual(await fs.readdir(f.outputRoot), ['booth']);
   });
+  for (const source of ['manuscript/02-workflow.md', 'frontmatter/preface.md', 'backmatter/afterword.md']) {
+    for (const phase of ['between full and sample checks', 'after both checks']) {
+      test(`source snapshot ${phase}: ${source}`, async () => {
+        const f = await fixture(); const first = await build(f); const before = await snapshot(first.outputDirectory);
+        const originalJson = fs.readJson; const originalEnsure = fs.ensureDir; let changed = false;
+        const mutate = async () => {
+          changed = true;
+          await fs.appendFile(path.join(f.book, source), '\nSynthetic concurrent change.\n');
+        };
+        fs.readJson = async (...args) => {
+          const data = await originalJson(...args);
+          if (!changed && phase === 'between full and sample checks' && String(args[0]).endsWith('commerce.schema.json')) await mutate();
+          return data;
+        };
+        fs.ensureDir = async (...args) => {
+          const result = await originalEnsure(...args);
+          if (!changed && phase === 'after both checks' && path.resolve(args[0]) === f.outputRoot) await mutate();
+          return result;
+        };
+        try { await assert.rejects(build(f), /snapshots disagree|changed after visibility validation/); }
+        finally { fs.readJson = originalJson; fs.ensureDir = originalEnsure; }
+        assert.equal(changed, true); assert.deepEqual(await snapshot(first.outputDirectory), before);
+        assert.deepEqual(await fs.readdir(f.outputRoot), ['booth']);
+      });
+    }
+  }
   test('unknown output/source overlap/symlink are rejected and siblings preserved on owned replacement', async () => {
     const f = await fixture(); const file = path.join(f.outputRoot, 'booth', 'keep.txt');
     await fs.outputFile(file, 'other owner'); await assert.rejects(build(f), /without a valid adapter manifest/);
@@ -164,27 +195,33 @@ describe('BOOTH plan-only package', () => {
     await build(f); assert.equal(await fs.readFile(path.join(f.outputRoot, 'sibling.txt'), 'utf8'), 'keep');
   });
   test('metadata is literal in Markdown/HTML rather than executable product content', async () => {
-    const f = await fixture(); const payload = '<script>bad</script> [x](https://publisher.example/) ![img](x) &copy;';
+    const f = await fixture(); const payload = '<script>bad</script> <ScRiPt>CASE</ScRiPt> [x](https://publisher.example/) ![img](x) &copy;';
     await update(f.book, 'book.yaml', (m) => { m.title = payload; });
     await update(f.book, configRelative, (c) => { c.summary = payload; c.changelog[0].changes = [payload]; });
     const result = await build(f); const md = new MarkdownIt({ html: true, linkify: true });
     for (const name of ['product-description.md', 'CHANGELOG.md']) {
       const rendered = md.render(await fs.readFile(path.join(result.outputDirectory, name), 'utf8'));
-      assert.doesNotMatch(rendered, /<script>|<a |<img /); assert.match(rendered, /&lt;script&gt;/);
+      const inspect = (node) => {
+        assert.ok(!['script', 'a', 'img'].includes(node.tagName), `unexpected active element: ${node.tagName}`);
+        for (const child of node.childNodes || []) inspect(child);
+      };
+      inspect(parseFragment(rendered));
+      assert.match(rendered, /&lt;script&gt;/);
+      assert.match(rendered, /&lt;ScRiPt&gt;CASE/);
     }
   });
   test('CLI ZIP is deterministic across timezones, no accidental target nesting', async () => {
     const f = await fixture(); const digests = [];
     for (const TZ of ['UTC', 'Asia/Tokyo', 'America/New_York']) {
-      const result = spawnSync(process.execPath, ['src/index.js', 'build', '--book', f.book, '--target', 'booth', '--edition', 'paid', '--out-dir', f.outputRoot], { encoding: 'utf8', env: { ...process.env, TZ } });
+      const result = spawnSync(process.execPath, ['src/index.js', 'build', '--book', f.book, '--target', 'booth', '--edition', 'paid', '--out-dir', f.outputRoot], { encoding: 'utf8', cwd: ROOT, env: { ...process.env, TZ } });
       assert.equal(result.status, 0, result.stderr); const manifest = JSON.parse(result.stdout);
       digests.push(hash(await fs.readFile(path.join(f.outputRoot, 'booth', manifest.adapter.package_path))));
     }
     assert.equal(new Set(digests).size, 1); assert.deepEqual(await fs.readdir(f.outputRoot), ['booth']);
   });
   test('pure schema validation accepts zero and maximum safe price without coercion', async () => {
-    const metadata = YAML.parse(await fs.readFile('examples/standard-book/book.yaml', 'utf8'));
-    const c = YAML.parse(await fs.readFile('examples/standard-book/editions/booth.yaml', 'utf8'));
+    const metadata = YAML.parse(await fs.readFile(path.join(ROOT, 'examples/standard-book/book.yaml'), 'utf8'));
+    const c = YAML.parse(await fs.readFile(path.join(ROOT, 'examples/standard-book/editions/booth.yaml'), 'utf8'));
     const edition = metadata.editions.find((e) => e.id === 'paid');
     for (const price of [0, Number.MAX_SAFE_INTEGER]) await validateBoothCommerce({ ...c, price }, metadata, edition);
     await assert.rejects(validateBoothCommerce([], metadata, edition), AdapterSafeIOError);
