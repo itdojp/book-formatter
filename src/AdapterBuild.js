@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'fs-extra';
 
 import { AdapterSafeIOError } from './AdapterSafeIO.js';
+import { writeBoothPackage } from './BoothPackage.js';
 import { writePrintPublicationPlan } from './PrintPublicationPlan.js';
 import {
   checkBookVisibility,
@@ -476,6 +477,21 @@ export async function buildStandardBookAdapter(options) {
       if (error instanceof NoteAdapterError || error instanceof AdapterSafeIOError) {
         throw new AdapterBuildError(error.message);
       }
+      throw error;
+    }
+  } else if (target === 'booth') {
+    try {
+      await writeBoothPackage({
+        standardBook, edition, manifest, visibilityReport, outputDirectory,
+        getVisibilityReport: (requestedEditionId) => checkBookVisibility(
+          standardBook.bookRoot, requestedEditionId,
+          { expectedMetadataDigest: standardBook.metadataDigest }
+        ),
+        revalidateOutputDestination, revalidateReplacementDirectory,
+        validateOnly: dryRun
+      });
+    } catch (error) {
+      if (error instanceof AdapterSafeIOError) throw new AdapterBuildError(error.message);
       throw error;
     }
   } else if (target === 'pdf' || target === 'kindle') {
