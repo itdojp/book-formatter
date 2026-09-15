@@ -37,3 +37,31 @@ jobs:
         run: |
           node tests/licenses.mjs > "$RUNNER_TEMP/publication-license-inventory.json"
           cmp license-inventory.json "$RUNNER_TEMP/publication-license-inventory.json"
+  synthetic-epub:
+    name: Synthetic EPUB artifact
+    needs: isolated-dependencies
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      # Explicit CI runtime, not a silent substitute for a failed Podman gate.
+      EPUB_GATE_ENGINE: docker
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.18.0'
+          cache: npm
+          cache-dependency-path: toolchains/publication/package-lock.json
+      - name: Install audited isolated closure
+        working-directory: toolchains/publication
+        run: npm ci --ignore-scripts
+      - name: Fixed image and EPUBCheck preparation
+        run: python3 toolchains/publication/tests/epub/run.py prepare "$RUNNER_TEMP/synthetic-epub"
+      - name: Offline render twice, EPUBCheck, exclusions and drift
+        run: python3 toolchains/publication/tests/epub/run.py run "$RUNNER_TEMP/synthetic-epub"
+      - name: Synthetic gate evidence only (no book artifact upload)
+        run: |
+          cat "$RUNNER_TEMP/synthetic-epub/execution/report.json"
+          cat "$RUNNER_TEMP/synthetic-epub/execution/timings.json"
+          cat "$RUNNER_TEMP/synthetic-epub/execution/1/container-metrics.json"
+          cat "$RUNNER_TEMP/synthetic-epub/execution/2/container-metrics.json"

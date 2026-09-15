@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "nodeImage": "docker.io/library/node@sha256:d45d78e7929b46875bbd4e29bea672d5bc48186c6c3588306521c815e78352d6",
+  "javaImage": "docker.io/library/eclipse-temurin@sha256:a167be94ba82d4f8b4cb5071b448281a7c8b01ec22f5e8190b7f31fdcfcfc54f",
+  "epubcheckVersion": "5.3.0",
+  "epubcheckUrl": "https://github.com/w3c/epubcheck/releases/download/v5.3.0/epubcheck-5.3.0.zip",
+  "epubcheckSha256": "6c07e68584b2e2ce2f89fe06e1246dfead3eb36b46b340e7d93524f29dcff6c5",
+  "toolchainLockSha256": "5f331db1c5c3074a63dc0337da341e16424865e539c1fdabee521bbdb97bab14",
+  "fixtures": {
+    "chapter.md": "4ee73625777615dd4e2d6b7711880b6ae7c430eaf265f44ad3aacd8f5dcddc7e",
+    "not-selected.md": "4f26d3214308ac5fef3b68cf6f3c3e579f0a92476403b0d6c0ef3b8ef0dbec7b",
+    "vivliostyle.config.mjs": "8f68f2149f00984e5aa6b71685ede60f933fd41e23656405d9fbceb1ba9a9d36"
+  }
+}
