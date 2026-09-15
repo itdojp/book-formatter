@@ -14,6 +14,7 @@
 set -euo pipefail
 npm ci --ignore-scripts
 npm audit --audit-level=moderate
+npm run test:wrapper
 npm run test:offline
 npm run licenses
 ```
@@ -22,7 +23,7 @@ install/auditだけはnpm registryへ接続します。`--ignore-scripts`を外�
 
 `test:offline`はLinuxのuser/network namespaceとNode permissionを必須とします。namespaceが使えなければ**失敗**し、通常networkで再試行しません。親と異なるnetwork namespace、外部interfaceなし、toolchain配下だけのread、write/child process拒否を実測します。`env -i`で実行し、入力はcommit済み合成fixtureのみです。ブラウザに渡す前の任意source/config/asset loaderは未提供です。
 
-`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全16件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
+`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全17件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
 
 CIはUbuntu22.04、既存系列のcheckout/setup-node Actions、10分timeoutです。Node24.18.0固定はtoolchainだけであり、root enginesを狭めません。
 
@@ -61,3 +62,5 @@ MIT530、ISC101、Apache-2.0 34、BlueOak-1.0.0 16、MPL-2.0 12、BSD-2/3各7、
 ## Handoff to real rendering
 
 #152では固定browser/fonts/EPUBCheck、OS/container境界、edition projection、外部asset/任意JS拒否、PDF/EPUB内の可視/不可視データ、決定性を実検証してください。Node child-process権限が必要なbrowserと本テストを混同しないこと。Kindle Previewer対応OS・E Ink/tablet・印刷所要求・表紙/本文権利は実証なしに完了にしません。
+
+wrapperは名前空間不変・unshare失敗・親namespace取得失敗/空値・子namespace取得失敗/空値の6つをcommand doubleで直接拒否検証します（実隔離probeの代用ではありません）。内側bashでもerrexit/nounset/pipefailを明示し、namespace比較失敗後にNodeを開始しません。Node engineはmajorだけでなく`>=24.18.0 <25`全体を検査します。

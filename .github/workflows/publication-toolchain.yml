@@ -29,7 +29,9 @@ jobs:
         run: npm audit --audit-level=moderate
       - name: Offline compatibility and confinement gate
         working-directory: toolchains/publication
-        run: npm run test:offline
+        run: |
+          npm run test:wrapper
+          npm run test:offline
       - name: License inventory drift
         working-directory: toolchains/publication
         run: |

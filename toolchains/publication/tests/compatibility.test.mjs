@@ -8,6 +8,7 @@ import { networkInterfaces } from 'node:os';
 import { stringify, readMetadata, StringifyMarkdownOptionsSchema } from '@vivliostyle/vfm';
 import * as v from 'valibot';
 import { parse } from 'parse5';
+import { satisfies } from 'semver';
 import { licenseInventory } from './licenses.mjs';
 // Deliberately pinned internal schema chunk; re-audit this probe on CLI upgrades. No CLI/config loading.
 import { A as InlineConfig } from '../node_modules/@vivliostyle/cli/dist/schema-jMUYOVzB.js';
@@ -19,11 +20,13 @@ const require = createRequire(import.meta.url);
 const pressRequire = createRequire(require.resolve('press-ready/package.json'));
 const corpus = json('tests/fixtures/corpus.json');
 const baseline = json('tests/fixtures/baseline.json');
+const assertNodeVersion = (version = process.versions.node) => assert.ok(satisfies(version, json('package.json').engines.node), 'Node version outside isolated package engines');
 
 test('private isolated Node24 package and exact overrides/lock', () => {
   const p = json('package.json');
   assert.equal(p.private, true);
-  assert.equal(process.versions.node.split('.')[0], '24');
+  assert.equal(p.engines.node, '>=24.18.0 <25');
+  assertNodeVersion();
   assert.deepEqual(p.dependencies, { '@vivliostyle/cli': '11.3.3' });
   assert.deepEqual(p.overrides, { trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2', 'press-ready': { uuid: '11.1.1' } });
   for (const [name, version] of Object.entries({ trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2' })) {
@@ -33,6 +36,11 @@ test('private isolated Node24 package and exact overrides/lock', () => {
   }
   assert.equal(pressRequire('uuid/package.json').version, '11.1.1');
   assert.equal(require('@vivliostyle/cli/package.json').version, '11.3.3');
+});
+
+test('Node engine gate rejects unsupported patches and prereleases', () => {
+  for (const version of ['24.0.0', '24.17.9', '22.22.2', '25.0.0', '24.18.0-rc.1', 'invalid']) assert.throws(() => assertNodeVersion(version));
+  for (const version of ['24.18.0', '24.18.1', '24.19.0']) assert.doesNotThrow(() => assertNodeVersion(version));
 });
 
 test('fixture and baseline sets match exactly', () => {

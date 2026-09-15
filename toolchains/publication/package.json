@@ -9,9 +9,10 @@
     "node": ">=24.18.0 <25"
   },
   "scripts": {
-    "test": "node --test tests/compatibility.test.mjs",
+    "test": "npm run test:wrapper && node --test tests/compatibility.test.mjs",
     "test:offline": "bash tests/offline.sh",
-    "licenses": "node tests/licenses.mjs"
+    "licenses": "node tests/licenses.mjs",
+    "test:wrapper": "node --test tests/offline-wrapper.test.mjs"
   },
   "dependencies": {
     "@vivliostyle/cli": "11.3.3"
