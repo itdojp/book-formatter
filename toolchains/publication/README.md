@@ -4,7 +4,7 @@
 
 [Issue #156](https://github.com/itdojp/book-formatter/issues/156)の**依存評価専用**packageです。rootのNode20/22/24・依存・consumer pinを変更せず、Node **24.18.0**、Vivliostyle CLI **11.3.3**を別lockで固定します。npm workspaceへの自動組込みはありません。
 
-**本番PDF/EPUB rendererではありません。** CLI build/preview/create、browser起動、Ghostscript、MuPDF変換、font/EPUBCheckの導入、書籍/有料本文の入力、アップロードは行いません。plan-only adapterの`generated: false`を変更しません。実生成・コンテナ境界・出力漏えい・実機/権利/印刷所gateは[#152](https://github.com/itdojp/book-formatter/issues/152)に残ります。
+**本番PDF/EPUB rendererではありません。** この依存gate自体はCLI build/preview/create、browser起動、Ghostscript、MuPDF変換、書籍/有料本文の入力、アップロードを行いません。独立した[#158の合成EPUB実生成gate](tests/epub/README.md)のみ、固定container内でCLI buildとEPUBCheckを実行します。plan-only adapterの`generated: false`を変更しません。一般書籍の実生成・出力漏えい・実機/権利/印刷所gateは[#152](https://github.com/itdojp/book-formatter/issues/152)に残ります。
 
 ## Installation and gates
 

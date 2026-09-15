@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "equivalence": "uncompressed bytes and entry metadata; only OPF UUID/modified and ZIP dates volatile",
+  "entries": [
+    {
+      "name": "mimetype",
+      "compression": 0,
+      "flags": 0,
+      "createSystem": 3,
+      "externalAttr": 2175008800,
+      "normalizedSha256": "e468e350d1143eb648f60c7b0bd6031101ec0544a361ca74ecef256ac901f48b"
+    },
+    {
+      "name": "META-INF/container.xml",
+      "compression": 8,
+      "flags": 8,
+      "createSystem": 3,
+      "externalAttr": 2175008800,
+      "normalizedSha256": "b90696adf245d8773cf12ffcf47d22dd17dc40407f19b2b192209d5b96ff8026"
+    },
+    {
+      "name": "EPUB/chapter.xhtml",
+      "compression": 8,
+      "flags": 8,
+      "createSystem": 3,
+      "externalAttr": 2175008800,
+      "normalizedSha256": "d15d7234a9055571baf2e99dd3d1fd5d29eb73432c4d5342a96964ac8f18bab0"
+    },
+    {
+      "name": "EPUB/content.opf",
+      "compression": 8,
+      "flags": 8,
+      "createSystem": 3,
+      "externalAttr": 2175008800,
+      "normalizedSha256": "5ab654537725a8c0889479a068a5026c853d9a2938c53ccc45f0c4d6e0461cee"
+    },
+    {
+      "name": "EPUB/toc.xhtml",
+      "compression": 8,
+      "flags": 8,
+      "createSystem": 3,
+      "externalAttr": 2175008800,
+      "normalizedSha256": "06787ef4d255a649057c1b8dd6f5e675e069a0d6493b476a3a00068e1736963a"
+    }
+  ]
+}
