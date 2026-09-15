@@ -1,0 +1,87 @@
+[
+  {
+    "id": "structure",
+    "markdown": "# 合成書籍\n\n導入 **重要** と `literal`。\n\n## 順序\n\n1. 入力\n2. 確認\n\n- 親\n  - 子\n\n| 項目 | 状態 |\n| --- | --- |\n| 合成データ | 確認済み |\n\n脚注を確認[^a]。\n\n[^a]: 合成の出典。\n\n```js\nconst total = 1 + 2;\n```\n",
+    "markers": [
+      "合成書籍",
+      "順序",
+      "入力",
+      "確認",
+      "親",
+      "子",
+      "項目",
+      "状態",
+      "合成データ",
+      "確認済み",
+      "脚注を確認",
+      "合成の出典。"
+    ],
+    "tags": [
+      "table",
+      "code",
+      "ol",
+      "ul"
+    ]
+  },
+  {
+    "id": "metadata",
+    "markdown": "---\ntitle: 合成メタデータ\nlang: ja\nvfm:\n  hardLineBreaks: true\n---\n# 主題\n\n最初の行\n次の行\n",
+    "markers": [
+      "主題",
+      "最初の行",
+      "次の行"
+    ],
+    "tags": [
+      "br"
+    ]
+  },
+  {
+    "id": "references",
+    "markdown": "# Reference fixture\n\n[first][ref] and **bounded** text.\n\n[ref]: #section \"Synthetic title\"\n\n## Section\n\nA regular paragraph.\n\n    indented literal\n\n> Quoted observation.\n",
+    "markers": [
+      "Reference fixture",
+      "first",
+      "bounded",
+      "Section",
+      "A regular paragraph.",
+      "indented literal",
+      "Quoted observation."
+    ],
+    "tags": [
+      "a",
+      "blockquote",
+      "code"
+    ]
+  },
+  {
+    "id": "languages",
+    "markdown": "# Code fixture\n\n```css\n.example { color: blue; }\n```\n\n```html\n<p>synthetic</p>\n```\n\n```json\n{\"fixture\": true}\n```\n",
+    "markers": [
+      "Code fixture",
+      "synthetic",
+      "fixture"
+    ],
+    "tags": [
+      "pre",
+      "code"
+    ]
+  },
+  {
+    "id": "whitespace",
+    "markdown": "# Whitespace fixture\n\n  paragraph with ordinary space.\n\n- first\n\n  continuation\n- second\n\n*emphasis* and **strong**.\n",
+    "markers": [
+      "Whitespace fixture",
+      "paragraph with ordinary space.",
+      "first",
+      "continuation",
+      "second",
+      "emphasis",
+      "strong"
+    ],
+    "tags": [
+      "em",
+      "strong",
+      "ul"
+    ]
+  }
+]

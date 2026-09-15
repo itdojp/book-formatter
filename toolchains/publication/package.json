@@ -1,0 +1,28 @@
+{
+  "name": "@itdojp/publication-toolchain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated dependency evaluation; not a production PDF/EPUB renderer",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
+  "scripts": {
+    "test": "npm run test:wrapper && node --test tests/compatibility.test.mjs",
+    "test:offline": "bash tests/offline.sh",
+    "licenses": "node tests/licenses.mjs",
+    "test:wrapper": "node --test tests/offline-wrapper.test.mjs"
+  },
+  "dependencies": {
+    "@vivliostyle/cli": "11.3.3"
+  },
+  "overrides": {
+    "trim": "0.0.3",
+    "prismjs": "1.30.0",
+    "valibot": "1.4.2",
+    "press-ready": {
+      "uuid": "11.1.1"
+    }
+  }
+}

@@ -1,0 +1,39 @@
+name: Publication Toolchain
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-dependencies:
+    name: Isolated publication dependencies
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.18.0'
+          cache: npm
+          cache-dependency-path: toolchains/publication/package-lock.json
+      - name: Install exact isolated closure without lifecycle scripts
+        working-directory: toolchains/publication
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci --ignore-scripts
+      - name: Audit the complete isolated closure
+        working-directory: toolchains/publication
+        run: npm audit --audit-level=moderate
+      - name: Offline compatibility and confinement gate
+        working-directory: toolchains/publication
+        run: |
+          npm run test:wrapper
+          npm run test:offline
+      - name: License inventory drift
+        working-directory: toolchains/publication
+        run: |
+          node tests/licenses.mjs > "$RUNNER_TEMP/publication-license-inventory.json"
+          cmp license-inventory.json "$RUNNER_TEMP/publication-license-inventory.json"
