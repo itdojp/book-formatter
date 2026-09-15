@@ -8,6 +8,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 import zipfile
@@ -71,6 +72,7 @@ def container(state, image, mounts, args, *, java=False):
     # No -v host-home, runtime socket, credentials, devices, host network or privileged fallback.
     engine_options = ['--read-only-tmpfs=false', '--userns=keep-id'] if ENGINE == 'podman' else []
     name = 'epub-gate-' + uuid.uuid4().hex
+    primary_error = None
     try:
         runtime(state, 'run', '--name', name, '--rm', '--pull=never', '--network=none', '--read-only', *engine_options,
                 '--tmpfs', '/work:rw,noexec,nosuid,nodev,size=128m,mode=1777',
@@ -80,12 +82,21 @@ def container(state, image, mounts, args, *, java=False):
                 '--pids-limit=128', '--cpus=1', '--entrypoint', 'java' if java else 'node',
                 *[arg for host, target, mode in mounts for arg in ('--volume', f'{host}:{target}:{mode}')],
                 image, *args)
+    except BaseException as exc:
+        primary_error = exc
+        raise
     finally:
         # Killing a timed-out CLI client does not necessarily stop its container.
         # Remove only this invocation's exact random name, never other workloads.
-        remaining = runtime(state, 'ps', '--all', '--filter', f'name={name}', '--format', '{{.Names}}', capture=True)
-        if name in remaining.splitlines():
-            runtime(state, 'rm', '--force', name)
+        try:
+            remaining = runtime(state, 'ps', '--all', '--filter', f'name={name}', '--format', '{{.Names}}', capture=True)
+            if name in remaining.splitlines():
+                runtime(state, 'rm', '--force', name)
+        except Exception as cleanup_error:
+            if primary_error is None:
+                raise
+            print(f'Cleanup also failed for owned container {name}; manual removal may be required: {cleanup_error}',
+                  file=sys.stderr)
 
 
 def prepare(state):

@@ -33,7 +33,7 @@ Preparation alone downloads fixed OCI manifests and the [EPUBCheck5.3.0 release]
 
 Execution uses `--pull=never`, `--network=none`, a read-only root, read-only input/dependency mounts, one owned writable output and bounded `/work` tmpfs. There is no default writable `/tmp`. Caps are dropped, no-new-privileges is set, and CPU1/memory1GiB/PID128/wall-time limits are requested. Actual Node probes verify effective UID/capabilities/NoNewPrivs, loopback-only interfaces, read-only mounts **and cgroup-v2 memory/CPU/PID limits** before rendering. Unsupported/delegation-less cgroups fail closed. The owned container is removed on success, failure or handled client timeout; uncatchable host termination still requires operator cleanup.
 
-EPUBCheck runs separately with only its verified release and the generated output mounted read-only, network disabled, `--failonwarnings`, and no severity overrides. Validation rejects errors **and warnings**. No Java/browser/font package is added to root npm dependencies.
+EPUBCheck runs separately with only its verified release and the generated output mounted read-only, network disabled, `--failonwarnings`, and no severity overrides. Validation rejects errors **and warnings**. No Java/browser/font package is added to root npm dependencies. If cleanup also fails after a primary run failure, the primary exception is preserved and stderr records the owned container name for manual cleanup. Cleanup failure after an otherwise successful run still fails the gate.
 
 ## Finite inspection and reproducibility
 
@@ -43,7 +43,7 @@ Two fresh renders must match the reviewed `golden.json`. **Byte-identical EPUB i
 
 Golden provenance: actual CLI11.3.3/VFM2.7.2 `dpub` output, Node24.18.0 fixed image and exact fixture pins, manually inspected English/Japanese text, OPF/nav/spine and backlinks, EPUBCheck5.3.0 errors/warnings0. It is a **synthetic baseline**, never generated from private/paid book text. Do not blindly regenerate golden data when a test fails. Intentional renderer/fixture changes require semantic re-review and a new provenance record.
 
-`verify_test.py` mutates the real generated EPUB: 32 content mutations and 10 ZIP mutations, permitted volatile changes, runtime-argument/timeout cleanup and fixture-drift probes. Every test first proves a no-op ZIP repack still matches golden, preventing false confidence from a broken mutation writer. Test-only use of Python zipfile's `_seekable` retains the renderer's data-descriptor flags; this is not a production ZIP writer. The tests never launch scripts inserted into negative fixture data.
+`verify_test.py` mutates the real generated EPUB: 32 content mutations and 10 ZIP mutations, permitted volatile changes, runtime-argument/timeout cleanup and fixture-drift probes (9 test groups). Every test first proves a no-op ZIP repack still matches golden, preventing false confidence from a broken mutation writer. Test-only use of Python zipfile's `_seekable` retains the renderer's data-descriptor flags, with an explicit boolean-type guard and actionable error if Python changes its internals; this is not a production ZIP writer. Four failed/successful-run × inspection/removal-failure cases verify primary-error fidelity and cleanup failure reporting. The tests never launch scripts inserted into negative fixture data.
 
 ## Measured status and explicit release limits
 

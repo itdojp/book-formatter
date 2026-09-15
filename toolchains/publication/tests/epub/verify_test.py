@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Mutate the actual generated synthetic EPUB, never a fabricated success artifact."""
 import copy
+import contextlib
+import io
 import json
 from pathlib import Path
 import sys
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -15,6 +18,11 @@ import verify
 
 ARTIFACT = Path(sys.argv.pop(1))
 GOLDEN = json.loads((verify.HERE / 'golden.json').read_text())
+
+
+def guard_repack_writer(archive):
+    if not isinstance(getattr(archive, '_seekable', None), bool):
+        raise RuntimeError('Python zipfile writer internals changed: expected boolean _seekable; review repacking strategy')
 
 
 class ArtifactTests(unittest.TestCase):
@@ -35,6 +43,7 @@ class ArtifactTests(unittest.TestCase):
                 # Test-only use of Python zipfile's writer mode to retain the
                 # renderer's per-entry data-descriptor flag. setUp proves that
                 # a no-op repack is accepted before testing any mutation.
+                guard_repack_writer(archive)
                 archive._seekable = not bool(item.flag_bits & 8)
                 archive.writestr(item, data)
 
@@ -48,6 +57,13 @@ class ArtifactTests(unittest.TestCase):
 
     def test_actual_artifact(self):
         self.assertEqual(verify.compare(ARTIFACT, ARTIFACT, GOLDEN), GOLDEN)
+
+    def test_repack_writer_guard(self):
+        for value in [True, False]:
+            guard_repack_writer(SimpleNamespace(_seekable=value))
+        for candidate in [SimpleNamespace(), SimpleNamespace(_seekable=1), SimpleNamespace(_seekable=None)]:
+            with self.assertRaisesRegex(RuntimeError, 'Python zipfile writer internals changed'):
+                guard_repack_writer(candidate)
 
     def test_content_mutations(self):
         chapter, opf, toc = 'EPUB/chapter.xhtml', 'EPUB/content.opf', 'EPUB/toc.xhtml'
@@ -153,6 +169,32 @@ class ArtifactTests(unittest.TestCase):
             with self.assertRaises(subprocess.TimeoutExpired):
                 run.container(Path('/owned/state'), run.PINS['nodeImage'], [], ['/gate/test.mjs'])
         self.assertEqual(mocked.call_count, 3)
+
+    def test_cleanup_failure_preserves_primary_error(self):
+        for failed_run in [True, False]:
+            for failed_step in ['ps', 'rm']:
+                with self.subTest(failed_run=failed_run, failed_step=failed_step):
+                    name = None
+
+                    def fake_runtime(state, *args, **kwargs):
+                        nonlocal name
+                        if args[0] == 'run':
+                            name = args[args.index('--name') + 1]
+                            if failed_run:
+                                raise subprocess.TimeoutExpired('primary timeout', 120)
+                        elif args[0] == failed_step:
+                            raise subprocess.CalledProcessError(1, 'cleanup failure')
+                        else:
+                            return name + '\n'
+
+                    stderr = io.StringIO()
+                    with patch.object(run, 'runtime', side_effect=fake_runtime), contextlib.redirect_stderr(stderr):
+                        expected = subprocess.TimeoutExpired if failed_run else subprocess.CalledProcessError
+                        with self.assertRaises(expected):
+                            run.container(Path('/owned/state'), run.PINS['nodeImage'], [], ['/gate/test.mjs'])
+                    if failed_run:
+                        self.assertIn(name, stderr.getvalue())
+                        self.assertIn('Cleanup also failed', stderr.getvalue())
 
     def test_prepared_inventory_and_fixture_gate(self):
         self.assertEqual(run.fixture_gate(), run.PINS['fixtures'])
