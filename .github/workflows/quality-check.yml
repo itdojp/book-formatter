@@ -51,6 +51,25 @@ jobs:
             test-results/
             coverage/
 
+  held-tree-windows:
+    name: Held-tree I/O (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Verify native held-tree contract on Windows
+        run: node --test tests/AdapterSafeIO.test.js
+
   validate-templates:
     name: Validate Templates
     runs-on: ubuntu-latest
@@ -273,7 +292,7 @@ jobs:
 
   summary:
     name: Quality Summary
-    needs: [lint-and-test, validate-templates, security-scan, book-generation-test, markdown-quality, web-mdbook-adapter]
+    needs: [lint-and-test, held-tree-windows, validate-templates, security-scan, book-generation-test, markdown-quality, web-mdbook-adapter]
     runs-on: ubuntu-latest
     if: always()
     
@@ -327,6 +346,7 @@ jobs:
             echo "| Web mdBook Adapter | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
           fi
           
+          echo "| Held-tree I/O (Windows) | ${{ needs.held-tree-windows.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Workflow**: ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
           echo "**Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY

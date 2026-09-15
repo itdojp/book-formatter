@@ -340,13 +340,15 @@ export function createAdapterSafeIO({ adapterName, target }) {
   }
 
   function heldTreePathComponents(relativePath, pathLabel) {
-    const components = String(relativePath).split(path.sep);
+    const components = typeof relativePath === 'string' ? relativePath.split(path.sep) : [];
     if (
       typeof relativePath !== 'string' ||
       !relativePath ||
-      path.isAbsolute(relativePath) ||
+      path.parse(relativePath).root !== '' ||
+      relativePath.includes('\0') ||
       components.some((component) =>
-        !component || component === '.' || component === '..' || /[\\/]/u.test(component)
+        !component || component === '.' || component === '..' || /[\\/]/u.test(component) ||
+        (process.platform === 'win32' && component.includes(':'))
       )
     ) {
       throw new AdapterSafeIOError(`Invalid ${pathLabel} path: ${relativePath}`);
@@ -395,12 +397,19 @@ export function createAdapterSafeIO({ adapterName, target }) {
     root,
     rootIdentity,
     relativePath,
-    {
+    options
+  ) {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+      throw new AdapterSafeIOError('Held-tree read requires options with a positive safe integer maximumSize.');
+    }
+    const {
       maximumSize,
       pathLabel = 'Asset',
       tooLargeMessage = `${pathLabel} exceeds its size limit: ${relativePath}`
+    } = options;
+    if (!Number.isSafeInteger(maximumSize) || maximumSize <= 0) {
+      throw new AdapterSafeIOError('Held-tree read maximumSize must be a positive safe integer.');
     }
-  ) {
     const components = heldTreePathComponents(relativePath, pathLabel);
     const name = components.pop();
     const current = await inspectDirectoryPathInHeldTree(
