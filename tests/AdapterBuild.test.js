@@ -69,7 +69,8 @@ describe('AdapterBuild', () => {
       const implementations = {
         'web-mdbook': 'web-mdbook-v1',
         zenn: 'zenn-v1',
-        note: 'note-v1'
+        note: 'note-v1',
+        booth: 'booth-plan-v1'
       };
       assert.match(
         readme,
@@ -219,15 +220,16 @@ describe('AdapterBuild', () => {
     const defaultBuild = await buildStandardBookAdapter({
       bookDirectory,
       target: 'booth',
-      editionId: 'free'
+      editionId: 'paid'
     });
     assert.strictEqual(
       defaultBuild.manifestPath,
       path.join(bookDirectory, 'dist', 'booth', 'manifest.json')
     );
     assert.deepStrictEqual(
-      await fs.readdir(path.join(bookDirectory, 'dist', 'booth')),
-      ['manifest.json']
+      (await fs.readdir(path.join(bookDirectory, 'dist', 'booth'))).sort(),
+      ['CHANGELOG.md', 'README.txt', 'booth-package-manifest.yaml', 'manifest.json',
+        'product-description.md', 'standard-book-example-0.1.0.zip']
     );
   });
 

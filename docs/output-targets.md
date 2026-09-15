@@ -13,7 +13,7 @@
 | `zenn` | Zenn book | `zenn-v1` | Zenn CLI / GitHub連携へ渡す生成project | [#98](https://github.com/itdojp/book-formatter/issues/98) |
 | `note` | note手動投稿package | `note-v1` | paid editionとfree sample editionから手動公開packageを生成 | [#99](https://github.com/itdojp/book-formatter/issues/99) |
 | `kindle` | EPUB / Kindle | skeleton / plan-only | 出力計画のみ（実artifact未生成） | [#100](https://github.com/itdojp/book-formatter/issues/100) |
-| `booth` | BOOTH販売package | skeleton | adapter実装後に選択 | [#101](https://github.com/itdojp/book-formatter/issues/101) |
+| `booth` | BOOTH商品計画ZIP | `booth-plan-v1` / plan-only | commerce計画と説明文（実PDF/EPUBなし） | [#101](https://github.com/itdojp/book-formatter/issues/101) |
 | `pdf` | screen / print PDF | skeleton / plan-only | 出力計画のみ（実artifact未生成） | [#100](https://github.com/itdojp/book-formatter/issues/100) |
 
 `implementation: skeleton`のmanifestは、入力schema、edition visibility、target選択を検証したbuild planである。target固有成果物の生成、公開可能性、deploy成功を示さない。
@@ -97,3 +97,5 @@ Jekyll consumerを標準Web出力へ移行する場合は、少なくとも次�
 全書籍への一括適用、mutableな`main`参照、未検証targetのdeployは行わない。
 
 `pdf` / `kindle`はprofile別placeholderと公開前checklistを出すplan-only基盤です。実PDF/EPUBや公開承認ではありません。詳細は[PDF/EPUB/Kindle基盤](./pdf-epub-kindle.md)を参照してください。
+
+`booth-plan-v1`のZIPはmetadataと説明文だけです。実PDF/EPUB、販売権、配布可能性の承認ではありません。[commerce契約](commerce.md)を参照してください。

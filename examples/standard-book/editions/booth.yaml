@@ -1,0 +1,14 @@
+schema_version: 1
+channel: booth
+slug: standard-book-example
+sku: STANDARD-BOOK-FULL
+currency: JPY
+price: 500
+full_edition: paid
+sample_edition: sample
+summary: 標準書籍の販売用パッケージ設計例。PDF/EPUBは未生成で販売不可。
+changelog:
+  - version: 0.1.0
+    date: '2026-01-01'
+    changes:
+      - synthetic fixtureの初版計画。公開・販売承認ではありません。

@@ -86,3 +86,5 @@ Version 1は次を記録します。
 `pdf` / `kindle`はprofile別placeholderと公開前checklistを出すplan-only基盤です。実PDF/EPUBや公開承認ではありません。詳細は[PDF/EPUB/Kindle基盤](../docs/pdf-epub-kindle.md)を参照してください。
 
 held-tree helperのサイズ引数・native path契約と検証範囲は[Adapter shared I/O](../docs/adapter-safe-io.md)を参照してください。
+
+`booth-plan-v1`はcommerce metadataと説明文を含む計画ZIPを生成します。実PDF/EPUBは同梱せず、販売・配布不可です。[commerce契約](../docs/commerce.md)を参照してください。
