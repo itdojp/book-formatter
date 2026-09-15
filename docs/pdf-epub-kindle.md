@@ -80,3 +80,7 @@ Kindle Previewerはdesktop環境で確認する前提であり、Linux CIでのu
 現在のunit/CLI検証はprofileの有限性、metadata、全fileの再生成一致、dry-run、source visibility拒否、metadata変更拒否、unowned/symlink/source出力拒否、他target互換性を対象とする。PDF/EPUB表示や入稿審査はテスト済みではない。
 
 KDP/BOOTH自動upload、商用DTP調整、DRM/透かし、全書籍一括変換、consumer pin更新は対象外。
+
+## 隔離toolchainの依存評価
+
+[#156](https://github.com/itdojp/book-formatter/issues/156)の[専用Node24 package](../toolchains/publication/README.md)はVivliostyle候補のlock/audit/合成offline互換性を検証します。root依存へは入りません。これは実PDF/EPUB rendererではなく、#152の残る生成・可視性・配布前gateを完了扱いしません。
