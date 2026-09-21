@@ -35,12 +35,16 @@ export npm_config_cache="$PWD/.cache/npm"
 npm ci --ignore-scripts
 npm audit --audit-level=moderate
 npm run validate:standard-book -- examples/standard-book
-npm run check-visibility -- examples/standard-book --edition free --output .cache/source-visibility.json
+# このexampleが宣言する公開editionすべて（internalは非公開）
+for EDITION in free sample paid; do
+  npm run check-visibility -- examples/standard-book --edition "$EDITION" --output ".cache/source-visibility-$EDITION.json"
+done
 npm run check-markdown-structure -- examples/standard-book --standard-callouts --fail-on warn --output .cache/source-markdown.json
 ```
 
-これらは標準exampleのsource/schema検証です。実際の書籍ではbook pathとeditionを
-対象の正本へ置き換えます。source visibilityの成功は生成artifactの漏えい検査では
+これらは標準exampleのsource/schema検証です。実際の書籍ではbook pathを対象の正本へ置き換え、
+`book.yaml`が宣言する`visibility != internal`の全edition IDを列挙します。
+IDが`free`等であるとは限りません。source visibilityの成功は生成artifactの漏えい検査では
 ありません。構造Markdown検査は事実確認や校正を代替しません。機密本文を扱う場合は
 レポートも非公開に保持します。
 
@@ -82,7 +86,9 @@ git diff --stat
 
 `Quality Check`の既存`Validate Templates` jobにschema/visibility/Markdownの軽量CLI検査を
 集約します。外部認証、PDF生成、ブラウザの新規依存はこの3検査には不要です。
-CLIの非zero exitはjob失敗にします。外部サービスの不調と内容違反を区別して記録します。
+CIは検証済みmetadataの`editions`を列挙し、IDやstatusではなくvisibilityが
+`internal`以外の全edition（free/sample/paid、draftを含む）を個別検査します。
+レポートは`visibility-<id>.json`です。CLIの非zero exitはjob失敗にします。外部サービスの不調と内容違反を区別して記録します。
 
 既存のWeb mdBook/Chrome、Windows held-tree、CodeQL、隔離Publicationの検証gateを
 この整理のために削除・skip・optional化しません。Publicationには限定合成EPUBの実生成が

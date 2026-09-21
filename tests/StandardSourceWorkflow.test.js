@@ -43,7 +43,10 @@ test('lightweight CI: standard schema/visibility/Markdown commands succeed', asy
   const { result, reports } = await runFixture(context);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /schema_version=1, documents=5, editions=4/);
-  assert.equal((await fs.readJson(path.join(reports, 'visibility.json'))).summary.safe, true);
+  for (const id of ['free', 'sample', 'paid']) {
+    assert.equal((await fs.readJson(path.join(reports, `visibility-${id}.json`))).summary.safe, true);
+  }
+  assert.equal(await fs.pathExists(path.join(reports, 'visibility-internal.json')), false);
   const markdown = await fs.readJson(path.join(reports, 'markdown.json'));
   assert.equal(markdown.summary.errors, 0);
   assert.equal(markdown.summary.warnings, 0);
@@ -61,7 +64,7 @@ test('lightweight CI: paid document in free edition fails, no Markdown success h
     data.editions.find((edition) => edition.id === 'free').documents.push('afterword');
   }));
   assert.equal(result.status, 1, result.stdout + result.stderr);
-  const report = await fs.readJson(path.join(reports, 'visibility.json'));
+  const report = await fs.readJson(path.join(reports, 'visibility-free.json'));
   assert.equal(report.summary.safe, false);
   assert.ok(report.findings.some((finding) => finding.code === 'incompatible_document_visibility'));
   assert.equal(await fs.pathExists(path.join(reports, 'markdown.json')), false);
@@ -72,8 +75,47 @@ test('lightweight CI: malformed Markdown fails after schema and visibility pass'
     path.join(book, 'README.md'), '---\ntitle: "unclosed\n---\n# Synthetic invalid YAML\n'
   ));
   assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.equal((await fs.readJson(path.join(reports, 'visibility.json'))).summary.safe, true);
+  assert.equal((await fs.readJson(path.join(reports, 'visibility-free.json'))).summary.safe, true);
   const markdown = await fs.readJson(path.join(reports, 'markdown.json'));
   assert.ok(markdown.summary.errors > 0);
   assert.ok(markdown.issues.some((finding) => finding.kind === 'invalid_front_matter'));
+});
+
+for (const [id, visibility, document] of [
+  ['sample', 'sample', 'afterword'],
+  ['paid', 'paid', 'internal-notes'],
+  ['preview-alternate', 'sample', 'afterword']
+]) {
+  test(`lightweight CI: incompatible document in public edition ${id} fails`, async (context) => {
+    const { result, reports } = await runFixture(context, (book) => metadata(book, (data) => {
+      const edition = data.editions.find((item) => item.id === id);
+      if (edition) edition.documents.push(document);
+      else data.editions.push({ id, title: 'Synthetic preview', status: 'draft', visibility, documents: [document] });
+    }));
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    const report = await fs.readJson(path.join(reports, `visibility-${id}.json`));
+    assert.equal(report.summary.safe, false);
+    assert.ok(report.findings.some((finding) => finding.code === 'incompatible_document_visibility'));
+    assert.equal(await fs.pathExists(path.join(reports, 'markdown.json')), false);
+  });
+}
+
+test('lightweight CI: edition visibility, not its ID, determines public selection', async (context) => {
+  const { result, reports } = await runFixture(context, (book) => metadata(book, (data) => {
+    data.editions.find((item) => item.id === 'internal').id = 'staff';
+    data.editions.find((item) => item.id === 'paid').id = 'subscriber';
+  }));
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal((await fs.readJson(path.join(reports, 'visibility-subscriber.json'))).summary.safe, true);
+  assert.equal(await fs.pathExists(path.join(reports, 'visibility-staff.json')), false);
+});
+
+test('lightweight CI: reserved edition ID mismatch is not hidden by public selection', async (context) => {
+  const { result, reports } = await runFixture(context, (book) => metadata(book, (data) => {
+    data.editions.find((item) => item.id === 'internal').id = 'staff';
+    data.editions.find((item) => item.id === 'paid').id = 'internal';
+  }));
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /Reserved edition ID internal must use matching visibility internal/);
+  assert.equal(await fs.pathExists(path.join(reports, 'markdown.json')), false);
 });
