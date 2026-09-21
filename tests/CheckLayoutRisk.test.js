@@ -267,3 +267,21 @@ test('check-layout-risk: liquid-based src should be skipped (no missing_image er
     assert.equal(report.summary.errors, 0);
   });
 });
+
+test('check-layout-risk: HTML-like remnants are diagnostic text, not sanitized HTML', async () => {
+  await withTempDir(async (tmpRoot) => {
+    // Tag-shaped segments are removed only to estimate a length. Remaining angle
+    // brackets are diagnostic text, not a promise of safe-to-render HTML.
+    const source = '<outer<inner>tail>' + 'x'.repeat(120);
+    const expected = 'tail>' + 'x'.repeat(120);
+    await fs.writeFile(path.join(tmpRoot, 'diagnostic.md'), source, 'utf8');
+    const { result, report, reportPath } = runCheckLayoutRisk(tmpRoot, ['--max-text-line', '80']);
+    assert.equal(result.status, 0);
+    assert.equal(report.summary.maxTextUnbreakableAsciiRun, expected.length);
+    const issue = report.issues.find((item) => item.kind === 'long_text_line');
+    assert.equal(issue.meta.snippet, expected.slice(0, 120) + '...');
+    assert.ok(result.stdout.includes(issue.meta.snippet));
+    assert.equal(JSON.parse(await fs.readFile(reportPath, 'utf8')).issues[0].meta.snippet, issue.meta.snippet);
+    assert.deepEqual((await fs.readdir(tmpRoot)).sort(), ['diagnostic.md', 'layout-risk-report.json']);
+  });
+});

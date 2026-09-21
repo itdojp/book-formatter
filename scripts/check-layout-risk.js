@@ -160,6 +160,8 @@ function countTableColumns(rowLine) {
   return cols.length;
 }
 
+// Layout heuristic only, NOT an HTML sanitizer. Output is used for a numeric
+// length and a terminal/JSON diagnostic snippet; never render it as HTML.
 function stripNonVisibleMarkdown(rawLine) {
   let s = String(rawLine || '');
 

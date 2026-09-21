@@ -59,34 +59,40 @@
     function displayResults(results, query) {
         if (!searchResults) return;
         
+        searchResults.replaceChildren();
         if (results.length === 0) {
-            searchResults.innerHTML = `
-                <div class="search-no-results">
-                    <p>「${escapeHtml(query)}」に一致する結果が見つかりませんでした。</p>
-                </div>
-            `;
+            const empty = document.createElement('div');
+            empty.className = 'search-no-results';
+            const message = document.createElement('p');
+            message.textContent = `「${query}」に一致する結果が見つかりませんでした。`;
+            empty.appendChild(message);
+            searchResults.appendChild(empty);
         } else {
-            const resultsHtml = results.slice(0, 10).map(result => {
-                const highlightedTitle = highlightText(result.title, query);
-                const snippet = getSnippet(result.content, query);
-                const highlightedSnippet = highlightText(snippet, query);
-                
-                return `
-                    <div class="search-result-item" data-id="${result.id}">
-                        <div class="search-result-title">${highlightedTitle}</div>
-                        <div class="search-result-snippet">${highlightedSnippet}</div>
-                    </div>
-                `;
-            }).join('');
-            
-            searchResults.innerHTML = `
-                <div class="search-results-list">
-                    ${resultsHtml}
-                </div>
-                ${results.length > 10 ? `<div class="search-more">他 ${results.length - 10} 件の結果</div>` : ''}
-            `;
+            const list = document.createElement('div');
+            list.className = 'search-results-list';
+            results.slice(0, 10).forEach(result => {
+                const item = document.createElement('div');
+                item.className = 'search-result-item';
+                item.dataset.id = result.id;
+                const title = document.createElement('div');
+                title.className = 'search-result-title';
+                title.appendChild(highlightText(result.title, query));
+                const snippet = document.createElement('div');
+                snippet.className = 'search-result-snippet';
+                snippet.appendChild(highlightText(getSnippet(result.content, query), query));
+                item.appendChild(title);
+                item.appendChild(snippet);
+                list.appendChild(item);
+            });
+            searchResults.appendChild(list);
+            if (results.length > 10) {
+                const more = document.createElement('div');
+                more.className = 'search-more';
+                more.textContent = `他 ${results.length - 10} 件の結果`;
+                searchResults.appendChild(more);
+            }
         }
-        
+
         showResults();
     }
     
@@ -105,12 +111,22 @@
         return snippet;
     }
     
-    // Highlight search term in text
+    // Preserve DOM text as text. Only our own mark elements become markup.
     function highlightText(text, query) {
-        const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
-        return text.replace(regex, '<mark>$1</mark>');
+        const fragment = document.createDocumentFragment();
+        const regex = new RegExp(escapeRegex(query), 'gi');
+        let offset = 0;
+        for (const match of text.matchAll(regex)) {
+            fragment.appendChild(document.createTextNode(text.slice(offset, match.index)));
+            const mark = document.createElement('mark');
+            mark.textContent = match[0];
+            fragment.appendChild(mark);
+            offset = match.index + match[0].length;
+        }
+        fragment.appendChild(document.createTextNode(text.slice(offset)));
+        return fragment;
     }
-    
+
     // Show search results
     function showResults() {
         if (searchResults) {
@@ -146,18 +162,11 @@
         }
     }
     
-    // Escape HTML
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-    
-    // Escape regex
+    // Treat queries as literal text, including regex metacharacters.
     function escapeRegex(text) {
         return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
-    
+
     // Initialize search
     function initSearch() {
         initElements();
