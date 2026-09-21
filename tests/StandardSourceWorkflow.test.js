@@ -43,10 +43,9 @@ test('lightweight CI: standard schema/visibility/Markdown commands succeed', asy
   const { result, reports } = await runFixture(context);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /schema_version=1, documents=5, editions=4/);
-  for (const id of ['free', 'sample', 'paid']) {
+  for (const id of ['free', 'sample', 'paid', 'internal']) {
     assert.equal((await fs.readJson(path.join(reports, `visibility-${id}.json`))).summary.safe, true);
   }
-  assert.equal(await fs.pathExists(path.join(reports, 'visibility-internal.json')), false);
   const markdown = await fs.readJson(path.join(reports, 'markdown.json'));
   assert.equal(markdown.summary.errors, 0);
   assert.equal(markdown.summary.warnings, 0);
@@ -100,14 +99,14 @@ for (const [id, visibility, document] of [
   });
 }
 
-test('lightweight CI: edition visibility, not its ID, determines public selection', async (context) => {
+test('lightweight CI: all declared editions, including custom IDs and internal, are checked', async (context) => {
   const { result, reports } = await runFixture(context, (book) => metadata(book, (data) => {
     data.editions.find((item) => item.id === 'internal').id = 'staff';
     data.editions.find((item) => item.id === 'paid').id = 'subscriber';
   }));
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal((await fs.readJson(path.join(reports, 'visibility-subscriber.json'))).summary.safe, true);
-  assert.equal(await fs.pathExists(path.join(reports, 'visibility-staff.json')), false);
+  assert.equal((await fs.readJson(path.join(reports, 'visibility-staff.json'))).summary.safe, true);
 });
 
 test('lightweight CI: reserved edition ID mismatch is not hidden by public selection', async (context) => {
@@ -119,3 +118,17 @@ test('lightweight CI: reserved edition ID mismatch is not hidden by public selec
   assert.match(result.stderr, /Reserved edition ID internal must use matching visibility internal/);
   assert.equal(await fs.pathExists(path.join(reports, 'markdown.json')), false);
 });
+
+for (const id of ['free', 'sample', 'paid', 'internal']) {
+  for (const visibility of ['free', 'sample', 'paid', 'internal']) {
+    if (id === visibility) continue;
+    test(`lightweight CI: reserved visibility/${id}/${visibility} fails`, async (context) => {
+      const { result, reports } = await runFixture(context, (book) => metadata(book, (data) => {
+        data.editions.find((item) => item.id === id).visibility = visibility;
+      }));
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stderr, new RegExp(`Reserved edition ID ${id} must use matching visibility ${id}`));
+      assert.equal(await fs.pathExists(path.join(reports, 'markdown.json')), false);
+    });
+  }
+}
