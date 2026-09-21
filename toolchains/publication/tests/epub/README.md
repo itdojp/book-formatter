@@ -59,7 +59,7 @@ verified. No renderer, dependency, fixture or actual ZIP is rewritten.
 Golden schema/order metadata is updated explicitly; every existing per-member
 hash/attribute remains identical. A missing/extra/duplicate member, moved or
 compressed mimetype, prefix, content change, flag/attribute change or spine
-change still fails. Failed comparisons now expose only validated member
+change still fails. Both render-to-render and deterministic golden comparisons now expose only validated member
 names/metadata/hashes, never book text.
 
 Original CI35586182920 failed twice without retaining the artifact pair. Its

@@ -61,14 +61,18 @@ class ArtifactTests(unittest.TestCase):
 
     def test_drift_diagnostic_contains_only_inventory_and_hashes(self):
         self.save(self.replace('EPUB/chapter.xhtml', b'Synthetic offline fixture', b'Changed synthetic fixture'))
-        with self.assertRaises(ValueError) as caught:
-            verify.compare(ARTIFACT, self.path, GOLDEN)
-        message = str(caught.exception)
-        self.assertIn('render-to-render semantic drift: ', message)
-        self.assertIn('normalizedSha256', message)
-        self.assertIn('EPUB/chapter.xhtml', message)
-        self.assertNotIn('Changed synthetic fixture', message)
-        self.assertNotIn('<html', message)
+        for first, prefix, keys in [(ARTIFACT, 'render-to-render semantic drift: ', {'first', 'second'}),
+                                    (self.path, 'reviewed golden drift: ', {'actual', 'expected'})]:
+            with self.subTest(prefix=prefix):
+                with self.assertRaises(ValueError) as caught:
+                    verify.compare(first, self.path, GOLDEN)
+                message = str(caught.exception)
+                self.assertTrue(message.startswith(prefix))
+                self.assertEqual(set(json.loads(message.removeprefix(prefix))), keys)
+                self.assertIn('normalizedSha256', message)
+                self.assertIn('EPUB/chapter.xhtml', message)
+                self.assertNotIn('Changed synthetic fixture', message)
+                self.assertNotIn('<html', message)
 
     def test_repack_writer_guard(self):
         for value in [True, False]:
