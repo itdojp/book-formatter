@@ -113,8 +113,10 @@ def inspect(path):
 
 def compare(first, second, golden):
     a, b = inspect(first), inspect(second)
-    require(a == b, 'render-to-render semantic drift: ' + json.dumps({'first': a, 'second': b}, sort_keys=True))
-    require(a == golden, 'reviewed golden drift: ' + json.dumps({'actual': a, 'expected': golden}, sort_keys=True))
+    if a != b:
+        raise ValueError('render-to-render semantic drift: ' + json.dumps({'first': a, 'second': b}, sort_keys=True))
+    if a != golden:
+        raise ValueError('reviewed golden drift: ' + json.dumps({'actual': a, 'expected': golden}, sort_keys=True))
     return a
 
 

@@ -59,6 +59,10 @@ class ArtifactTests(unittest.TestCase):
     def test_actual_artifact(self):
         self.assertEqual(verify.compare(ARTIFACT, ARTIFACT, GOLDEN), GOLDEN)
 
+    def test_success_does_not_serialize_failure_diagnostics(self):
+        with patch.object(verify.json, 'dumps', side_effect=AssertionError('unexpected failure diagnostic')):
+            self.assertEqual(verify.compare(ARTIFACT, self.path, GOLDEN), GOLDEN)
+
     def test_drift_diagnostic_contains_only_inventory_and_hashes(self):
         self.save(self.replace('EPUB/chapter.xhtml', b'Synthetic offline fixture', b'Changed synthetic fixture'))
         for first, prefix, keys in [(ARTIFACT, 'render-to-render semantic drift: ', {'first', 'second'}),
