@@ -15,12 +15,18 @@ class Element {
     this.style = {};
     this.attributes = {};
     this.listeners = new Map();
-    const classes = new Set();
+    this.classes = new Set();
+    const classes = this.classes;
     this.classList = {
       add: (value) => classes.add(value),
       remove: (value) => classes.delete(value),
       contains: (value) => classes.has(value)
     };
+  }
+  get className() { return [...this.classes].join(' '); }
+  set className(value) {
+    this.classes.clear();
+    String(value).split(/[\t\n\f\r ]+/).filter(Boolean).forEach((name) => this.classes.add(name));
   }
   set innerHTML(_value) { throw new Error('HTML reinterpretation is forbidden'); }
   get textContent() { return this.text + this.children.map((child) => child.textContent).join(''); }
@@ -40,7 +46,7 @@ class Element {
   setAttribute(key, value) { this.attributes[key] = value; }
   hasAttribute(key) { return key in this.attributes; }
   matches(selector) {
-    return selector.startsWith('.') ? this.className === selector.slice(1) : this.tagName === selector.toUpperCase();
+    return selector.startsWith('.') ? this.classList.contains(selector.slice(1)) : this.tagName === selector.toUpperCase();
   }
   querySelectorAll(selector) {
     return this.children.flatMap((child) => [
@@ -62,6 +68,21 @@ class Element {
   scrollIntoView() { this.scrolled = true; }
   blur() { this.blurred = true; }
 }
+
+test('test DOM class selectors share className/classList token state', () => {
+  const element = new Element('div');
+  element.className = 'first second';
+  assert.equal(element.matches('.first'), true);
+  assert.equal(element.classList.contains('second'), true);
+  element.classList.add('third');
+  assert.equal(element.matches('.third'), true);
+  assert.equal(element.className, 'first second third');
+  element.classList.remove('first');
+  assert.equal(element.matches('.first'), false);
+  element.className = 'replacement';
+  assert.equal(element.matches('.third'), false);
+  assert.equal(element.matches('.replacement'), true);
+});
 
 function fixture(script, texts = []) {
   const document = new Element('document');
