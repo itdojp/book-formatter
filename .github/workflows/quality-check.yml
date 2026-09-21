@@ -98,6 +98,30 @@ jobs:
           console.log('Templates:', templates.join(', '));
           "
 
+      - name: Validate standard book source gates
+        shell: bash
+        env:
+          BOOK_ROOT: examples/standard-book
+          QA_REPORT_DIR: ${{ runner.temp }}/standard-book-qa
+        run: |
+          set -euo pipefail
+          npm run validate:standard-book -- "$BOOK_ROOT"
+          node --input-type=module <<'NODE'
+          import path from 'node:path';
+          import { spawnSync } from 'node:child_process';
+          import { validateStandardBook } from './src/StandardBookValidator.js';
+          const { metadata } = await validateStandardBook(process.env.BOOK_ROOT);
+          for (const { id } of metadata.editions) {
+            const result = spawnSync(process.execPath, [
+              'scripts/check-visibility.js', process.env.BOOK_ROOT, '--edition', id,
+              '--output', path.join(process.env.QA_REPORT_DIR, `visibility-${id}.json`)
+            ], { stdio: 'inherit' });
+            if (result.error) throw result.error;
+            if (result.signal || result.status !== 0) process.exit(result.status || 1);
+          }
+          NODE
+          npm run check-markdown-structure -- "$BOOK_ROOT" --standard-callouts --fail-on warn --output "$QA_REPORT_DIR/markdown.json"
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
