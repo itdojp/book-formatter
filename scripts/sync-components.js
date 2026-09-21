@@ -225,9 +225,17 @@ class ComponentSync {
 
     // 実ファイルまたは共有component versionが変わった場合だけ同期時刻を更新する。
     // これにより、同一内容への再同期でtimestampだけのPRが作られることを防ぐ。
-    const versionChanged = bookConfig.shared?.version !== this.version.version;
+    const configuredPlan = this.createSyncPlan(consumerRoot, this.determineComponents(bookConfig, {}));
+    const selected = new Set(syncPlan.map((entry) => entry.destRel));
+    const completeSelection = configuredPlan.length > 0
+      && configuredPlan.every((entry) => selected.has(entry.destRel));
+    // A partial selection cannot certify unselected assets. Version metadata is
+    // evidence of this configured selection, not a substitute for byte checks.
+    const advanceVersion = completeSelection
+      && (await this.findChangedEntries(consumerRoot, syncPlan)).length === 0;
+    const versionChanged = advanceVersion && bookConfig.shared?.version !== this.version.version;
     if (componentsChanged || versionChanged) {
-      await this.updateBookVersion(consumerRoot);
+      await this.updateBookVersion(consumerRoot, { advanceVersion });
     } else {
       console.log(chalk.green('  ✅ 変更はありません'));
     }
@@ -424,11 +432,25 @@ class ComponentSync {
     return source.equals(dest);
   }
 
+  // Only inspect the selected, guarded destinations; never follow an opted-out
+  // consumer path. Missing source data cannot prove a completed sync.
+  async findChangedEntries(consumerRoot, syncPlan) {
+    const changed = [];
+    for (const entry of syncPlan) {
+      await this.assertManagedDestination(consumerRoot, entry.destRel);
+      if (!(await this.fsUtils.exists(entry.sourcePath))
+          || !(await this.filesAreEqual(entry.sourcePath, entry.destPath))) {
+        changed.push(entry);
+      }
+    }
+    return changed;
+  }
+
   /**
    * 書籍のバージョン情報を更新
    * @param {string} bookPath - 書籍パス
    */
-  async updateBookVersion(bookPath) {
+  async updateBookVersion(bookPath, { advanceVersion = false } = {}) {
     const consumerRoot = await this.assertConsumerRoot(bookPath);
     const configDestination = await this.assertManagedDestination(
       consumerRoot,
@@ -439,7 +461,7 @@ class ComponentSync {
     
     // shared セクションを更新
     config.shared = config.shared || {};
-    config.shared.version = this.version.version;
+    if (advanceVersion) config.shared.version = this.version.version;
     config.shared.lastSync = new Date().toISOString();
     
     await this.assertManagedDestination(consumerRoot, 'book-config.json', { mustExist: true });
@@ -500,7 +522,11 @@ class ComponentSync {
     console.log(chalk.gray(`  現在のバージョン: ${currentVersion}`));
     console.log(chalk.gray(`  最新バージョン: ${this.version.version}`));
     
-    if (currentVersion === this.version.version) {
+    // Previously stamped or reconfigured consumers may still have stale/missing
+    // selected assets. Do not equate the global release label with their bytes.
+    const pending = currentVersion === this.version.version
+      ? await this.findChangedEntries(consumerRoot, syncPlan) : syncPlan;
+    if (currentVersion === this.version.version && pending.length === 0) {
       console.log(chalk.green('  ✅ 最新です'));
       return;
     }
@@ -508,7 +534,7 @@ class ComponentSync {
     // 変更されるファイルをリスト
     console.log(chalk.yellow('  📝 変更されるファイル:'));
     
-    for (const entry of syncPlan) {
+    for (const entry of pending) {
       console.log(chalk.gray(`    - ${entry.destRel}`));
     }
   }

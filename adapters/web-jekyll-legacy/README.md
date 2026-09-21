@@ -41,7 +41,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
 | `shared/assets/js/code-copy-lightweight.js` | `docs/assets/js/code-copy-lightweight.js` | JavaScript |
 | `shared/assets/js/search.js` | `docs/assets/js/search.js` | JavaScript |
 | `shared/assets/js/theme.js` | `docs/assets/js/theme.js` | JavaScript |
-| `shared/version.json` | `book-config.json`の`shared.version` | 実fileまたはversion差分がある場合に更新 |
+| `shared/version.json` | `book-config.json`の`shared.version` | 有効な全managed fileを選択し、同期元存在・同期後byte一致を確認した場合のみ進める |
 
 表は現行`shared/version.json`に列挙された有限集合であり、directory wildcardではない。たとえば、同じsource directoryにある未列挙fileは自動同期されない。`shared/schema/`、`shared/schemas/`、`shared/markdown/`、`shared/mdbook/`もこのJekyll同期mappingに含めない。`shared/schemas/book-config.schema.json`はlegacy config互換のschemaだが、Jekyll componentとして`docs/`へ配布するfileではない。
 
@@ -86,7 +86,7 @@ legacy `book-config.json`と標準`book.yaml`は別契約である。`create-boo
    )
    ```
 
-   現行dry-runは`shared.version`が一致するとfile内容を比較せず終了するため、差分0の証拠には使用しない。
+   現行dry-runは`shared.version`が一致する場合も、選択したmanaged fileのbyte差分・欠落を検査する。「最新です」はその選択範囲だけの結果であり、未選択・opt-out fileや同時変更の保証ではない。version不一致時は予定component一覧を表示する。部分同期では全体versionを進めず、実file変更がある場合だけ`lastSync`を更新する。全有効componentを選択し、同期元存在と同期後byte一致を確認して初めて`shared.version`を進める。未変更の部分同期・空の選択はmetadataを書き換えない。この結果だけで手順4の隔離同期・差分reviewを省略しない。
 
 4. consumerの監査済みbase SHAから隔離した一時worktreeを作り、そのcopyへ通常同期して`git diff`を確認する。
 

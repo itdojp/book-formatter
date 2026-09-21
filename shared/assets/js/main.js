@@ -203,13 +203,19 @@
     function openImageModal(img) {
         const modal = document.createElement('div');
         modal.className = 'image-modal';
-        modal.innerHTML = `
-            <div class="image-modal-content">
-                <img src="${img.src}" alt="${img.alt}">
-                <button class="image-modal-close">&times;</button>
-            </div>
-        `;
-        
+        const content = document.createElement('div');
+        content.className = 'image-modal-content';
+        const image = document.createElement('img');
+        // Retain the existing image resource and literal alt text, never HTML.
+        image.src = img.src;
+        image.alt = img.alt;
+        const close = document.createElement('button');
+        close.className = 'image-modal-close';
+        close.textContent = '×';
+        content.appendChild(image);
+        content.appendChild(close);
+        modal.appendChild(content);
+
         document.body.appendChild(modal);
         
         // Close handlers

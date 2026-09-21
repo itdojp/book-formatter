@@ -576,3 +576,113 @@ test('book-sync path guard: 許可pathだけをNUL pathspecへ出力し、想定
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('component sync: assets security release is discoverable to a 3.2.3 consumer without writes', async () => {
+  const tempDir = mkdtempSync(path.join('tests', 'tmp-security-version-'));
+  try {
+    const configPath = path.join(tempDir, 'book-config.json');
+    const config = { title: 'Synthetic security update fixture', shared: { version: '3.2.3', components: { assets: true } } };
+    await fs.writeJson(configPath, config);
+    const before = await fs.readFile(configPath, 'utf8');
+    const result = spawnSync(process.execPath, ['scripts/sync-components.js', '--book', tempDir, '--dry-run', '--components', 'assets'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!result.stdout.includes('✅ 最新です'), result.stdout);
+    assert.ok(result.stdout.includes('assets'), result.stdout);
+    assert.equal(await fs.readFile(configPath, 'utf8'), before);
+    assert.deepEqual(await fs.readdir(tempDir), ['book-config.json']);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+async function withVersionFixture(run) {
+  const book = mkdtempSync(path.join('tests', 'tmp-selected-version-'));
+  try {
+    const configPath = path.join(book, 'book-config.json');
+    await fs.writeJson(configPath, { shared: { version: '3.2.3' } });
+    const invoke = (...args) => {
+      const result = spawnSync(process.execPath, ['scripts/sync-components.js', '--book', book, ...args], { encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      return result.stdout;
+    };
+    await run({ book, configPath, invoke, version: (await fs.readJson('shared/version.json')).version });
+  } finally {
+    rmSync(book, { recursive: true, force: true });
+  }
+}
+
+test('component sync: partial layouts cannot hide the later assets security update', async () => {
+  await withVersionFixture(async ({ book, configPath, invoke, version }) => {
+    invoke('--components', 'layouts');
+    assert.equal((await fs.readJson(configPath)).shared.version, '3.2.3');
+    assert.equal(await fs.pathExists(path.join(book, 'docs/assets/js/search.js')), false);
+    const partial = await fs.readFile(configPath, 'utf8');
+    invoke('--components', 'layouts');
+    assert.equal(await fs.readFile(configPath, 'utf8'), partial);
+    assert.match(invoke('--dry-run', '--components', 'assets'), /docs\/assets\/js\/search\.js/);
+    invoke(); // Every configured component actually synchronized.
+    assert.equal((await fs.readJson(configPath)).shared.version, version);
+    assert.match(invoke('--dry-run'), /✅ 最新です/);
+    const before = await fs.readFile(configPath, 'utf8');
+    invoke();
+    assert.equal(await fs.readFile(configPath, 'utf8'), before);
+  });
+});
+
+test('component sync: dry-run inspects stale assets even under a previously stamped current version', async () => {
+  await withVersionFixture(async ({ book, configPath, invoke }) => {
+    invoke();
+    const search = path.join(book, 'docs/assets/js/search.js');
+    await fs.writeFile(search, 'synthetic stale asset\n');
+    const before = await fs.readFile(configPath, 'utf8');
+    const output = invoke('--dry-run', '--components', 'assets');
+    assert.match(output, /docs\/assets\/js\/search\.js/);
+    assert.doesNotMatch(output, /✅ 最新です/);
+    assert.equal(await fs.readFile(search, 'utf8'), 'synthetic stale asset\n');
+    assert.equal(await fs.readFile(configPath, 'utf8'), before);
+  });
+});
+
+test('component sync: re-enabled JS is discoverable after a complete CSS-only configured sync', async () => {
+  await withVersionFixture(async ({ book, configPath, invoke, version }) => {
+    await fs.writeJson(configPath, { shared: { version: '3.2.3', components: { assets: { css: true, js: false } } } });
+    invoke();
+    assert.equal((await fs.readJson(configPath)).shared.version, version);
+    assert.equal(await fs.pathExists(path.join(book, 'docs/assets/js/search.js')), false);
+    const config = await fs.readJson(configPath);
+    config.shared.components.assets.js = true;
+    await fs.writeJson(configPath, config);
+    assert.match(invoke('--dry-run', '--components', 'assets'), /docs\/assets\/js\/search\.js/);
+    assert.equal(await fs.pathExists(path.join(book, 'docs/assets/js/search.js')), false);
+  });
+});
+
+test('component sync: empty disabled/unknown selections do not advance version or timestamp', async () => {
+  await withVersionFixture(async ({ configPath, invoke }) => {
+    await fs.writeJson(configPath, { shared: { version: '3.2.3', components: { layouts: false } } });
+    const before = await fs.readFile(configPath, 'utf8');
+    for (const component of ['layouts', 'unknown-fixture']) {
+      invoke('--components', component);
+      assert.equal(await fs.readFile(configPath, 'utf8'), before);
+    }
+  });
+});
+
+test('component sync: missing selected source cannot certify a complete version', async () => {
+  await withVersionFixture(async ({ book, configPath }) => {
+    const source = path.join(book, 'synthetic-shared');
+    await fs.ensureDir(path.join(source, 'layouts'));
+    const sync = new ComponentSync();
+    sync.sharedDir = source;
+    sync.version = { version: '3.2.4', components: { layouts: { files: ['layouts/book.html'] } } };
+    const before = await fs.readFile(configPath, 'utf8');
+    await sync.syncToBook(book);
+    assert.equal(await fs.readFile(configPath, 'utf8'), before);
+    const plan = sync.createSyncPlan(path.resolve(book), { layouts: true });
+    assert.equal((await sync.findChangedEntries(path.resolve(book), plan)).length, 1);
+    await fs.writeFile(path.join(source, 'layouts/book.html'), 'Synthetic fixture layout\n');
+    await sync.syncToBook(book);
+    assert.equal((await fs.readJson(configPath)).shared.version, '3.2.4');
+    assert.equal((await sync.findChangedEntries(path.resolve(book), plan)).length, 0);
+  });
+});
