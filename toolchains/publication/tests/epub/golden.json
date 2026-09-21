@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "equivalence": "uncompressed bytes and entry metadata; only OPF UUID/modified and ZIP dates volatile",
+  "schemaVersion": 2,
+  "equivalence": "per-member uncompressed bytes and metadata; OCF mimetype first; remaining member order, OPF UUID/modified and ZIP dates volatile",
   "entries": [
     {
       "name": "mimetype",
@@ -9,14 +9,6 @@
       "createSystem": 3,
       "externalAttr": 2175008800,
       "normalizedSha256": "e468e350d1143eb648f60c7b0bd6031101ec0544a361ca74ecef256ac901f48b"
-    },
-    {
-      "name": "META-INF/container.xml",
-      "compression": 8,
-      "flags": 8,
-      "createSystem": 3,
-      "externalAttr": 2175008800,
-      "normalizedSha256": "b90696adf245d8773cf12ffcf47d22dd17dc40407f19b2b192209d5b96ff8026"
     },
     {
       "name": "EPUB/chapter.xhtml",
@@ -41,6 +33,14 @@
       "createSystem": 3,
       "externalAttr": 2175008800,
       "normalizedSha256": "06787ef4d255a649057c1b8dd6f5e675e069a0d6493b476a3a00068e1736963a"
+    },
+    {
+      "name": "META-INF/container.xml",
+      "compression": 8,
+      "flags": 8,
+      "createSystem": 3,
+      "externalAttr": 2175008800,
+      "normalizedSha256": "b90696adf245d8773cf12ffcf47d22dd17dc40407f19b2b192209d5b96ff8026"
     }
   ]
 }
