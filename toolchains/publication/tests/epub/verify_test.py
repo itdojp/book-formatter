@@ -3,6 +3,7 @@
 import copy
 import contextlib
 import io
+import itertools
 import json
 from pathlib import Path
 import sys
@@ -57,6 +58,25 @@ class ArtifactTests(unittest.TestCase):
 
     def test_actual_artifact(self):
         self.assertEqual(verify.compare(ARTIFACT, ARTIFACT, GOLDEN), GOLDEN)
+
+    def test_success_does_not_serialize_failure_diagnostics(self):
+        with patch.object(verify.json, 'dumps', side_effect=AssertionError('unexpected failure diagnostic')):
+            self.assertEqual(verify.compare(ARTIFACT, self.path, GOLDEN), GOLDEN)
+
+    def test_drift_diagnostic_contains_only_inventory_and_hashes(self):
+        self.save(self.replace('EPUB/chapter.xhtml', b'Synthetic offline fixture', b'Changed synthetic fixture'))
+        for first, prefix, keys in [(ARTIFACT, 'render-to-render semantic drift: ', {'first', 'second'}),
+                                    (self.path, 'reviewed golden drift: ', {'actual', 'expected'})]:
+            with self.subTest(prefix=prefix):
+                with self.assertRaises(ValueError) as caught:
+                    verify.compare(first, self.path, GOLDEN)
+                message = str(caught.exception)
+                self.assertTrue(message.startswith(prefix))
+                self.assertEqual(set(json.loads(message.removeprefix(prefix))), keys)
+                self.assertIn('normalizedSha256', message)
+                self.assertIn('EPUB/chapter.xhtml', message)
+                self.assertNotIn('Changed synthetic fixture', message)
+                self.assertNotIn('<html', message)
 
     def test_repack_writer_guard(self):
         for value in [True, False]:
@@ -124,6 +144,32 @@ class ArtifactTests(unittest.TestCase):
                 self.save(members)
                 self.reject()
         print('ZIP mutations: 10 rejected')
+
+    def test_all_non_mimetype_permutations_preserve_semantics(self):
+        for permutation in itertools.permutations(self.members[1:]):
+            self.save([self.members[0], *permutation])
+            self.assertEqual(verify.compare(ARTIFACT, self.path, GOLDEN), GOLDEN)
+        print('non-mimetype permutations: 24 accepted; OPF spine unchanged')
+
+    def test_mimetype_must_be_physically_first(self):
+        # Python can read self-extracting/prefixed ZIPs; this OCF fixture cannot.
+        self.path.write_bytes(b'prefix' + self.path.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'OCF mimetype physical order'):
+            verify.inspect(self.path)
+
+    def test_sorting_never_drops_non_mimetype_metadata_or_content(self):
+        for index in range(1, len(self.members)):
+            for field, value in [('create_system', 0), ('external_attr', 0o100777 << 16),
+                                 ('flag_bits', self.members[index][0].flag_bits ^ 8)]:
+                with self.subTest(index=index, field=field):
+                    members = copy.deepcopy(self.members)
+                    setattr(members[index][0], field, value)
+                    self.save([members[0], *reversed(members[1:])])
+                    self.reject()
+        self.save([self.members[0], *reversed(self.replace('EPUB/chapter.xhtml',
+                  b'Synthetic offline fixture', b'Changed synthetic fixture')[1:])])
+        self.reject()
+        print('permuted non-mimetype metadata/content mutations: 13 rejected')
 
     def test_only_declared_volatile_fields_are_ignored(self):
         members = copy.deepcopy(self.members)
