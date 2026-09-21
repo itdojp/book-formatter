@@ -36,7 +36,8 @@ def inspect(path):
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
         require(len(infos) == len(NAMES) and {i.filename for i in infos} == NAMES, 'entry set/duplicate drift')
-        require(not archive.comment and infos[0].filename == 'mimetype' and infos[0].compress_type == 0, 'OCF mimetype order/compression')
+        require(not archive.comment and infos[0].filename == 'mimetype' and infos[0].compress_type == 0
+                and infos[0].header_offset == 0, 'OCF mimetype physical order/compression')
         require(sum(i.file_size for i in infos) < 512 * 1024, 'uncompressed size limit')
         for item in infos:
             require(item.file_size < 128 * 1024 and not item.flag_bits & 1, 'size/encryption boundary')
@@ -103,7 +104,11 @@ def inspect(path):
         entries.append({'name': item.filename, 'compression': item.compress_type,
                         'flags': item.flag_bits, 'createSystem': item.create_system, 'externalAttr': item.external_attr,
                         'normalizedSha256': hashlib.sha256(content).hexdigest()})
-    return {'schemaVersion': 1, 'equivalence': 'uncompressed bytes and entry metadata; only OPF UUID/modified and ZIP dates volatile', 'entries': entries}
+    # Native archiver directory enumeration is asynchronous. OCF fixes the
+    # mimetype position, not the scheduling of the remaining members. Reading
+    # order is still checked above via OPF spine and exact content hashes.
+    entries = entries[:1] + sorted(entries[1:], key=lambda entry: entry['name'])
+    return {'schemaVersion': 2, 'equivalence': 'per-member uncompressed bytes and metadata; OCF mimetype first; remaining member order, OPF UUID/modified and ZIP dates volatile', 'entries': entries}
 
 
 def compare(first, second, golden):

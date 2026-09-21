@@ -39,11 +39,34 @@ EPUBCheck runs separately with only its verified release and the generated outpu
 
 `verify.py` inspects every entry of the actual ZIP without extracting it: exact five-entry inventory, mimetype/order/compression, size limits/CRC, no duplicates/symlinks/encrypted/hidden ZIP fields, OPF language/title/creator/manifest/spine, TOC, reading order, footnotes, all local links/anchors, explicit public markers and absent synthetic excluded markers. Active HTML/foreign assets are not part of this fixture.
 
-Two fresh renders must match the reviewed `golden.json`. **Byte-identical EPUB is not claimed**. The only normalized fields are one OPF UUIDv4, one `dcterms:modified` UTC field and ZIP entry timestamps. All other uncompressed bytes, entry order, compression method, flags and selected ZIP attributes must match. Compressed representation/CRC/size may change as a consequence of those volatile fields. The report includes the actual artifact SHA256 separately. A structurally valid but changed body still fails golden comparison.
+Two fresh renders must match the reviewed `golden.json`. **Byte-identical EPUB is not claimed**. The only normalized fields are one OPF UUIDv4, one `dcterms:modified` UTC field and ZIP entry timestamps. Report schemaVersion 2 additionally canonicalizes only the four non-mimetype members by name after validating the original ZIP. Every uncompressed byte, compression method, flag and selected ZIP attribute still matches per member. `mimetype` must remain first and physically at header offset 0. OPF spine/TOC/content reading order remains exact. Compressed representation/CRC/size may change as a consequence of those volatile fields. The report includes the actual artifact SHA256 separately. A structurally valid but changed body still fails golden comparison.
 
 Golden provenance: actual CLI11.3.3/VFM2.7.2 `dpub` output, Node24.18.0 fixed image and exact fixture pins, manually inspected English/Japanese text, OPF/nav/spine and backlinks, EPUBCheck5.3.0 errors/warnings0. It is a **synthetic baseline**, never generated from private/paid book text. Do not blindly regenerate golden data when a test fails. Intentional renderer/fixture changes require semantic re-review and a new provenance record.
 
-`verify_test.py` mutates the real generated EPUB: 32 content mutations and 10 ZIP mutations, permitted volatile changes, runtime-argument/timeout cleanup and fixture-drift probes (9 test groups). Every test first proves a no-op ZIP repack still matches golden, preventing false confidence from a broken mutation writer. Test-only use of Python zipfile's `_seekable` retains the renderer's data-descriptor flags, with an explicit boolean-type guard and actionable error if Python changes its internals; this is not a production ZIP writer. Four failed/successful-run × inspection/removal-failure cases verify primary-error fidelity and cleanup failure reporting. The tests never launch scripts inserted into negative fixture data.
+`verify_test.py` mutates the real generated EPUB: 32 content mutations and 10 ZIP mutations, permitted volatile changes, runtime-argument/timeout cleanup and fixture-drift probes (13 test groups, including all 24 non-mimetype permutations and 14 additional negative cases). Every test first proves a no-op ZIP repack still matches golden, preventing false confidence from a broken mutation writer. Test-only use of Python zipfile's `_seekable` retains the renderer's data-descriptor flags, with an explicit boolean-type guard and actionable error if Python changes its internals; this is not a production ZIP writer. Four failed/successful-run × inspection/removal-failure cases verify primary-error fidelity and cleanup failure reporting. The tests never launch scripts inserted into negative fixture data.
+
+## Entry scheduling correction (#162)
+
+The locked CLI11.3.3 `compressEpub` passes two independent asynchronous directory
+streams to archiver. A controlled META-INF enumeration delay reproduces a
+non-mimetype member permutation with identical bytes and metadata. Total ZIP
+entry scheduling is not reading order. This bounded amendment follows
+[EPUB 3.3 OCF media identification](https://www.w3.org/TR/2026/REC-epub-33-20260113/#sec-zip-container-mime)
+and the [spine contract](https://www.w3.org/TR/2026/REC-epub-33-20260113/#sec-spine-elem):
+the mimetype boundary is kept strict; logical reading order is independently
+verified. No renderer, dependency, fixture or actual ZIP is rewritten.
+
+Golden schema/order metadata is updated explicitly; every existing per-member
+hash/attribute remains identical. A missing/extra/duplicate member, moved or
+compressed mimetype, prefix, content change, flag/attribute change or spine
+change still fails. Failed comparisons now expose only validated member
+names/metadata/hashes, never book text.
+
+Original CI35586182920 failed twice without retaining the artifact pair. Its
+precise differing fields cannot be recovered, so this correction is not proof
+that those two failures had this cause. It fixes the independently reproduced
+scheduling defect; all other drift remains blocking with actionable diagnostics.
+Do not treat a successful retry as a repair or normalize any additional fields.
 
 ## Measured status and explicit release limits
 
