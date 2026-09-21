@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'"></head><body><div class="search-container"><input id="search-input"><div id="search-results"></div></div><div class="page-content"></div><pre id="probe">PENDING</pre><script>
+ const content=document.querySelector('.page-content');
+ const value='literal <em data-fixture="markup">日本語</em> [test] &';
+ for(let i=0;i<12;i++){const p=document.createElement('p');p.textContent=value+' '+i;content.append(p)}
+ const img=document.createElement('img');img.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';img.alt='" data-fixture="attribute"><em>literal</em>';content.append(img);
+ </script><script>/* SHARED_SOURCE:search */</script><script>/* SHARED_SOURCE:main */</script><script>
+ window.addEventListener('load',async()=>{
+ const checks=[];const check=(name,pass)=>checks.push({name,pass:!!pass});
+ const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
+ const input=document.getElementById('search-input'),results=document.getElementById('search-results');
+ const search=async(q)=>{input.value=q;input.dispatchEvent(new Event('input'));await wait(350)};
+ await wait(350);
+ try {
+ await search('日本語');
+ check('literal markup',results.querySelector('.search-result-snippet')?.textContent===value+' 0');
+ check('no injected em',!results.querySelector('em'));
+ check('ten results',results.querySelectorAll('.search-result-item').length===10);
+ check('count',results.querySelector('.search-more')?.textContent==='他 2 件の結果');
+ await search('[test]');check('literal metacharacters',results.querySelector('mark')?.textContent==='[test]');
+ results.querySelector('mark')?.click();check('click dismisses',!results.classList.contains('active')&&input.value==='');
+ await search('<none>');check('no-results text',results.querySelector('p')?.textContent==='「<none>」に一致する結果が見つかりませんでした。');
+ input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));check('escape dismisses',!results.classList.contains('active'));
+ for(const close of ['button','backdrop','Escape']){
+ img.click();const modal=document.querySelector('.image-modal');const copy=modal?.querySelector('img');
+ check('modal literal alt '+close,copy?.alt===img.alt);check('no modal attribute injection '+close,!copy?.hasAttribute('data-fixture')&&!modal?.querySelector('em'));check('modal source '+close,copy?.src===img.src);
+ if(close==='button')modal?.querySelector('button')?.click();else if(close==='backdrop')modal?.click();else document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));
+ check('modal closed '+close,!document.querySelector('.image-modal'));
+ }
+ }catch(e){checks.push({name:'exception',pass:false,error:String(e)})}
+ document.getElementById('probe').textContent=JSON.stringify(checks);
+ });</script></body></html>

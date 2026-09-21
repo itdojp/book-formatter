@@ -576,3 +576,21 @@ test('book-sync path guard: 許可pathだけをNUL pathspecへ出力し、想定
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('component sync: assets security release is discoverable to a 3.2.3 consumer without writes', async () => {
+  const tempDir = mkdtempSync(path.join('tests', 'tmp-security-version-'));
+  try {
+    const configPath = path.join(tempDir, 'book-config.json');
+    const config = { title: 'Synthetic security update fixture', shared: { version: '3.2.3', components: { assets: true } } };
+    await fs.writeJson(configPath, config);
+    const before = await fs.readFile(configPath, 'utf8');
+    const result = spawnSync(process.execPath, ['scripts/sync-components.js', '--book', tempDir, '--dry-run', '--components', 'assets'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!result.stdout.includes('✅ 最新です'), result.stdout);
+    assert.ok(result.stdout.includes('assets'), result.stdout);
+    assert.equal(await fs.readFile(configPath, 'utf8'), before);
+    assert.deepEqual(await fs.readdir(tempDir), ['book-config.json']);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

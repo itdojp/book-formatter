@@ -29,6 +29,22 @@ limits, replacement, click/dismissal and modal attribute boundaries. The adapter
 is not an HTML parser or proof of arbitrary browser behavior. All fixtures are
 inert and local; no external target or executable payload is needed.
 
+`npm run test:shared-dom-browser` runs the shipped scripts against the native
+Chrome DOM and the checked-in synthetic fixture. It fails if Chrome is absent
+or any of 20 probes fails (there is no skip). `CHROME_PATH` may select an
+installed Chrome; `TMPDIR` must be a short, operator-owned directory for Unix
+sockets. For example, create a unique short directory beneath the authorized
+workspace, export it as `TMPDIR`, and remove only that owned directory after
+execution. The existing Web mdBook CI job runs this smoke before its build.
+The fixture CSP blocks external content/connections. `--no-sandbox` follows the
+existing headless CI setup for trusted fixture code; it is not a hostile-code
+sandbox claim.
+
+The managed `search.js` change bumps shared/assets versions to `3.2.4` so a
+`3.2.3` consumer's read-only `sync-components --dry-run` reports an update.
+`main.js` is an existing unmanaged utility, not added to the rollout manifest.
+This patch does not mutate a consumer or enable a bulk synchronization.
+
 ## Alert 1: metric-only false-positive boundary
 
 Rule: `js/incomplete-multi-character-sanitization`, at the tag-removal expression

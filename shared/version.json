@@ -1,7 +1,7 @@
 {
-  "version": "3.2.3",
-  "updated": "2026-08-04",
-  "description": "Keep the responsive sidebar closed by default despite the later base sidebar rule",
+  "version": "3.2.4",
+  "updated": "2026-09-21",
+  "description": "Keep search results as DOM text and mark nodes (CodeQL DOM-to-HTML fix)",
   "components": {
     "layouts": {
       "version": "3.2.0",
@@ -18,7 +18,7 @@
       ]
     },
     "assets": {
-      "version": "3.2.3",
+      "version": "3.2.4",
       "files": [
         "assets/css/main.css",
         "assets/css/mobile-responsive.css",

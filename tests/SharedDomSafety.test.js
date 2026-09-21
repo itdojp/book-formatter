@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 // Deliberately small DOM adapter, not an HTML renderer: any dynamic HTML sink
-// fails. A separate real-Chrome smoke exercises parsing/event behavior.
+// fails. npm run test:shared-dom-browser also exercises native DOM behavior.
 class Element {
   constructor(tagName = '', text = '') {
     this.tagName = tagName.toUpperCase();
@@ -169,3 +169,15 @@ for (const dismiss of ['button', 'backdrop', 'Escape']) {
     assert.equal(f.document.body.querySelector('.image-modal'), null);
   });
 }
+
+
+test('managed search fix has a discoverable assets/shared release version', () => {
+  const version = JSON.parse(readFileSync(new URL('../shared/version.json', import.meta.url), 'utf8'));
+  const newerThan323 = (value) => {
+    const parts = value.split('.').map(Number);
+    return parts[0] > 3 || (parts[0] === 3 && (parts[1] > 2 || (parts[1] === 2 && parts[2] > 3)));
+  };
+  assert.ok(newerThan323(version.version));
+  assert.ok(newerThan323(version.components.assets.version));
+  assert.ok(version.components.assets.files.includes('assets/js/search.js'));
+});
