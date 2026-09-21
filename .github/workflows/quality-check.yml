@@ -98,6 +98,17 @@ jobs:
           console.log('Templates:', templates.join(', '));
           "
 
+      - name: Validate standard book source gates
+        shell: bash
+        env:
+          BOOK_ROOT: examples/standard-book
+          QA_REPORT_DIR: ${{ runner.temp }}/standard-book-qa
+        run: |
+          set -euo pipefail
+          npm run validate:standard-book -- "$BOOK_ROOT"
+          npm run check-visibility -- "$BOOK_ROOT" --edition free --output "$QA_REPORT_DIR/visibility.json"
+          npm run check-markdown-structure -- "$BOOK_ROOT" --standard-callouts --fail-on warn --output "$QA_REPORT_DIR/markdown.json"
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest

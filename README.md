@@ -1,12 +1,20 @@
 # Book Formatter
 
-設定駆動型のブック生成システム - Book Publishing Template v3.0対応
+標準書籍フォーマットとマルチチャネルadapter / 既存Jekyll書籍の互換保守
 
 ## 概要
 
 Book Formatterは、標準`book.yaml`を起点とするマルチチャネルadapterと、既存`book-config.json` / Jekyll書籍の互換保守機能を提供します。新規Web書籍は標準formatと`web-mdbook`を使用し、従来のJekyll / GitHub Pages生成・同期経路は`web-jekyll-legacy`として維持します。
 
 出力先の選択、実装済みadapter、legacy境界は[出力target方針](docs/output-targets.md)を参照してください。
+
+## 作業の入口
+
+- [標準書籍フォーマット](docs/standard-book-format.md) / [標準Markdown](docs/markdown-rules.md): 新規正本
+- [出力target方針](docs/output-targets.md) / [Edition visibility](docs/paid-editions.md): 出力・公開範囲
+- [legacy Jekyll契約](adapters/web-jekyll-legacy/README.md): 既存書籍の互換保守
+- [IssueからPR・公開確認までの共通手順](docs/codex-cli-workflow.md): Codex CLIなどのagentと人間の共通gate
+- [archive計画](docs/archive-plan.md): active/unknown資産を保護した段階整理
 
 ## 特徴
 
@@ -25,8 +33,8 @@ Book Formatterは、標準`book.yaml`を起点とするマルチチャネルadap
 git clone https://github.com/itdojp/book-formatter.git
 cd book-formatter
 
-# 依存関係をインストール
-npm install
+# lockfileを保持して依存関係をインストール
+npm ci --ignore-scripts
 
 # 実行権限を付与（Unix系）
 chmod +x src/index.js
@@ -339,9 +347,12 @@ project生成後のmdBook build / viewport / artifact visibility検査は、[`we
 }
 ```
 
-## 改善提案
+## 改善計画と履歴
 
-Book Formatterの改善提案については[IMPROVEMENT_PROPOSALS.md](./docs/IMPROVEMENT_PROPOSALS.md)を参照してください。
+現在の仕様・検証は[共通作業手順](docs/codex-cli-workflow.md)、進捗は
+[再編Epic #88](https://github.com/itdojp/book-formatter/issues/88)を参照してください。
+[旧改善提案（固定snapshot）](https://github.com/itdojp/book-formatter/blob/ea6f970e23b93e27260cf55f408c7b4ff19faf66/docs/IMPROVEMENT_PROPOSALS.md)
+は履歴資料であり、現行commandや受け入れ条件の正本ではありません。
 
 ## legacy commandで生成されるファイル構造
 
@@ -373,10 +384,10 @@ my-book/
 npm test
 
 # 特定のテストファイルを実行
-npm test tests/BookGenerator.test.js
+node --test tests/BookGenerator.test.js
 
-# カバレッジレポートを生成
-npm run test:coverage
+# root gateはpackage.jsonに明示されたsuite。全tracked test/coverage測定ではない
+# 検証範囲と追加target gateはdocs/codex-cli-workflow.mdを参照
 ```
 
 ### コードフォーマット
@@ -403,11 +414,11 @@ DEBUG=book-formatter:* npm start create-book
 
 - **入力**: 標準`book.yaml`とlegacy JSON / YAML設定ファイル
 - **出力**: 標準Markdown / mdBook project、legacy Markdown / Jekyll HTML
-- **将来対応予定**: PDF、EPUB
+- **出版基盤**: Kindle/PDFはplan-only、BOOTHは計画ZIP。隔離CIの合成EPUB実生成は一般書籍rendererや配布承認とは別（[target責務](docs/output-targets.md)）
 
 ## システム要件
 
-- Node.js 20.19.0以上、22.13.0以上、または24.0.0以上
+- Node.js `^20.19.0 || ^22.13.0 || >=24.0.0`（`package.json`のenginesが正本）
 - npm 8.0.0以上
 
 ## トラブルシューティング
@@ -428,9 +439,12 @@ DEBUG=book-formatter:* npm start create-book
 
 3. **依存関係の問題**
    ```bash
-   rm -rf node_modules package-lock.json
-   npm install
+   npm ci --ignore-scripts
+   npm audit --audit-level=moderate
    ```
+
+lockfileは削除しません。install/auditが失敗した場合は原因と対象versionを記録し、
+依存更新を独立PRで検証します。
 
 ### ログの確認
 
@@ -449,7 +463,8 @@ DEBUG=* npm start create-book
 
 ## ライセンス
 
-MIT License - 詳細は [LICENSE](LICENSE) ファイルを参照してください。
+`package.json`のlicense指定は`MIT`です。書籍本文・図版・第三者toolchainの
+配布権をこの指定から推定しません。出版物の権利確認は[出版契約](docs/pdf-epub-kindle.md)で別途扱います。
 
 ## 作成者
 
@@ -469,7 +484,7 @@ GitHub: [@itdojp](https://github.com/itdojp)
   - このシステムの基盤となった旧テンプレートシステム
   - 現在は廃止されており、使用は禁止されています
   - 新規Web書籍は標準`book.yaml`と`web-mdbook`を使用してください
-  - 旧テンプレートからの移行については[移行ガイド](./docs/migration-guide.md)を参照してください
+  - 旧テンプレートからの移行については[出力targetの移行gate](docs/output-targets.md#移行gate)を参照してください
 
 ---
 

@@ -99,3 +99,16 @@ Jekyll consumerを標準Web出力へ移行する場合は、少なくとも次�
 `pdf` / `kindle`はprofile別placeholderと公開前checklistを出すplan-only基盤です。実PDF/EPUBや公開承認ではありません。詳細は[PDF/EPUB/Kindle基盤](./pdf-epub-kindle.md)を参照してください。
 
 `booth-plan-v1`のZIPはmetadataと説明文だけです。実PDF/EPUB、販売権、配布可能性の承認ではありません。[commerce契約](commerce.md)を参照してください。
+
+## 共通gateと隔離出版検証の境界
+
+Issue着手、schema/visibility/Markdown CLI、PR検証は[共通作業手順](codex-cli-workflow.md)を使用します。
+既存のWeb/ブラウザ/隔離Publication CIは保持し、今後の全書籍PDF・実機・販売確認は
+独立したtarget検証として設計します。軽量source gateへの追加必須化はしません。
+
+[#158](https://github.com/itdojp/book-formatter/issues/158)と
+[#162](https://github.com/itdojp/book-formatter/issues/162)の隔離CIは、固定toolchainで
+**合成fixtureのみ**を実EPUBへ2回生成し、EPUBCheckと意味的等価性を確認します。
+これはroot `kindle` adapterのplan-only状態を変えません。実書籍の一般renderer、PDF、
+端末表示、出版権・配布承認は[#152](https://github.com/itdojp/book-formatter/issues/152)の別gateです。
+[隔離toolchain](../toolchains/publication/README.md)と[合成EPUB契約](../toolchains/publication/tests/epub/README.md)を参照してください。

@@ -1,5 +1,9 @@
 # book-formatter パフォーマンス最適化ガイド
 
+> この文書は2025年のlegacy診断・改善履歴です。command、version、測定項目を
+> 現行環境で検証済みとは扱いません。現在の作業・検証入口は
+> [共通作業手順](codex-cli-workflow.md)を使用してください。
+
 ## 概要
 
 book-formatterで作成した書籍サイトにおけるパフォーマンス問題の原因と対処法をまとめたガイドです。特にJavaScriptの重い処理によるブラウザフリーズ問題について詳しく解説します。
@@ -170,4 +174,4 @@ compress_html:
 
 - [book-creation-guide.md](./book-creation-guide.md)
 - [TROUBLESHOOTING.md](../TROUBLESHOOTING.md)
-- [IMPROVEMENT_PROPOSALS.md](./IMPROVEMENT_PROPOSALS.md)
+- [共通作業手順](codex-cli-workflow.md) / [旧改善提案（固定snapshot）](https://github.com/itdojp/book-formatter/blob/ea6f970e23b93e27260cf55f408c7b4ff19faf66/docs/IMPROVEMENT_PROPOSALS.md)
