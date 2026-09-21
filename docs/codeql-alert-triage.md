@@ -45,6 +45,16 @@ The managed `search.js` change bumps shared/assets versions to `3.2.4` so a
 `main.js` is an existing unmanaged utility, not added to the rollout manifest.
 This patch does not mutate a consumer or enable a bulk synchronization.
 
+A component-filtered synchronization must not certify unselected files. The
+consumer's global shared version advances only when every configured enabled
+entry was selected and is byte-current; partial writes may update `lastSync`
+but preserve the old release label. Repeating an unchanged partial sync leaves
+metadata untouched. Even with an already-current label, dry-run inspects the
+selected guarded files, so earlier partial stamps or newly enabled JS cannot
+hide missing/stale search assets. Opt-outs and destination guards remain intact.
+A missing source cannot certify completion. This is serialized trusted-checkout
+verification, not an atomic snapshot against concurrent same-UID writers (#138).
+
 ## Alert 1: metric-only false-positive boundary
 
 Rule: `js/incomplete-multi-character-sanitization`, at the tag-removal expression
