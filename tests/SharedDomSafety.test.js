@@ -150,7 +150,7 @@ for (const dismiss of ['button', 'backdrop', 'Escape']) {
     const f = fixture('main.js');
     const img = new Element('img');
     img.src = 'https://assets.example/image.png?q=" data-sentinel="literal';
-    img.alt = '\" data-sentinel="literal"><em>not markup</em>';
+    img.alt = '" data-sentinel="literal"><em>not markup</em>';
     f.content.appendChild(img);
     f.flush();
     img.emit('click');
