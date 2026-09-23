@@ -213,3 +213,45 @@ git diff --cached --check
 ```
 
 GitHub外の利用者が手動でpathを参照している可能性はrepository内のgrepだけでは否定できない。そのため、未参照は単独で削除理由にせず、[archive-plan.md](./archive-plan.md) の段階的な移動・互換・rollback条件を適用する。
+
+
+## Issue #164によるtest gate復帰（2026-09-24）
+
+上記の2026-09-01監査記録は変更しない。この追補は #103 / PR166 の
+`main@a747242b25270b6c4f87f82021b77b442be700aa` を起点とする検証対象の変更である。
+
+| suite | 現行consumer / 検証責務 | 復帰後のgate |
+| --- | --- | --- |
+| DiagnosticTool | diagnose / troubleshootの構造・集計・診断結果 | `test:legacy`、直接node:test実行 |
+| ErrorHandler | CLI / BookGeneratorの例外処理 | 同上 |
+| MobileOptimizer | BookGeneratorのmobile出力、shared CSSのcopyとfallback | 同上 |
+| navigation | BookGeneratorのnavigationデータ・前後リンク | 同上 |
+
+これらは廃止済みではない。`npm test`から`test:legacy`を呼び、4fileを個別プロセスで
+直列実行する。失敗時のexit codeを`&&`で伝播し、skip、retry-to-green、例外の握り潰しはしない。
+既存Pages suiteと同じ直接実行で、test file間のworkerメッセージ転送に依存しない。
+標準suiteの実行方式は変えない。`TestGateOwnership.test.js`がrootの`tests/*.test.js`全件の
+一意な所有、未登録・重複・古いpath、legacy gateの欠落・失敗無視を検証する。
+ブラウザーの`tests/shared-dom-browser.js`と隔離Publicationのtestsは引き続き別gateである。
+
+### 失敗の観測と修正の境界
+
+- 起点で4suiteをNode22.22.2により直列worker実行した再確認は36 pass / 2 fail。
+  Node24.18.0でもCSS期待が失敗した。以前の3回の記録は51/1、41/3、51/1で、
+  DiagnosticTool以外のworkerにもdeserialization errorが出た。
+- [Node上流Issue65934](https://github.com/nodejs/node/issues/65934)は非ASCII stdoutと
+  workerプロトコルの問題を報告し、[PR64706](https://github.com/nodejs/node/pull/64706)に修正がある。
+  症状と整合するが、このrepositoryの過去の全失敗原因を証明したものではない。
+  Nodeやグローバル設定は変更せず、直接実行で転送境界を除く。
+- MobileOptimizerはshared CSSがあればbyteコピーし、不在時のみfallbackを生成する。
+  copy経路にfallback固有の`box-sizing`を要求していたtestを正本byte一致へ修正し、
+  所有された空の作業ディレクトリでfallback経路を別途検証する。共有CSSは変更しない。
+- navigationは固定pathを削除せず専用`mkdtemp`を使用する。DiagnosticToolのsummary出力捕捉は
+  `finally`で復元する。日本語出力や既存assertionをまとめて削除しない。
+- DiagnosticToolの旧Node16/18推奨や旧templates配置を想定した診断はruntime側の別課題であり、
+  このgate復帰によって現行標準formatの診断まで正しくなったとは主張しない。
+  runtime是正は[#167](https://github.com/itdojp/book-formatter/issues/167)で追跡する。
+
+直接実行の成功・各file内の意図的assertion失敗・後続停止を、小さい合成fixtureで検証する。
+対応Node20/22/24での実suiteとroot全体、CIの証跡は[#164](https://github.com/itdojp/book-formatter/issues/164)
+に記録する。標準運用は[共通作業契約](codex-cli-workflow.md#3-編集検証)を参照する。
