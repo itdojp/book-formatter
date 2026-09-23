@@ -75,14 +75,31 @@ describe('MobileOptimizer', () => {
   });
 
   describe('generateResponsiveCSS', () => {
-    it('should create responsive CSS file', async () => {
+    it('should copy the canonical shared responsive CSS byte for byte', async () => {
       await mobileOptimizer.generateResponsiveCSS(testDir);
 
       const cssPath = path.join(testDir, 'assets', 'css', 'mobile-responsive.css');
       assert(await fs.pathExists(cssPath));
 
-      const cssContent = await fs.readFile(cssPath, 'utf8');
-      assert(cssContent.includes('box-sizing: border-box'));
+      const sourceCSS = path.join(process.cwd(), 'shared', 'assets', 'css', 'mobile-responsive.css');
+      assert.deepStrictEqual(await fs.readFile(cssPath), await fs.readFile(sourceCSS));
+    });
+
+    it('should generate fallback CSS when the shared source is absent', async () => {
+      const originalCwd = process.cwd();
+      // This suite is executed directly in its own process. Never remove or mock
+      // the repository's real shared CSS to exercise the fallback branch.
+      try {
+        process.chdir(testDir);
+        const output = path.join(testDir, 'fallback');
+        await mobileOptimizer.generateResponsiveCSS(output);
+        const css = await fs.readFile(path.join(output, 'assets/css/mobile-responsive.css'), 'utf8');
+        assert(css.includes('Basic Mobile Responsive CSS'));
+        assert(css.includes('box-sizing: border-box'));
+        assert(css.includes('@media (max-width: 767px)'));
+      } finally {
+        process.chdir(originalCwd);
+      }
     });
   });
 

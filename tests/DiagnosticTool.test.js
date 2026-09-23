@@ -286,9 +286,11 @@ describe('DiagnosticTool', () => {
       const logs = [];
       console.log = (...args) => logs.push(args.join(' '));
 
-      diagnosticTool.generateSummary();
-
-      console.log = originalLog;
+      try {
+        diagnosticTool.generateSummary();
+      } finally {
+        console.log = originalLog;
+      }
 
       // Check if summary was logged
       const summaryLogs = logs.join('\n');

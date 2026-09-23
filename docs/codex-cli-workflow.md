@@ -65,10 +65,15 @@ git diff --check
 git diff --stat
 ```
 
-`npm test`はpackage scriptsに明示したsuiteです。repository中の全test fileを自動列挙
-する契約ではありません。単一testは`node --test tests/BookGenerator.test.js`等を使います。
-未定義の`test:coverage`は呼びません。既存gate外のlegacy suiteと確認済みの失敗は
-[#164](https://github.com/itdojp/book-formatter/issues/164)で所有範囲・復旧を追跡しています。lintはtestの一時file cleanupが終わってから実行します。
+`npm test`は、明示した標準suite、Pages suite、`npm run test:legacy`の順に実行します。
+`TestGateOwnership.test.js`はrootの`tests/*.test.js`全件に一意な実行gateがあることを検査します。
+新しいtest fileはscriptへの登録も必要です。これは任意の深さの全testやブラウザー、隔離toolchainを
+自動実行する契約ではありません。単一標準testは`node --test tests/BookGenerator.test.js`等を使います。
+Pagesとlegacyの4suiteは`node tests/<名前>.test.js`で個別プロセス実行し、node:testのassertionと
+非zero exitを保持します。legacy gate内の`&&`は失敗時に後続を止めます。再試行や失敗無視ではありません。
+[#164](https://github.com/itdojp/book-formatter/issues/164)の背景・境界は
+[インベントリの追補](current-inventory.md#issue-164によるtest-gate復帰2026-09-24)を参照してください。
+未定義の`test:coverage`は呼びません。lintはtestの一時file cleanupが終わってから実行します。
 既知warning、gate外test、skip、未実施を成功件数に混ぜず、対象SHAと理由を記録します。
 
 ### target別の追加gate

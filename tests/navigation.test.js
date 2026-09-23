@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs-extra';
 import path from 'path';
+import os from 'os';
 import { BookGenerator } from '../src/BookGenerator.js';
 
 describe('Navigation Auto-generation', () => {
@@ -11,8 +12,7 @@ describe('Navigation Auto-generation', () => {
 
   beforeEach(async () => {
     generator = new BookGenerator();
-    tempDir = path.join(process.cwd(), 'temp-test-nav');
-    await fs.ensureDir(tempDir);
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'book-navigation-test-'));
 
     testConfig = {
       title: 'テスト書籍',
@@ -54,7 +54,7 @@ describe('Navigation Auto-generation', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tempDir);
+    if (tempDir) await fs.remove(tempDir);
   });
 
   describe('generateNavigationData', () => {
