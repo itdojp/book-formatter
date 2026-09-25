@@ -3,6 +3,9 @@ import assert from 'node:assert';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
+import { spawnSync } from 'node:child_process';
+import { FORMATTER_ROOT, detectDiagnosticTarget, matchesNodeEngine, parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
+import { TroubleshootingTool } from '../scripts/troubleshoot.js';
 import { DiagnosticTool } from '../src/DiagnosticTool.js';
 
 describe('DiagnosticTool', () => {
@@ -28,7 +31,7 @@ describe('DiagnosticTool', () => {
       await fs.ensureDir(path.join(testDir, 'shared'));
       
       await fs.writeJson(path.join(testDir, 'package.json'), {
-        name: 'test-project',
+        name: 'book-formatter',
         version: '1.0.0',
         description: 'Test project',
         scripts: {
@@ -54,7 +57,7 @@ describe('DiagnosticTool', () => {
     it('should detect missing directories', async () => {
       // Create minimal package.json only
       await fs.writeJson(path.join(testDir, 'package.json'), {
-        name: 'test-project'
+        name: 'book-formatter'
       });
 
       const results = await diagnosticTool.runDiagnostics(testDir);
@@ -80,6 +83,203 @@ describe('DiagnosticTool', () => {
       );
       
       assert(packageWarnings.length > 0);
+    });
+  });
+
+  describe('target and engine contracts (#167)', () => {
+    const legacy = async (prefix = '', root = testDir) => {
+      await fs.ensureDir(root);
+      await fs.writeJson(path.join(root, 'book-config.json'), {
+        title: '合成書籍', description: '診断 fixture', author: 'Fixture'
+      });
+      for (const file of ['_config.yml', 'index.md', '_layouts/default.html',
+        '_includes/page-navigation.html', 'assets/css/main.css']) {
+        await fs.outputFile(path.join(root, prefix, file), 'fixture');
+      }
+    };
+    const run = args => spawnSync(process.execPath, args, {
+      cwd: testDir, encoding: 'utf8', timeout: 30000
+    });
+    const script = name => path.join(FORMATTER_ROOT, 'scripts', `${name}.js`);
+
+    it('matches every supported minimum and excluded major against live engines', async () => {
+      const { engines } = await fs.readJson(path.join(FORMATTER_ROOT, 'package.json'));
+      for (const [version, expected] of [
+        ['v18.20.8', false], ['20.18.99', false], ['20.19.0', true], ['20.99.9', true],
+        ['21.9.0', false], ['22.12.99', false], ['22.13.0', true], ['22.99.0', true],
+        ['23.9.9', false], ['24.0.0', true], ['25.0.0', true], ['30.1.0', true],
+        ['24.0.0-rc.1', false], ['24.0', false], ['024.0.0', false], ['', false]
+      ]) assert.strictEqual(matchesNodeEngine(version, engines.node), expected, version);
+      assert.strictEqual(matchesNodeEngine('22.13.0', '^22.14.0'), false);
+      assert.strictEqual(matchesNodeEngine('22.14.0', '^22.14.0'), true);
+      for (const range of [null, '', '>=24.0.0 || *', '^0.2.3', '^22', '>=24.00.0', '>=9007199254740992.0.0']) {
+        assert.throws(() => matchesNodeEngine('24.1.0', range));
+      }
+    });
+
+    it('rejects unsupported Node in the actual diagnostic API', async () => {
+      await diagnosticTool.checkNodeEnvironment('v22.12.0');
+      assert.strictEqual(diagnosticTool.results.details.find(row => row.check === 'Node.jsバージョン').type, 'error');
+    });
+
+    it('validates standard source without demanding formatter directories or dependencies', async () => {
+      await fs.copy(path.join(FORMATTER_ROOT, 'examples/standard-book'), testDir);
+      const result = await diagnosticTool.runDiagnostics(testDir);
+      assert.strictEqual(diagnosticTool.target.kind, 'standard');
+      assert.strictEqual(result.errors + result.criticalErrors, 0);
+      assert(!result.details.some(row => /node_modules|ディレクトリ tests|ディレクトリ shared/.test(row.check)));
+      await diagnosticTool.exportResults(path.join(testDir, 'result.json'));
+      const { metadata } = await fs.readJson(path.join(testDir, 'result.json'));
+      assert.strictEqual(metadata.projectPath, testDir);
+      assert.strictEqual(metadata.targetKind, 'standard');
+    });
+
+    it('rejects invalid standard metadata without legacy fallback', async () => {
+      await fs.writeFile(path.join(testDir, 'book.yaml'), 'schema_version: 9000');
+      const result = await diagnosticTool.runDiagnostics(testDir);
+      assert(result.errors > 0);
+      assert.strictEqual(diagnosticTool.target.kind, 'standard');
+    });
+
+    for (const prefix of ['', 'docs/']) {
+      it(`validates generated legacy projection at ${prefix || 'root'}`, async () => {
+        await legacy(prefix);
+        const result = await diagnosticTool.runDiagnostics(testDir);
+        assert.strictEqual(result.errors + result.criticalErrors, 0);
+        assert.strictEqual(diagnosticTool.target.kind, 'legacy');
+        assert(!result.details.some(row => row.check.includes('shared/templates')));
+        await fs.remove(path.join(testDir, prefix, '_layouts/default.html'));
+        const missing = await diagnosticTool.runDiagnostics(testDir);
+        assert(missing.details.some(row => row.type === 'error' && row.check.includes('_layouts/default.html')));
+      });
+    }
+
+    it('rejects unknown, malformed and ambiguous metadata without creating files', async () => {
+      for (const fixture of [
+        {}, { 'package.json': '{}' }, { 'package.json': '{' },
+        { 'book.yaml': '', 'book-config.json': '{}' },
+        { 'book.yaml': '', 'package.json': '{"name":"book-formatter"}' }
+      ]) {
+        await fs.emptyDir(testDir);
+        for (const [file, content] of Object.entries(fixture)) await fs.writeFile(path.join(testDir, file), content);
+        const result = await diagnosticTool.runDiagnostics(testDir);
+        assert.strictEqual(diagnosticTool.target, null);
+        assert(result.errors > 0);
+        assert.deepStrictEqual((await fs.readdir(testDir)).sort(), Object.keys(fixture).sort());
+      }
+    });
+
+    it('rejects obsolete legacy shape, missing/ambiguous projection and symlink resources', async () => {
+      await legacy();
+      await fs.writeJson(path.join(testDir, 'book-config.json'), { book: { title: 'old shape' } });
+      assert((await diagnosticTool.runDiagnostics(testDir)).errors > 0);
+      await legacy();
+      await fs.remove(path.join(testDir, '_config.yml'));
+      assert((await diagnosticTool.runDiagnostics(testDir)).errors > 0);
+      await legacy();
+      await fs.outputFile(path.join(testDir, 'docs/_config.yml'), 'fixture');
+      assert((await diagnosticTool.runDiagnostics(testDir)).errors > 0);
+      await fs.remove(path.join(testDir, 'docs'));
+      await fs.remove(path.join(testDir, '_layouts/default.html'));
+      await fs.symlink(path.join(testDir, 'index.md'), path.join(testDir, '_layouts/default.html'));
+      assert((await diagnosticTool.runDiagnostics(testDir)).errors > 0);
+    });
+
+    it('does not ignore dangling metadata symlinks', async () => {
+      await fs.symlink(path.join(testDir, 'absent'), path.join(testDir, 'book.yaml'));
+      await assert.rejects(async () => {
+        const target = await detectDiagnosticTarget(testDir);
+        await diagnosticTool.checkBookTarget(target);
+        if (diagnosticTool.results.errors) throw new Error('invalid metadata');
+      });
+    });
+
+    it('checks real formatter template resources, not phantom shared/templates', async () => {
+      await diagnosticTool.checkTemplateFiles(FORMATTER_ROOT);
+      assert.strictEqual(diagnosticTool.results.errors + diagnosticTool.results.warnings, 0);
+      assert(!diagnosticTool.results.details.some(row => row.check.includes('templates/chapter.md')));
+      const missing = new DiagnosticTool();
+      await missing.checkTemplateFiles(testDir);
+      assert(missing.results.errors > 0);
+      assert(missing.results.details.some(row => row.type === 'error' && row.check.includes('shared/layouts/default.html')));
+    });
+
+    it('parses flags independently of path and fails closed on unknown/multiple arguments', () => {
+      for (const args of [['--export'], ['.', '--export'], ['--export', '.']]) {
+        const parsed = parseDiagnosticArguments(args, ['--export'], testDir);
+        assert.strictEqual(parsed.projectPath, testDir);
+        assert(parsed.flags.has('--export'));
+      }
+      assert.strictEqual(parseDiagnosticArguments(['--', '-literal'], [], testDir).projectPath, path.join(testDir, '-literal'));
+      for (const args of [['--typo'], ['one', 'two'], ['--auto']]) {
+        assert.throws(() => parseDiagnosticArguments(args, ['--export'], testDir));
+      }
+    });
+
+    it('diagnose --export uses cwd, reports actual target and preserves sources', async () => {
+      await legacy();
+      const child = run([script('diagnose'), '--export']);
+      assert.strictEqual(child.status, 0, child.stdout + child.stderr);
+      const report = await fs.readJson(path.join(testDir, 'diagnostic-results.json'));
+      assert.strictEqual(report.metadata.projectPath, testDir);
+      assert.strictEqual(report.metadata.targetKind, 'legacy');
+      assert.strictEqual(await fs.readFile(path.join(testDir, 'index.md'), 'utf8'), 'fixture');
+      assert(!await fs.pathExists(path.join(testDir, '--export')));
+    });
+
+    it('CLI respects -- before a literal help-shaped path', async () => {
+      const literalRoot = path.join(testDir, '--help');
+      await legacy('', literalRoot);
+      const child = run([script('diagnose'), '--export', '--', '--help']);
+      assert.strictEqual(child.status, 0, child.stdout + child.stderr);
+      const { metadata } = await fs.readJson(path.join(literalRoot, 'diagnostic-results.json'));
+      assert.strictEqual(metadata.projectPath, literalRoot);
+      const help = run([script('diagnose'), '--help']);
+      assert.strictEqual(help.status, 0);
+      assert(help.stdout.includes('使用方法'));
+      await fs.writeJson(path.join(literalRoot, 'book-config.json'), {});
+      const troubleshooting = run([script('troubleshoot'), '--', '--help']);
+      assert.strictEqual(troubleshooting.status, 1, troubleshooting.stdout + troubleshooting.stderr);
+      assert(await fs.pathExists(path.join(literalRoot, 'troubleshooting-report.md')));
+    });
+
+    it('CLI invalid inputs return failure before reports or repair writes', async () => {
+      for (const name of ['diagnose', 'troubleshoot']) {
+        const child = run([script(name), '--unknown']);
+        assert(child.status > 0, child.stderr);
+        assert.deepStrictEqual(await fs.readdir(testDir), []);
+      }
+    });
+
+    it('troubleshoot rejects --auto on book and unknown targets before writes', async () => {
+      for (const kind of ['unknown', 'legacy', 'standard']) {
+        await fs.emptyDir(testDir);
+        if (kind === 'legacy') await legacy();
+        if (kind === 'standard') await fs.copy(path.join(FORMATTER_ROOT, 'examples/standard-book'), testDir);
+        const before = (await fs.readdir(testDir)).sort();
+        const child = run([script('troubleshoot'), '--auto']);
+        assert(child.status > 0, child.stdout + child.stderr);
+        assert.deepStrictEqual((await fs.readdir(testDir)).sort(), before);
+        assert(!await fs.pathExists(path.join(testDir, 'node_modules')));
+        const tool = new TroubleshootingTool();
+        await assert.rejects(tool.autoFix([], testDir));
+      }
+    });
+
+    it('allows --auto only for the running formatter, never another named checkout', async () => {
+      const tool = new TroubleshootingTool();
+      await tool.requireAutoFixTarget(FORMATTER_ROOT);
+      await fs.writeJson(path.join(testDir, 'package.json'), { name: 'book-formatter' });
+      await assert.rejects(tool.requireAutoFixTarget(testDir));
+    });
+
+    it('troubleshoot reports book validation errors without suggesting formatter repair', async () => {
+      await fs.writeJson(path.join(testDir, 'book-config.json'), {});
+      const child = run([script('troubleshoot')]);
+      assert.strictEqual(child.status, 1, child.stdout + child.stderr);
+      const report = await fs.readFile(path.join(testDir, 'troubleshooting-report.md'), 'utf8');
+      assert(!/npm init|mkdir shared|npm update/.test(report));
+      assert(!await fs.pathExists(path.join(testDir, 'package.json')));
     });
   });
 

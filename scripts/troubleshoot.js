@@ -8,6 +8,7 @@
 import { DiagnosticTool } from '../src/DiagnosticTool.js';
 import fs from 'fs-extra';
 import path from 'path';
+import { FORMATTER_ROOT, detectDiagnosticTarget, parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
 
 class TroubleshootingTool {
   constructor() {
@@ -80,10 +81,12 @@ class TroubleshootingTool {
   /**
    * Run interactive troubleshooting
    */
-  async runTroubleshooting(projectPath = process.cwd()) {
+  async runTroubleshooting(projectPath = process.cwd(), { auto = false } = {}) {
     console.log('🔧 Book Formatter トラブルシューティングツールを開始します...\n');
 
     try {
+      // Reject before reports or repair commands can mutate a book/unknown target.
+      if (auto) await this.requireAutoFixTarget(projectPath);
       // Run diagnostics first
       console.log('📊 まず診断を実行します...\n');
       const results = await this.diagnostic.runDiagnostics(projectPath);
@@ -92,8 +95,8 @@ class TroubleshootingTool {
       const problems = this.analyzeProblems(results);
 
       if (problems.length === 0) {
-        console.log('\n🎉 問題は検出されませんでした！システムは正常に動作しています。');
-        return;
+        console.log('\n診断範囲内のエラーはありません。ビルド・公開は別途検証してください。');
+        return results;
       }
 
       console.log('\n🔍 検出された問題と解決策:\n');
@@ -119,7 +122,7 @@ class TroubleshootingTool {
       }
 
       // Ask if user wants to apply automatic fixes
-      if (process.stdout.isTTY && !process.argv.includes('--auto')) {
+      if (process.stdout.isTTY && !auto && this.diagnostic.target?.kind === 'formatter') {
         console.log('自動修正を実行しますか？ (y/n): ');
         
         // In a real interactive environment, you'd use readline
@@ -143,12 +146,13 @@ class TroubleshootingTool {
       }
 
       // Auto-fix if requested
-      if (process.argv.includes('--auto')) {
+      if (auto) {
         await this.autoFix(problems, projectPath);
       }
 
       // Generate troubleshooting report
       await this.generateTroubleshootingReport(problems, projectPath);
+      return results;
 
     } catch (error) {
       console.error('❌ トラブルシューティング中にエラーが発生しました:', error.message);
@@ -180,6 +184,7 @@ class TroubleshootingTool {
    * Find solution for a given problem
    */
   findSolution(problem) {
+    if (this.diagnostic.target?.kind !== 'formatter') return null;
     // Try to match problem category to known solutions
     const categoryLower = problem.category.toLowerCase();
     
@@ -221,7 +226,16 @@ class TroubleshootingTool {
   /**
    * Apply automatic fixes
    */
+  async requireAutoFixTarget(projectPath) {
+    const target = await detectDiagnosticTarget(projectPath);
+    if (target.kind !== 'formatter' ||
+        await fs.realpath(target.root) !== await fs.realpath(FORMATTER_ROOT)) {
+      throw new Error('--auto is restricted to the running formatter checkout; book targets are read-only');
+    }
+  }
+
   async autoFix(problems, projectPath) {
+    await this.requireAutoFixTarget(projectPath);
     console.log('🔧 自動修正を開始します...\n');
 
     const { execSync } = await import('child_process');
@@ -302,15 +316,15 @@ class TroubleshootingTool {
     report += `## 推奨事項
 
 1. **定期的な診断**: \`npm run diagnose\` を定期的に実行してシステムの健全性を確認してください
-2. **テストの実行**: \`npm test\` を実行してすべてのテストが通ることを確認してください
-3. **依存関係の更新**: 定期的に \`npm update\` を実行して依存関係を最新に保ってください
+2. **検証範囲**: 診断は build、test、Pages、公開 HTTP を実行しません。対象ごとの専用 gate を確認してください
+3. **自動変更の禁止**: 書籍や未知の形式に formatter 開発用ファイルを追加したり依存関係を自動更新したりしないでください
 4. **ドキュメントの確認**: 問題が解決しない場合は、プロジェクトドキュメントを確認してください
 
 ## サポート
 
 問題が解決しない場合は、以下を確認してください：
 
-- [トラブルシューティングガイド](./CLAUDE_TROUBLESHOOTING.md)
+- [診断契約](https://github.com/itdojp/book-formatter/blob/main/docs/diagnostics.md)
 - [プロジェクトドキュメント](./README.md)
 - [GitHub Issues](https://github.com/itdojp/book-formatter/issues)
 
@@ -328,31 +342,35 @@ async function runTroubleshooting() {
   const troubleshooter = new TroubleshootingTool();
   
   try {
-    const projectPath = process.argv[2] || process.cwd();
-    await troubleshooter.runTroubleshooting(projectPath);
+    const { projectPath, flags } = parseDiagnosticArguments(process.argv.slice(2), ['--auto']);
+    const results = await troubleshooter.runTroubleshooting(projectPath, { auto: flags.has('--auto') });
+    process.exitCode = results.errors + results.criticalErrors > 0 ? 1 : 0;
   } catch (error) {
     console.error('❌ トラブルシューティングツールでエラーが発生しました:', error.message);
     process.exit(1);
   }
 }
 
-// Show help if requested
-if (process.argv.includes('--help') || process.argv.includes('-h')) {
+// Help is an option only before the literal-path separator.
+const cliArgs = process.argv.slice(2);
+const separator = cliArgs.indexOf('--');
+const optionArgs = separator < 0 ? cliArgs : cliArgs.slice(0, separator);
+if (optionArgs.includes('--help') || optionArgs.includes('-h')) {
   console.log(`
 Book Formatter トラブルシューティングツール
 
 使用方法:
-  npm run troubleshoot [プロジェクトパス] [オプション]
+  npm run troubleshoot -- [プロジェクトパス] [オプション]
 
 オプション:
-  --auto      自動修正を実行（対話的プロンプトをスキップ）
+  --auto      実行中 formatter checkout だけを修復（書籍・未知形式は拒否）
   --help, -h  このヘルプを表示
 
 例:
   npm run troubleshoot
-  npm run troubleshoot /path/to/book-project
-  npm run troubleshoot --auto
-  npm run troubleshoot /path/to/project --auto
+  npm run troubleshoot -- /path/to/book-project
+  npm run troubleshoot -- --auto
+  npm run troubleshoot -- /path/to/project --auto
 
 このツールは以下を行います：
 1. システム診断を実行

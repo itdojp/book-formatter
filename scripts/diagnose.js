@@ -7,13 +7,14 @@
 
 import { DiagnosticTool } from '../src/DiagnosticTool.js';
 import path from 'path';
+import { parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
 
 async function runDiagnostics() {
   const diagnostic = new DiagnosticTool();
   
   try {
     // Get project path from command line or use current directory
-    const projectPath = process.argv[2] || process.cwd();
+    const { projectPath, flags } = parseDiagnosticArguments(process.argv.slice(2), ['--export']);
     
     console.log(`📍 診断対象: ${projectPath}\n`);
     
@@ -21,7 +22,7 @@ async function runDiagnostics() {
     const results = await diagnostic.runDiagnostics(projectPath);
     
     // Export results if requested
-    if (process.argv.includes('--export')) {
+    if (flags.has('--export')) {
       const outputPath = path.join(projectPath, 'diagnostic-results.json');
       await diagnostic.exportResults(outputPath);
     }
@@ -42,13 +43,16 @@ async function runDiagnostics() {
   }
 }
 
-// Show help if requested
-if (process.argv.includes('--help') || process.argv.includes('-h')) {
+// Help is an option only before the literal-path separator.
+const cliArgs = process.argv.slice(2);
+const separator = cliArgs.indexOf('--');
+const optionArgs = separator < 0 ? cliArgs : cliArgs.slice(0, separator);
+if (optionArgs.includes('--help') || optionArgs.includes('-h')) {
   console.log(`
 Book Formatter 診断ツール
 
 使用方法:
-  npm run diagnose [プロジェクトパス] [オプション]
+  npm run diagnose -- [プロジェクトパス] [オプション]
 
 オプション:
   --export    診断結果をJSONファイルに出力
@@ -56,9 +60,9 @@ Book Formatter 診断ツール
 
 例:
   npm run diagnose
-  npm run diagnose /path/to/book-project
-  npm run diagnose --export
-  npm run diagnose /path/to/project --export
+  npm run diagnose -- /path/to/book-project
+  npm run diagnose -- --export
+  npm run diagnose -- /path/to/project --export
 
 終了コード:
   0: 成功（警告があっても正常）

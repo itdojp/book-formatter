@@ -489,3 +489,8 @@ GitHub: [@itdojp](https://github.com/itdojp)
 ---
 
 📚 Happy Book Writing!
+
+## ローカル診断
+
+書籍と formatter 本体では検査対象が異なります。[対象形式別の診断契約](docs/diagnostics.md)で、
+CLI の使い方、出力ファイル、自動修復の制限、Node.js の対応範囲を確認してください。
