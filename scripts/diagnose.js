@@ -7,6 +7,7 @@
 
 import { DiagnosticTool } from '../src/DiagnosticTool.js';
 import path from 'path';
+import { pathToFileURL } from 'node:url';
 import { parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
 
 async function runDiagnostics() {
@@ -43,11 +44,7 @@ async function runDiagnostics() {
   }
 }
 
-// Help is an option only before the literal-path separator.
-const cliArgs = process.argv.slice(2);
-const separator = cliArgs.indexOf('--');
-const optionArgs = separator < 0 ? cliArgs : cliArgs.slice(0, separator);
-if (optionArgs.includes('--help') || optionArgs.includes('-h')) {
+function printHelp() {
   console.log(`
 Book Formatter 診断ツール
 
@@ -70,12 +67,18 @@ Book Formatter 診断ツール
   2: 重大なエラーあり
   3: 診断ツール自体のエラー
 `);
-  process.exit(0);
 }
 
-// Run diagnostics if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runDiagnostics();
+// Never interpret an importing program's argv or exit during module loading.
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  const cliArgs = process.argv.slice(2);
+  const separator = cliArgs.indexOf('--');
+  const optionArgs = separator < 0 ? cliArgs : cliArgs.slice(0, separator);
+  if (optionArgs.includes('--help') || optionArgs.includes('-h')) {
+    printHelp();
+  } else {
+    runDiagnostics();
+  }
 }
 
 export { runDiagnostics };

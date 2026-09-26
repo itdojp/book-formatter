@@ -4,6 +4,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { FORMATTER_ROOT, detectDiagnosticTarget, matchesNodeEngine, parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
 import { TroubleshootingTool } from '../scripts/troubleshoot.js';
 import { DiagnosticTool } from '../src/DiagnosticTool.js';
@@ -257,6 +258,50 @@ describe('DiagnosticTool', () => {
       assert.strictEqual(report.metadata.targetKind, 'legacy');
       assert.strictEqual(await fs.readFile(path.join(testDir, 'index.md'), 'utf8'), 'fixture');
       assert(!await fs.pathExists(path.join(testDir, '--export')));
+    });
+
+    it('importing CLI exports never interprets the host process arguments', async () => {
+      const importer = path.join(testDir, 'consumer.mjs');
+      for (const [name, exported] of [['diagnose', 'runDiagnostics'], ['troubleshoot', 'TroubleshootingTool']]) {
+        await fs.writeFile(importer, [
+          `import * as api from ${JSON.stringify(pathToFileURL(script(name)).href)};`,
+          `if (typeof api[${JSON.stringify(exported)}] !== 'function') throw new Error('missing export');`,
+          'console.log(\'import-returned\');'
+        ].join('\n'));
+        for (const args of [[], ['--help'], ['-h'], ['--export'], ['--auto'], ['--', '--help']]) {
+          const child = run([importer, ...args]);
+          assert.strictEqual(child.status, 0, child.stdout + child.stderr);
+          assert.strictEqual(child.stdout.trim(), 'import-returned');
+          assert.strictEqual(child.stderr, '');
+          assert.deepStrictEqual(await fs.readdir(testDir), ['consumer.mjs']);
+        }
+      }
+    });
+
+    it('direct CLI entrypoints display both help aliases without target writes', async () => {
+      for (const name of ['diagnose', 'troubleshoot']) {
+        for (const flag of ['--help', '-h']) {
+          const child = run([script(name), flag]);
+          assert.strictEqual(child.status, 0, child.stdout + child.stderr);
+          assert(child.stdout.includes('使用方法'));
+          assert.strictEqual(child.stderr, '');
+          assert.deepStrictEqual(await fs.readdir(testDir), []);
+        }
+      }
+    });
+
+    it('direct CLI help handles escaped characters in the entrypoint file URL', async () => {
+      const root = path.join(testDir, 'entry # space');
+      await fs.ensureDir(path.join(root, 'scripts'));
+      await fs.symlink(path.join(FORMATTER_ROOT, 'src'), path.join(root, 'src'), 'dir');
+      for (const name of ['diagnose', 'troubleshoot']) {
+        const entry = path.join(root, 'scripts', `${name}.mjs`);
+        await fs.copy(script(name), entry);
+        const child = run([entry, '--help']);
+        assert.strictEqual(child.status, 0, child.stdout + child.stderr);
+        assert(child.stdout.includes('使用方法'));
+        assert.strictEqual(child.stderr, '');
+      }
     });
 
     it('CLI respects -- before a literal help-shaped path', async () => {
