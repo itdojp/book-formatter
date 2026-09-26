@@ -135,6 +135,14 @@ test "$(git -C "$PORTAL" rev-parse HEAD)" = "$PORTAL_SHA"
 test -z "$(git -C "$PORTAL" status --porcelain)"
 cd "$PORTAL"
 mkdir -p tmp/issue104/npm
+# 実行前の全tracked path/bytesを記録する。出力はignored領域に限る。
+python3 - <<'PYHASH'
+import hashlib, json, pathlib, subprocess
+paths = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')[:-1]
+hashes = {p: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths}
+pathlib.Path('tmp/issue104/tracked-before.json').write_text(json.dumps(hashes, sort_keys=True))
+print(f'snapshotted {len(hashes)} tracked files')
+PYHASH
 export npm_config_cache="$PWD/tmp/issue104/npm"
 # Chrome socket用の短いpath。workspace内で60bytes以下になるものを明示する。
 export TMPDIR="$WORKSPACE/.p104"
@@ -217,6 +225,11 @@ PYCODE
 python3 -m http.server 14278 --bind 127.0.0.1 --directory .site
 ```
 
+この固定sourceの `npm run build:site` は出力先 `.site/it-engineer-knowledge-architecture` と
+baseurl `/it-engineer-knowledge-architecture` を明示しています。上のserverはその親 `.site` を
+配信するため、次の `prefix` はこの組の契約値です。別のroot配信やbaseurlは本baselineの対象外で、
+変更する場合はbuild/配信/prefixをまとめて再検証します。
+
 次の内容を `tmp/issue104/baseline.mjs` に保存し、同じportal rootから
 `node tmp/issue104/baseline.mjs` を実行します。初回は出力directoryがないことを確認し、
 再取得時は以前の証跡を別の所有directoryへ退避します。終了後serverを停止します。
@@ -275,6 +288,25 @@ try {
   await writeFile(`${out}/manifest.json`, JSON.stringify({ browser: browser.version(), routes: routes.length, observations, errors, blocked }, null, 2) + '\n');
   console.log(`PASS ${observations.length} page/viewport pairs; body-overflow/nav-overlap/JS-error/external-request 0`);
 } finally { await browser.close(); }
+```
+
+### 4. 全portal検証後のcanonical照合
+
+baselineを含む上の検証をすべて終えたあと、portal rootで実行します。初期snapshotとのpath集合・
+各SHA-256を照合し、追加/削除/内容変更を拒否します。tracked statusも再確認し、差分があれば
+調査前にreset/revertせず保存します。この照合が通るまでdrift 0とは報告しません。
+
+```bash
+python3 - <<'PYHASH'
+import hashlib, json, pathlib, subprocess
+before = json.loads(pathlib.Path('tmp/issue104/tracked-before.json').read_text())
+paths = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')[:-1]
+after = {p: hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths}
+assert before == after, 'tracked source path/bytes changed; preserve and inspect the diff'
+status = subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], text=True)
+assert not status, f'tracked status changed; preserve and inspect: {status}'
+print(f'PASS {len(after)} tracked files unchanged after all portal checks')
+PYHASH
 ```
 
 ## 証跡の保管と制限
