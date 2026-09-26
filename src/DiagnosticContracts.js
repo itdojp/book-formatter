@@ -32,10 +32,11 @@ export function matchesNodeEngine(version, range) {
 
 export async function requireDiagnosticFile(root, relativePath) {
   let current = root;
-  for (const [index, part] of relativePath.split('/').entries()) {
+  const parts = relativePath.split('/');
+  for (const [index, part] of parts.entries()) {
     current = path.join(current, part);
     const stat = await fs.lstat(current);
-    const last = index === relativePath.split('/').length - 1;
+    const last = index === parts.length - 1;
     if (stat.isSymbolicLink() || (last ? !stat.isFile() : !stat.isDirectory())) {
       throw new Error(`${relativePath}: regular file without symlink components required`);
     }

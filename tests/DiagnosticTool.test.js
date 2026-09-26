@@ -175,7 +175,9 @@ describe('DiagnosticTool', () => {
       assert((await diagnosticTool.runDiagnostics(testDir)).errors > 0);
       await legacy();
       await fs.remove(path.join(testDir, '_config.yml'));
-      assert((await diagnosticTool.runDiagnostics(testDir)).errors > 0);
+      const missingProjection = await diagnosticTool.runDiagnostics(testDir);
+      assert(missingProjection.errors > 0);
+      assert(missingProjection.details.some(row => row.type === 'error' && row.message.includes('legacy 公開元を特定できません')));
       await legacy();
       await fs.outputFile(path.join(testDir, 'docs/_config.yml'), 'fixture');
       assert((await diagnosticTool.runDiagnostics(testDir)).errors > 0);
@@ -259,6 +261,7 @@ describe('DiagnosticTool', () => {
         const before = (await fs.readdir(testDir)).sort();
         const child = run([script('troubleshoot'), '--auto']);
         assert(child.status > 0, child.stdout + child.stderr);
+        if (kind !== 'unknown') assert(child.stderr.includes('--auto は実行中の formatter checkout 専用です'));
         assert.deepStrictEqual((await fs.readdir(testDir)).sort(), before);
         assert(!await fs.pathExists(path.join(testDir, 'node_modules')));
         const tool = new TroubleshootingTool();
@@ -279,6 +282,8 @@ describe('DiagnosticTool', () => {
       assert.strictEqual(child.status, 1, child.stdout + child.stderr);
       const report = await fs.readFile(path.join(testDir, 'troubleshooting-report.md'), 'utf8');
       assert(!/npm init|mkdir shared|npm update/.test(report));
+      assert(report.includes('[formatter ドキュメント](https://github.com/itdojp/book-formatter/blob/main/README.md)'));
+      assert(!report.includes('](./README.md)'));
       assert(!await fs.pathExists(path.join(testDir, 'package.json')));
     });
   });

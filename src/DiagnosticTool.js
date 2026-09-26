@@ -377,7 +377,7 @@ export class DiagnosticTool {
         } catch (error) { if (error.code !== 'ENOENT') throw error; }
       }
       if (projections.length !== 1) {
-        throw new Error('Legacy publication root is missing or ambiguous: require exactly one _config.yml at root or docs/; no automatic conversion');
+        throw new Error('legacy 公開元を特定できません。root または docs/ の一方だけに _config.yml が必要です。自動変換は行いません');
       }
       await this.checkResourceFiles(root, ['_config.yml', 'index.md', '_layouts/default.html',
         '_includes/page-navigation.html', 'assets/css/main.css'].map(file => projections[0] + file));

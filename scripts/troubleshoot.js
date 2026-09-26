@@ -230,7 +230,7 @@ class TroubleshootingTool {
     const target = await detectDiagnosticTarget(projectPath);
     if (target.kind !== 'formatter' ||
         await fs.realpath(target.root) !== await fs.realpath(FORMATTER_ROOT)) {
-      throw new Error('--auto is restricted to the running formatter checkout; book targets are read-only');
+      throw new Error('--auto は実行中の formatter checkout 専用です。書籍や別 checkout は自動修復しません');
     }
   }
 
@@ -325,7 +325,7 @@ class TroubleshootingTool {
 問題が解決しない場合は、以下を確認してください：
 
 - [診断契約](https://github.com/itdojp/book-formatter/blob/main/docs/diagnostics.md)
-- [プロジェクトドキュメント](./README.md)
+- [formatter ドキュメント](https://github.com/itdojp/book-formatter/blob/main/README.md)
 - [GitHub Issues](https://github.com/itdojp/book-formatter/issues)
 
 ---
