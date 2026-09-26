@@ -45,6 +45,10 @@ legacy の存在チェックは `_config.yml`, `index.md`, `_layouts/default.htm
 canonical source を移動しないでください。設定例や履歴の配置まで自動探索しません。
 
 formatter の template チェックも有限な存在検査で、全ファイルの内容・レンダリング検証ではありません。
+組み込みテンプレートの肯定検証は**実行中 formatter 自身の checkout**に限定します。
+別 checkout を指定した場合は、資源ファイルの存在は検査しても、組み込みは未検証エラーになります。
+その checkout の診断CLIを実行してください。実行元の結果を別 checkout の証明に流用せず、
+対象の JavaScript を外部から動的 import して実行することもありません。
 `shared/version.json` の歴史的な `templates` 記述は現役テンプレートの所在根拠に使いません。
 standard book の Web / Zenn / note / print の出力検証は各 adapter に委譲します。
 レポートに含むローカルパス・診断文は、公開する前に非公開情報がないか確認してください。

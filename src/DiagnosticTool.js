@@ -338,6 +338,12 @@ export class DiagnosticTool {
       'templates/starter/docs/_config.yml', 'templates/starter/docs/index.md'
     ];
     await this.checkResourceFiles(projectPath, resources);
+    // Never execute an external checkout's JS or attest to it with this module's result.
+    if (await fs.realpath(projectPath) !== await fs.realpath(FORMATTER_ROOT)) {
+      this.addResult('error', '組み込みテンプレート検証',
+        '別 checkout の組み込みテンプレートは未検証です。その checkout の診断CLIを実行してください');
+      return;
+    }
     // Built-ins live in JS, not the obsolete shared/templates directory.
     const names = new TemplateEngine().getAvailableTemplates();
     for (const name of ['_config.yml', 'index.md', 'chapter.md', 'package.json']) {

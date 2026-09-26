@@ -206,6 +206,33 @@ describe('DiagnosticTool', () => {
       assert(missing.results.details.some(row => row.type === 'error' && row.check.includes('shared/layouts/default.html')));
     });
 
+    it('never borrows running built-ins or executes code from another formatter checkout', async () => {
+      const own = new DiagnosticTool();
+      await own.checkTemplateFiles(FORMATTER_ROOT);
+      const resources = own.results.details.filter(row => row.check.startsWith('テンプレート '));
+      for (const row of resources) {
+        const relative = row.check.slice('テンプレート '.length);
+        await fs.copy(path.join(FORMATTER_ROOT, relative), path.join(testDir, relative));
+      }
+      await fs.writeJson(path.join(testDir, 'package.json'), { name: 'book-formatter', type: 'module' });
+      // Harmless execution sentinel, confined to this owned fixture directory.
+      await fs.writeFile(path.join(testDir, 'src/TemplateEngine.js'), [
+        'import fs from \'node:fs\';',
+        'fs.writeFileSync(new URL(\'./executed.flag\', import.meta.url), \'unexpected\');',
+        'export class TemplateEngine { getAvailableTemplates() { return []; } }'
+      ].join('\n'));
+      assert.strictEqual((await detectDiagnosticTarget(testDir)).kind, 'formatter');
+      await diagnosticTool.checkTemplateFiles(testDir);
+      assert(diagnosticTool.results.errors > 0, 'foreign built-ins must stay unverified');
+      assert(!diagnosticTool.results.details.some(row => row.check.startsWith('組み込みテンプレート') && row.type === 'pass'));
+      assert(!await fs.pathExists(path.join(testDir, 'src/executed.flag')));
+      assert.strictEqual(await fs.readFile(path.join(testDir, 'src/TemplateEngine.js'), 'utf8'), [
+        'import fs from \'node:fs\';',
+        'fs.writeFileSync(new URL(\'./executed.flag\', import.meta.url), \'unexpected\');',
+        'export class TemplateEngine { getAvailableTemplates() { return []; } }'
+      ].join('\n'));
+    });
+
     it('parses flags independently of path and fails closed on unknown/multiple arguments', () => {
       for (const args of [['--export'], ['.', '--export'], ['--export', '.']]) {
         const parsed = parseDiagnosticArguments(args, ['--export'], testDir);
