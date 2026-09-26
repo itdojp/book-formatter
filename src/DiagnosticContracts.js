@@ -13,12 +13,12 @@ function releaseTuple(value) {
 
 // Deliberately finite engines grammar, not a general-purpose SemVer parser.
 export function matchesNodeEngine(version, range) {
-  if (typeof range !== 'string') throw new Error('engines.node must be a string');
+  if (typeof range !== 'string') throw new Error('engines.node は文字列で指定してください');
   const clauses = range.split('||').map(clause => {
     const match = /^(\^|>=)(\d+\.\d+\.\d+)$/.exec(clause.trim());
     const floor = match && releaseTuple(match[2]);
     if (!floor || (match[1] === '^' && floor[0] === 0)) {
-      throw new Error(`Unsupported engines.node clause: ${clause.trim()}`);
+      throw new Error(`未対応の engines.node 条件です: ${clause.trim()}`);
     }
     return { operator: match[1], floor };
   });
@@ -38,7 +38,7 @@ export async function requireDiagnosticFile(root, relativePath) {
     const stat = await fs.lstat(current);
     const last = index === parts.length - 1;
     if (stat.isSymbolicLink() || (last ? !stat.isFile() : !stat.isDirectory())) {
-      throw new Error(`${relativePath}: regular file without symlink components required`);
+      throw new Error(`${relativePath}: パス全体にシンボリックリンクを含まない通常ファイルが必要です`);
     }
   }
   return current;
@@ -47,7 +47,7 @@ export async function requireDiagnosticFile(root, relativePath) {
 export async function detectDiagnosticTarget(projectPath) {
   const root = path.resolve(projectPath);
   const stat = await fs.lstat(root);
-  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Target must be a real directory');
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('診断対象にはシンボリックリンクではないディレクトリを指定してください');
   // lstat, not pathExists: a dangling metadata symlink must not silently disappear.
   const has = async name => {
     try { await fs.lstat(path.join(root, name)); return true; }
@@ -63,8 +63,8 @@ export async function detectDiagnosticTarget(projectPath) {
   }
   const kinds = [standard && 'standard', legacy && 'legacy', formatter && 'formatter'].filter(Boolean);
   if (kinds.length !== 1) {
-    throw new Error(kinds.length ? 'Ambiguous target metadata; select one project root' :
-      'Unknown target: package.json name=book-formatter, book.yaml or book-config.json required');
+    throw new Error(kinds.length ? '診断対象のメタデータが競合しています。形式が一つに定まるプロジェクトルートを指定してください' :
+      '診断対象の形式を判定できません。package.json の name=book-formatter、book.yaml、book-config.json のいずれかが必要です');
   }
   return { root, kind: kinds[0] };
 }
@@ -76,10 +76,10 @@ export function parseDiagnosticArguments(args, allowedFlags, cwd = process.cwd()
   for (const argument of args) {
     if (argument === '--' && !literal) { literal = true; continue; }
     if (!literal && argument.startsWith('-')) {
-      if (!allowedFlags.includes(argument)) throw new Error(`Unknown option: ${argument}`);
+      if (!allowedFlags.includes(argument)) throw new Error(`未対応のオプションです: ${argument}`);
       flags.add(argument);
     } else {
-      if (projectPath !== undefined) throw new Error('Only one project path is allowed');
+      if (projectPath !== undefined) throw new Error('プロジェクトパスは一つだけ指定してください');
       projectPath = argument;
     }
   }

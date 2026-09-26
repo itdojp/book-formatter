@@ -45,7 +45,7 @@ export class DiagnosticTool {
     try {
       this.target = await detectDiagnosticTarget(this.projectPath);
     } catch (error) {
-      this.addResult('error', '診断対象 / package.json', error.message);
+      this.addResult('error', '診断対象の判定', error.message);
       this.generateSummary();
       return this.results;
     }

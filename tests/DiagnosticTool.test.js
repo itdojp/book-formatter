@@ -70,19 +70,19 @@ describe('DiagnosticTool', () => {
       assert(dirErrors.length > 0);
     });
 
-    it('should validate package.json content', async () => {
+    it('rejects empty package metadata as an unknown target', async () => {
       await fs.writeJson(path.join(testDir, 'package.json'), {
-        // Missing required fields
+        // No formatter identity or book metadata.
       });
 
       const results = await diagnosticTool.runDiagnostics(testDir);
 
-      // Should have warnings for missing package.json fields
-      const packageWarnings = results.details.filter(d => 
-        d.check.includes('package.json')
+      const targetErrors = results.details.filter(d =>
+        d.type === 'error' && d.check === '診断対象の判定' &&
+        d.message.includes('診断対象の形式を判定できません')
       );
-      
-      assert(packageWarnings.length > 0);
+
+      assert.strictEqual(targetErrors.length, 1);
     });
   });
 
@@ -113,7 +113,7 @@ describe('DiagnosticTool', () => {
       assert.strictEqual(matchesNodeEngine('22.13.0', '^22.14.0'), false);
       assert.strictEqual(matchesNodeEngine('22.14.0', '^22.14.0'), true);
       for (const range of [null, '', '>=24.0.0 || *', '^0.2.3', '^22', '>=24.00.0', '>=9007199254740992.0.0']) {
-        assert.throws(() => matchesNodeEngine('24.1.0', range));
+        assert.throws(() => matchesNodeEngine('24.1.0', range), /engines\.node.*(?:文字列|条件)/);
       }
     });
 
@@ -165,6 +165,7 @@ describe('DiagnosticTool', () => {
         const result = await diagnosticTool.runDiagnostics(testDir);
         assert.strictEqual(diagnosticTool.target, null);
         assert(result.errors > 0);
+        assert(result.details.some(row => row.type === 'error' && row.check === '診断対象の判定'));
         assert.deepStrictEqual((await fs.readdir(testDir)).sort(), Object.keys(fixture).sort());
       }
     });
@@ -184,7 +185,9 @@ describe('DiagnosticTool', () => {
       await fs.remove(path.join(testDir, 'docs'));
       await fs.remove(path.join(testDir, '_layouts/default.html'));
       await fs.symlink(path.join(testDir, 'index.md'), path.join(testDir, '_layouts/default.html'));
-      assert((await diagnosticTool.runDiagnostics(testDir)).errors > 0);
+      const symlinkResult = await diagnosticTool.runDiagnostics(testDir);
+      assert(symlinkResult.errors > 0);
+      assert(symlinkResult.details.some(row => row.message.includes('パス全体にシンボリックリンクを含まない通常ファイルが必要です')));
     });
 
     it('does not ignore dangling metadata symlinks', async () => {
@@ -241,7 +244,7 @@ describe('DiagnosticTool', () => {
       }
       assert.strictEqual(parseDiagnosticArguments(['--', '-literal'], [], testDir).projectPath, path.join(testDir, '-literal'));
       for (const args of [['--typo'], ['one', 'two'], ['--auto']]) {
-        assert.throws(() => parseDiagnosticArguments(args, ['--export'], testDir));
+        assert.throws(() => parseDiagnosticArguments(args, ['--export'], testDir), /未対応のオプション|プロジェクトパスは一つ/);
       }
     });
 
@@ -276,6 +279,7 @@ describe('DiagnosticTool', () => {
       for (const name of ['diagnose', 'troubleshoot']) {
         const child = run([script(name), '--unknown']);
         assert(child.status > 0, child.stderr);
+        assert(child.stderr.includes('未対応のオプションです: --unknown'));
         assert.deepStrictEqual(await fs.readdir(testDir), []);
       }
     });
