@@ -14,6 +14,7 @@ Book Formatterは、標準`book.yaml`を起点とするマルチチャネルadap
 - [出力target方針](docs/output-targets.md) / [Edition visibility](docs/paid-editions.md): 出力・公開範囲
 - [legacy Jekyll契約](adapters/web-jekyll-legacy/README.md): 既存書籍の互換保守
 - [IssueからPR・公開確認までの共通手順](docs/codex-cli-workflow.md): Codex CLIなどのagentと人間の共通gate
+- [Portal pilot適用可否レポート](docs/migration-report-it-engineer-knowledge-architecture.md): Jekyllカタログと標準書籍adapterの境界（移行未完了）
 - [archive計画](docs/archive-plan.md): active/unknown資産を保護した段階整理
 
 ## 特徴
