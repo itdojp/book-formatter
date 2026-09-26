@@ -1,6 +1,10 @@
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
+import { ConfigValidator } from './ConfigValidator.js';
+import { validateStandardBook } from './StandardBookValidator.js';
+import { TemplateEngine } from './TemplateEngine.js';
+import { FORMATTER_ROOT, detectDiagnosticTarget, matchesNodeEngine, requireDiagnosticFile } from './DiagnosticContracts.js';
 
 /**
  * Comprehensive diagnostic tool for book-formatter
@@ -36,33 +40,36 @@ export class DiagnosticTool {
       details: []
     };
 
+    this.projectPath = path.resolve(projectPath);
+    this.target = null;
     try {
+      this.target = await detectDiagnosticTarget(this.projectPath);
+    } catch (error) {
+      this.addResult('error', '診断対象の判定', error.message);
+      this.generateSummary();
+      return this.results;
+    }
+    projectPath = this.target.root;
+
+    try {
+      this.addResult('info', '診断対象形式', this.target.kind);
       // System environment checks
       await this.checkSystemEnvironment();
       
       // Node.js environment checks
       await this.checkNodeEnvironment();
       
-      // Project structure checks
-      await this.checkProjectStructure(projectPath);
-      
-      // Configuration file checks
-      await this.checkConfigurationFiles(projectPath);
-      
-      // Dependencies checks
-      await this.checkDependencies(projectPath);
-      
-      // Template files checks
-      await this.checkTemplateFiles(projectPath);
-      
-      // Build system checks
-      await this.checkBuildSystem(projectPath);
-      
-      // GitHub integration checks
-      await this.checkGitHubIntegration(projectPath);
-      
-      // Performance checks
-      await this.checkPerformance(projectPath);
+      if (this.target.kind === 'formatter') {
+        await this.checkProjectStructure(projectPath);
+        await this.checkConfigurationFiles(projectPath);
+        await this.checkDependencies(projectPath);
+        await this.checkTemplateFiles(projectPath);
+        await this.checkBuildSystem(projectPath);
+        await this.checkGitHubIntegration(projectPath);
+        await this.checkPerformance(projectPath);
+      } else {
+        await this.checkBookTarget(this.target);
+      }
 
       // Generate summary
       this.generateSummary();
@@ -118,27 +125,23 @@ export class DiagnosticTool {
   /**
    * Check Node.js environment
    */
-  async checkNodeEnvironment() {
+  async checkNodeEnvironment(nodeVersion = process.version) {
     console.log('⚡ Node.js環境をチェックしています...');
 
-    // Node.js version
-    const nodeVersion = process.version;
-    const majorVersion = parseInt(nodeVersion.substring(1).split('.')[0]);
-    
-    if (majorVersion < 16) {
-      this.addResult('error', 'Node.jsバージョン', 
-        `Node.js ${nodeVersion} は古すぎます。Node.js 16以上が必要です。`);
-    } else if (majorVersion < 18) {
-      this.addResult('warning', 'Node.jsバージョン', 
-        `Node.js ${nodeVersion} は動作しますが、Node.js 18以上を推奨します。`);
-    } else {
-      this.addResult('pass', 'Node.jsバージョン', `Node.js ${nodeVersion} は対応バージョンです`);
+    // Read the running formatter's contract, never the consumer's engines.
+    try {
+      const { engines } = await fs.readJson(path.join(FORMATTER_ROOT, 'package.json'));
+      const supported = matchesNodeEngine(nodeVersion, engines?.node);
+      this.addResult(supported ? 'pass' : 'error', 'Node.jsバージョン',
+        `Node.js ${nodeVersion}: formatter engines.node = ${engines?.node}`);
+    } catch (error) {
+      this.addResult('error', 'Node.jsバージョン', `対応範囲を判定できません: ${error.message}`);
     }
 
     // npm version
     try {
       const { execSync } = await import('child_process');
-      const npmVersion = execSync('npm --version', { encoding: 'utf8' }).trim();
+      const npmVersion = execSync('npm --version', { encoding: 'utf8', timeout: 10000 }).trim();
       this.addResult('pass', 'npmバージョン', `npm ${npmVersion} が利用可能です`);
     } catch (error) {
       this.addResult('warning', 'npmバージョン', 'npmバージョンの確認に失敗しました');
@@ -267,7 +270,7 @@ export class DiagnosticTool {
     }
 
     // Check for book configuration examples
-    const configExamples = ['example-config.json', 'example-config.yml'];
+    const configExamples = ['examples/standard-book/book.yaml'];
     let foundExample = false;
     
     for (const example of configExamples) {
@@ -280,7 +283,7 @@ export class DiagnosticTool {
 
     if (!foundExample) {
       this.addResult('warning', '設定例ファイル', 
-        '設定例ファイルが見つかりません（example-config.json など）');
+        '標準書籍の設定例 examples/standard-book/book.yaml が見つかりません');
     }
   }
 
@@ -326,50 +329,68 @@ export class DiagnosticTool {
   async checkTemplateFiles(projectPath) {
     console.log('📄 テンプレートファイルをチェックしています...');
 
-    const templatePath = path.join(projectPath, 'shared');
-    if (await fs.pathExists(templatePath)) {
-      // Check for essential templates
-      const templates = [
-        'templates/_config.yml',
-        'templates/index.md',
-        'templates/chapter.md',
-        'templates/package.json',
-        'includes/page-navigation.html',
-        'layouts/default.html'
-      ];
+    const resources = [
+      'src/TemplateEngine.js',
+      'shared/layouts/default.html', 'shared/layouts/book.html',
+      'shared/includes/page-navigation.html', 'shared/includes/sidebar-nav.html',
+      'shared/assets/css/main.css', 'shared/assets/js/search.js',
+      'shared/schema/book.schema.json', 'shared/schemas/book-config.schema.json',
+      'templates/starter/docs/_config.yml', 'templates/starter/docs/index.md'
+    ];
+    await this.checkResourceFiles(projectPath, resources);
+    // Never execute an external checkout's JS or attest to it with this module's result.
+    if (await fs.realpath(projectPath) !== await fs.realpath(FORMATTER_ROOT)) {
+      this.addResult('error', '組み込みテンプレート検証',
+        '別 checkout の組み込みテンプレートは未検証です。その checkout の診断CLIを実行してください');
+      return;
+    }
+    // Built-ins live in JS, not the obsolete shared/templates directory.
+    const names = new TemplateEngine().getAvailableTemplates();
+    for (const name of ['_config.yml', 'index.md', 'chapter.md', 'package.json']) {
+      this.addResult(names.includes(name) ? 'pass' : 'error', `組み込みテンプレート ${name}`,
+        '実行中 formatter の TemplateEngine を確認');
+    }
+  }
 
-      for (const template of templates) {
-        const templateFile = path.join(templatePath, template);
-        if (await fs.pathExists(templateFile)) {
-          this.addResult('pass', `テンプレート ${template}`, '存在します');
-        } else {
-          this.addResult('warning', `テンプレート ${template}`, '見つかりません');
-        }
+  async checkResourceFiles(root, resources) {
+    for (const resource of resources) {
+      try {
+        await requireDiagnosticFile(root, resource);
+        this.addResult('pass', `テンプレート ${resource}`, '通常ファイルが存在します（内容・描画は未検証）');
+      } catch (error) {
+        this.addResult('error', `テンプレート ${resource}`, error.message);
       }
+    }
+  }
 
-      // Check assets
-      const assetsPath = path.join(templatePath, 'assets');
-      if (await fs.pathExists(assetsPath)) {
-        this.addResult('pass', 'アセット', 'assetsディレクトリが存在します');
-        
-        // Check for CSS and JS
-        const cssPath = path.join(assetsPath, 'css');
-        const jsPath = path.join(assetsPath, 'js');
-        
-        if (await fs.pathExists(cssPath)) {
-          this.addResult('pass', 'CSS', 'CSSディレクトリが存在します');
-        } else {
-          this.addResult('warning', 'CSS', 'CSSディレクトリが見つかりません');
-        }
-        
-        if (await fs.pathExists(jsPath)) {
-          this.addResult('pass', 'JavaScript', 'JavaScriptディレクトリが存在します');
-        } else {
-          this.addResult('warning', 'JavaScript', 'JavaScriptディレクトリが見つかりません');
-        }
-      } else {
-        this.addResult('warning', 'アセット', 'assetsディレクトリが見つかりません');
+  async checkBookTarget({ root, kind }) {
+    try {
+      if (kind === 'standard') {
+        await validateStandardBook(root);
+        this.addResult('pass', 'book.yaml', '標準メタデータと宣言されたソースを検証しました');
+        this.addResult('info', '標準書籍テンプレート',
+          '出力先は adapter ごとに異なります。legacy Jekyll / formatter 開発用ファイルは要求しません');
+        return;
       }
+      const configFile = await requireDiagnosticFile(root, 'book-config.json');
+      new ConfigValidator().validate(await fs.readJson(configFile));
+      this.addResult('pass', 'book-config.json', '既存 legacy ConfigValidator で検証しました');
+      const projections = [];
+      for (const prefix of ['', 'docs/']) {
+        try {
+          await fs.lstat(path.join(root, `${prefix}_config.yml`));
+          projections.push(prefix);
+        } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      }
+      if (projections.length !== 1) {
+        throw new Error('legacy 公開元を特定できません。root または docs/ の一方だけに _config.yml が必要です。自動変換は行いません');
+      }
+      await this.checkResourceFiles(root, ['_config.yml', 'index.md', '_layouts/default.html',
+        '_includes/page-navigation.html', 'assets/css/main.css'].map(file => projections[0] + file));
+      this.addResult('info', 'legacy 公開範囲',
+        'ファイル存在のみ。Jekyll build、リンク、Pages 設定、公開 HTTP は別途検証してください');
+    } catch (error) {
+      this.addResult('error', `${kind} 書籍契約`, error.message);
     }
   }
 
@@ -566,7 +587,7 @@ export class DiagnosticTool {
     } else if (this.results.warnings > 0) {
       console.log('\n⚠️  警告があります。確認することをお勧めします。');
     } else {
-      console.log('\n🎉 システムは正常に動作しています！');
+      console.log('\n診断範囲内のエラーはありません。ビルド・公開成功を保証するものではありません。');
     }
 
     // Add recommendations
@@ -579,20 +600,12 @@ export class DiagnosticTool {
   addRecommendations() {
     console.log('\n💡 推奨事項:');
 
-    if (this.results.errors > 0 || this.results.criticalErrors > 0) {
-      console.log('• エラーを修正してください');
-      console.log('• npm install を実行して依存関係を確認してください');
-      console.log('• 設定ファイルが正しく配置されているか確認してください');
+    console.log('• 対象形式と各診断メッセージを確認してください。未知の形式は変換・修復しません');
+    console.log('• この診断は test/build/Pages/公開 HTTP を実行しません。各専用 gate を別途実行してください');
+    if (this.target?.kind === 'formatter') {
+      console.log('• formatter 本体では npm test / npm run lint / npm run build を実行してください');
     }
 
-    if (this.results.warnings > 0) {
-      console.log('• 警告項目を確認し、必要に応じて修正してください');
-      console.log('• 不足しているファイルやディレクトリを追加してください');
-    }
-
-    console.log('• 定期的に npm test を実行してシステムをテストしてください');
-    console.log('• GitHub Pages を使用する場合は validate-github-pages スクリプトを実行してください');
-    console.log('• パフォーマンスを向上させるため、不要なファイルを削除してください');
   }
 
   /**
@@ -661,7 +674,8 @@ export class DiagnosticTool {
         timestamp: new Date().toISOString(),
         platform: os.platform(),
         nodeVersion: process.version,
-        projectPath: process.cwd()
+        projectPath: this.projectPath || process.cwd(),
+        targetKind: this.target?.kind || 'unknown'
       }
     };
 
