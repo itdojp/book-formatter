@@ -258,8 +258,9 @@ try {
     page.on('pageerror', e => errors.push(e.message));
     for (const [name,path] of routes) {
       const response = await page.goto(origin + prefix + path);
+      assert.ok(response, 'expected an HTTP document response');
       assert.equal(response.status(), 200);
-      await page.evaluate(() => document.fonts.ready);
+      await page.evaluate(async () => { await document.fonts.ready; });
       const metrics = await page.evaluate(() => {
         const nav = document.querySelector('nav[aria-label="主要ナビゲーション"]');
         const main = document.querySelector('main#main-content');
