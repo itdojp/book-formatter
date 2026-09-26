@@ -8,8 +8,7 @@
 import { DiagnosticTool } from '../src/DiagnosticTool.js';
 import fs from 'fs-extra';
 import path from 'path';
-import { pathToFileURL } from 'node:url';
-import { FORMATTER_ROOT, detectDiagnosticTarget, parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
+import { FORMATTER_ROOT, detectDiagnosticTarget, isDiagnosticEntryPoint, parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
 
 class TroubleshootingTool {
   constructor() {
@@ -379,7 +378,7 @@ Book Formatter トラブルシューティングツール
 }
 
 // Never interpret an importing program's argv or exit during module loading.
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isDiagnosticEntryPoint(import.meta.url)) {
   const cliArgs = process.argv.slice(2);
   const separator = cliArgs.indexOf('--');
   const optionArgs = separator < 0 ? cliArgs : cliArgs.slice(0, separator);

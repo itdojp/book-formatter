@@ -4,6 +4,16 @@ import { fileURLToPath } from 'node:url';
 
 export const FORMATTER_ROOT = fileURLToPath(new URL('../', import.meta.url));
 
+export function isDiagnosticEntryPoint(moduleUrl, entryPath = process.argv[1]) {
+  if (typeof entryPath !== 'string' || !entryPath) return false;
+  try {
+    return fs.realpathSync(fileURLToPath(moduleUrl)) === fs.realpathSync(path.resolve(entryPath));
+  } catch {
+    // An importing host may have no filesystem entrypoint (for example node -e).
+    return false;
+  }
+}
+
 function releaseTuple(value) {
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value);
   if (!match) return null;
@@ -35,8 +45,16 @@ export async function requireDiagnosticFile(root, relativePath) {
   const parts = relativePath.split('/');
   for (const [index, part] of parts.entries()) {
     current = path.join(current, part);
-    const stat = await fs.lstat(current);
     const last = index === parts.length - 1;
+    let stat;
+    try {
+      stat = await fs.lstat(current);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      const missing = parts.slice(0, index + 1).join('/');
+      const kind = last ? '通常ファイル' : 'ディレクトリ';
+      throw Object.assign(new Error(`${missing}: 必要な${kind}が見つかりません`), { code: error.code });
+    }
     if (stat.isSymbolicLink() || (last ? !stat.isFile() : !stat.isDirectory())) {
       throw new Error(`${relativePath}: パス全体にシンボリックリンクを含まない通常ファイルが必要です`);
     }

@@ -5,7 +5,7 @@ import path from 'path';
 import os from 'os';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { FORMATTER_ROOT, detectDiagnosticTarget, matchesNodeEngine, parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
+import { FORMATTER_ROOT, detectDiagnosticTarget, isDiagnosticEntryPoint, matchesNodeEngine, parseDiagnosticArguments, requireDiagnosticFile } from '../src/DiagnosticContracts.js';
 import { TroubleshootingTool } from '../scripts/troubleshoot.js';
 import { DiagnosticTool } from '../src/DiagnosticTool.js';
 
@@ -200,6 +200,21 @@ describe('DiagnosticTool', () => {
       });
     });
 
+    it('localizes missing file and directory diagnostics without exposing the target root', async () => {
+      await fs.ensureDir(path.join(testDir, 'present'));
+      for (const [relative, missing, kind] of [
+        ['absent/file.txt', 'absent', 'ディレクトリ'],
+        ['present/file.txt', 'present/file.txt', '通常ファイル']
+      ]) {
+        await assert.rejects(() => requireDiagnosticFile(testDir, relative), error => {
+          assert.strictEqual(error.code, 'ENOENT');
+          assert.strictEqual(error.message, `${missing}: 必要な${kind}が見つかりません`);
+          assert(!error.message.includes(testDir));
+          return true;
+        });
+      }
+    });
+
     it('checks real formatter template resources, not phantom shared/templates', async () => {
       await diagnosticTool.checkTemplateFiles(FORMATTER_ROOT);
       assert.strictEqual(diagnosticTool.results.errors + diagnosticTool.results.warnings, 0);
@@ -294,6 +309,8 @@ describe('DiagnosticTool', () => {
       const root = path.join(testDir, 'entry # space');
       await fs.ensureDir(path.join(root, 'scripts'));
       await fs.symlink(path.join(FORMATTER_ROOT, 'src'), path.join(root, 'src'), 'dir');
+      // Do not rely on a node_modules ancestor outside the isolated fixture.
+      await fs.symlink(path.join(FORMATTER_ROOT, 'node_modules'), path.join(root, 'node_modules'), 'dir');
       for (const name of ['diagnose', 'troubleshoot']) {
         const entry = path.join(root, 'scripts', `${name}.mjs`);
         await fs.copy(script(name), entry);
@@ -302,6 +319,31 @@ describe('DiagnosticTool', () => {
         assert(child.stdout.includes('使用方法'));
         assert.strictEqual(child.stderr, '');
       }
+    });
+
+    it('symlinked CLI entrypoints still display help without running diagnostics', async () => {
+      for (const name of ['diagnose', 'troubleshoot']) {
+        const entry = path.join(testDir, `${name}-link.mjs`);
+        await fs.symlink(script(name), entry, 'file');
+        for (const flag of ['--help', '-h']) {
+          const child = run([entry, flag]);
+          assert.strictEqual(child.status, 0, child.stdout + child.stderr);
+          assert(child.stdout.includes('使用方法'));
+          assert(!child.stdout.includes('📍 診断対象'));
+          assert.strictEqual(child.stderr, '');
+        }
+        await fs.remove(entry);
+        assert.deepStrictEqual(await fs.readdir(testDir), []);
+      }
+    });
+
+    it('entrypoint detection tolerates hosts without a matching filesystem entry', () => {
+      const url = pathToFileURL(script('diagnose')).href;
+      assert.strictEqual(isDiagnosticEntryPoint(url, script('diagnose')), true);
+      for (const entry of [undefined, null, '', '-e', testDir, path.join(testDir, 'missing')]) {
+        assert.strictEqual(isDiagnosticEntryPoint(url, entry), false);
+      }
+      assert.strictEqual(isDiagnosticEntryPoint(url, script('troubleshoot')), false);
     });
 
     it('CLI respects -- before a literal help-shaped path', async () => {

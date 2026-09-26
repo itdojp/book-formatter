@@ -7,8 +7,7 @@
 
 import { DiagnosticTool } from '../src/DiagnosticTool.js';
 import path from 'path';
-import { pathToFileURL } from 'node:url';
-import { parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
+import { isDiagnosticEntryPoint, parseDiagnosticArguments } from '../src/DiagnosticContracts.js';
 
 async function runDiagnostics() {
   const diagnostic = new DiagnosticTool();
@@ -70,7 +69,7 @@ Book Formatter 診断ツール
 }
 
 // Never interpret an importing program's argv or exit during module loading.
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isDiagnosticEntryPoint(import.meta.url)) {
   const cliArgs = process.argv.slice(2);
   const separator = cliArgs.indexOf('--');
   const optionArgs = separator < 0 ? cliArgs : cliArgs.slice(0, separator);
