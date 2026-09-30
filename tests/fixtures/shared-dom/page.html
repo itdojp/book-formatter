@@ -20,6 +20,19 @@
  results.querySelector('mark')?.click();check('click dismisses',!results.classList.contains('active')&&input.value==='');
  await search('<none>');check('no-results text',results.querySelector('p')?.textContent==='「<none>」に一致する結果が見つかりませんでした。');
  input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));check('escape dismisses',!results.classList.contains('active'));
+ for(const query of ['m','','   ']){
+ await search('日本語');input.value=query;input.dispatchEvent(new Event('input'));
+ check('short input hidden '+JSON.stringify(query),!results.classList.contains('active'));
+ check('short input cleared '+JSON.stringify(query),results.childElementCount===0);
+ input.blur();input.focus();check('short refocus hidden '+JSON.stringify(query),!results.classList.contains('active'));
+ await wait(350);check('short debounce hidden '+JSON.stringify(query),!results.classList.contains('active'));
+ check('short debounce cleared '+JSON.stringify(query),results.childElementCount===0);
+ }
+ await search('日本語');input.value='  [test]  ';input.dispatchEvent(new Event('input'));input.blur();input.focus();
+ check('valid refocus uses current query',results.querySelector('mark')?.textContent==='[test]');
+ await wait(350);check('valid debounce uses current query',results.querySelector('mark')?.textContent==='[test]');
+ content.click();check('outside click dismisses',!results.classList.contains('active'));
+ input.blur();input.focus();check('valid refocus reopens current query',results.classList.contains('active')&&results.querySelector('mark')?.textContent==='[test]');
  for(const close of ['button','backdrop','Escape']){
  img.click();const modal=document.querySelector('.image-modal');const copy=modal?.querySelector('img');
  check('modal literal alt '+close,copy?.alt===img.alt);check('no modal attribute injection '+close,!copy?.hasAttribute('data-fixture')&&!modal?.querySelector('em'));check('modal source '+close,copy?.src===img.src);

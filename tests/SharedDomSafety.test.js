@@ -166,6 +166,49 @@ test('search: ten-result limit, replacement, click, highlight timeout and dismis
   assert.equal(f.results.classList.contains('active'), false);
 });
 
+for (const query of ['m', '', '   ', ' m ', '\t\n']) {
+  test(`search: short normalized query ${JSON.stringify(query)} cannot refocus stale results`, () => {
+    const f = fixture('search.js', ['match synthetic fixture']);
+    f.search('match');
+    assert.equal(f.results.querySelectorAll('.search-result-item').length, 1);
+    f.input.value = query;
+    f.input.emit('input');
+    assert.equal(f.results.classList.contains('active'), false, 'short input hides immediately');
+    assert.equal(f.results.children.length, 0, 'short input clears the old query');
+    f.input.blur();
+    f.input.emit('focus');
+    f.flush();
+    assert.equal(f.results.classList.contains('active'), false, 'focus/debounce must remain hidden');
+    assert.equal(f.results.children.length, 0);
+  });
+}
+
+test('search: focus recomputes the current valid query before its debounce', () => {
+  const f = fixture('search.js', ['match synthetic fixture', 'other synthetic fixture']);
+  f.search('match');
+  f.input.value = '  other  ';
+  f.input.emit('input');
+  assert.equal(f.results.classList.contains('active'), false, 'old results are hidden while pending');
+  f.input.emit('focus');
+  assert.equal(f.results.querySelectorAll('.search-result-item').length, 1);
+  assert.equal(f.results.querySelector('.search-result-snippet').textContent, 'other synthetic fixture');
+  f.flush();
+  assert.equal(f.results.querySelector('.search-result-snippet').textContent, 'other synthetic fixture');
+});
+
+test('search: programmatic short value on focus uses the same normalized threshold', () => {
+  const f = fixture('search.js', ['match synthetic fixture']);
+  f.search('match');
+  f.input.value = ' m ';
+  f.input.emit('focus');
+  assert.equal(f.results.classList.contains('active'), false);
+  assert.equal(f.results.children.length, 0);
+  f.input.value = ' ma ';
+  f.input.emit('focus');
+  assert.equal(f.results.classList.contains('active'), true);
+  assert.equal(f.results.querySelectorAll('.search-result-item').length, 1);
+});
+
 for (const dismiss of ['button', 'backdrop', 'Escape']) {
   test(`image modal: literal src/alt, exact node inventory and ${dismiss} dismissal`, () => {
     const f = fixture('main.js');

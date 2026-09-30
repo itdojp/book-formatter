@@ -9,6 +9,7 @@
     let searchResults;
     let searchIndex = [];
     let searchTimeout;
+    const MIN_QUERY_LENGTH = 2;
     
     // Initialize elements
     function initElements() {
@@ -42,7 +43,9 @@
     
     // Perform search
     function performSearch(query) {
-        if (!query || query.length < 2) {
+        query = query.trim();
+        if (query.length < MIN_QUERY_LENGTH) {
+            searchResults.replaceChildren();
             hideResults();
             return;
         }
@@ -179,16 +182,21 @@
         // Search input handler
         searchInput.addEventListener('input', (e) => {
             clearTimeout(searchTimeout);
+            if (e.target.value.trim().length < MIN_QUERY_LENGTH) {
+                performSearch(e.target.value);
+                return;
+            }
+            // A pending query must not expose results belonging to the old one.
+            hideResults();
             searchTimeout = setTimeout(() => {
-                performSearch(e.target.value.trim());
+                performSearch(searchInput.value);
             }, 300);
         });
         
         // Focus/blur handlers
         searchInput.addEventListener('focus', () => {
-            if (searchInput.value.trim()) {
-                showResults();
-            }
+            clearTimeout(searchTimeout);
+            performSearch(searchInput.value);
         });
         
         // Click outside to close
