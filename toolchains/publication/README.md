@@ -23,7 +23,7 @@ install/auditだけはnpm registryへ接続します。`--ignore-scripts`を外�
 
 `test:offline`はLinuxのuser/network namespaceとNode permissionを必須とします。namespaceが使えなければ**失敗**し、通常networkで再試行しません。親と異なるnetwork namespace、外部interfaceなし、toolchain配下だけのread、write/child process拒否を実測します。`env -i`で実行し、入力はcommit済み合成fixtureのみです。ブラウザに渡す前の任意source/config/asset loaderは未提供です。
 
-`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全17件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
+`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全20件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
 
 CIはUbuntu22.04、既存系列のcheckout/setup-node Actions、10分timeoutです。Node24.18.0固定はtoolchainだけであり、root enginesを狭めません。
 
@@ -39,6 +39,22 @@ CIはUbuntu22.04、既存系列のcheckout/setup-node Actions、10分timeoutで�
 | press-ready → uuid | 8.3.2 → 11.1.1 | [bounds advisory](https://github.com/advisories/GHSA-w5hq-g745-h8pq)、[11.1.1 backport](https://github.com/uuidjs/uuid/releases/tag/v11.1.1)。CommonJS exportを維持する版を選び、実consumerの`require('uuid').v4()`とmodule import、v5 boundsを検査。CLI直接uuid14は変更しない |
 
 是正後`npm audit --audit-level=moderate`は全severity **0**。これは検査時点のregistry advisory結果であり、未知脆弱性・CLI renderer全体の安全証明ではありません。CLIの内部schema chunkは11.3.3へ明示固定した検査用importです。上流更新時はchunk/API/overrideの要否を再監査します。任意のユーザーconfigをimport/evalする機能はありません。
+
+### Scoped DOMPurify patch (2026-10-02 JST, #174)
+
+前日のaudit0は本日の結果へ持ち越しません。DOMPurify3.4.13–3.4.15に
+[IN_PLACEとafterSanitize hookのadvisory](https://github.com/advisories/GHSA-p98j-92pf-mc4p)
+が追加され、固定CLI11.3.3のclosureでlow2（DOMPurifyと依存するCLI）、high/moderate/critical0を検出しました。
+上流CLIのexact pin3.4.13をlock-only更新では是正できないため、既存4overrideを維持したまま
+`@vivliostyle/cli → dompurify: 3.4.16`を5件目の限定overrideとして追加します。
+CLI/Node/renderer更新や`npm audit fix --force`によるdowngradeは行いません。
+
+実際のCLI依存解決、短いHTML sanitation6例、2つのafterSanitize hookによるdetached subtreeの
+inert attribute除去を直接検証します。event実行、外部resource、実書籍は使用しません。
+既存5VFM goldenは更新せずbyte一致を要求します。隔離17既存testに3testを加え、必須offline gateは
+全20件・skip0です。license inventoryと固定lock attestationのみを実lockに同期し、他のfixture/image
+pinsやgoldenを変更しません。auditの全severity結果は再実行時点を記録し、renderer全体の
+到達性・未知脆弱性・書籍販売可能性の証明とは扱いません。
 
 ### Golden fixture provenance
 

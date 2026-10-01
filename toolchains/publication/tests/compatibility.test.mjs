@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { networkInterfaces } from 'node:os';
 import { stringify, readMetadata, StringifyMarkdownOptionsSchema } from '@vivliostyle/vfm';
 import * as v from 'valibot';
+import createDOMPurify from 'dompurify';
+import { JSDOM } from '@vivliostyle/jsdom';
 import { parse } from 'parse5';
 import { satisfies } from 'semver';
 import { licenseInventory } from './licenses.mjs';
@@ -28,7 +30,7 @@ test('private isolated Node24 package and exact overrides/lock', () => {
   assert.equal(p.engines.node, '>=24.18.0 <25');
   assertNodeVersion();
   assert.deepEqual(p.dependencies, { '@vivliostyle/cli': '11.3.3' });
-  assert.deepEqual(p.overrides, { trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2', 'press-ready': { uuid: '11.1.1' } });
+  assert.deepEqual(p.overrides, { trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2', 'press-ready': { uuid: '11.1.1' }, '@vivliostyle/cli': { dompurify: '3.4.16' } });
   for (const [name, version] of Object.entries({ trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2' })) {
     const entries = Object.entries(lock.packages).filter(([key]) => key.endsWith(`/node_modules/${name}`) || key === `node_modules/${name}`);
     assert.ok(entries.length > 0);
@@ -36,6 +38,10 @@ test('private isolated Node24 package and exact overrides/lock', () => {
   }
   assert.equal(pressRequire('uuid/package.json').version, '11.1.1');
   assert.equal(require('@vivliostyle/cli/package.json').version, '11.3.3');
+  assert.equal(lock.packages['node_modules/dompurify'].version, '3.4.16');
+  // Check the actual CLI resolution, not only a root-level dependency declaration.
+  const cliRequire = createRequire(require.resolve('@vivliostyle/cli/package.json'));
+  assert.equal(cliRequire('dompurify').version, '3.4.16');
 });
 
 test('Node engine gate rejects unsupported patches and prereleases', () => {
@@ -105,6 +111,37 @@ test('trim patched API preserves bounded whitespace behavior', () => {
   const trim = require('trim');
   for (const input of ['', ' \tfixture\n ', '\u00a0fixture\u00a0', 'x'.repeat(1000)]) assert.equal(trim(input), input.trim());
 });
+
+test('DOMPurify scoped patch preserves bounded ordinary HTML sanitation', () => {
+  const { window } = new JSDOM('');
+  try {
+    const purify = createDOMPurify(window);
+    for (const [input, expected] of [
+      ['<p>合成 <em>fixture</em></p>', '<p>合成 <em>fixture</em></p>'],
+      ['<table><tr><td>fixture</td></tr></table>', '<table><tbody><tr><td>fixture</td></tr></tbody></table>'],
+      ['<p data-fixture="local">literal &amp; text</p>', '<p data-fixture="local">literal &amp; text</p>'],
+      ['<p onclick="">fixture</p>', '<p>fixture</p>'],
+      ['<script></script><p>fixture</p>', '<p>fixture</p>'],
+      ['<a href="#fixture">local link</a>', '<a href="#fixture">local link</a>']
+    ]) assert.equal(purify.sanitize(input), expected);
+  } finally { window.close(); }
+});
+
+for (const hook of ['afterSanitizeElements', 'afterSanitizeAttributes']) {
+  test(`DOMPurify IN_PLACE detached subtree is neutralized: ${hook}`, () => {
+    // Inert attribute only: no script body, resource URL, network, or event dispatch.
+    const { window } = new JSDOM('<div id="root"><section id="wrap"><span onclick="">fixture</span></section></div>');
+    try {
+      const rootNode = window.document.getElementById('root');
+      const child = rootNode.querySelector('span');
+      const purify = createDOMPurify(window);
+      purify.addHook(hook, (node) => { if (node.id === 'wrap') node.remove(); });
+      purify.sanitize(rootNode, { IN_PLACE: true });
+      assert.equal(rootNode.querySelector('#wrap'), null);
+      assert.equal(child.getAttribute('onclick'), null);
+    } finally { window.close(); }
+  });
+}
 
 test('locked dependency license inventory has no undispositioned missing metadata', () => {
   const inventory = licenseInventory();

@@ -1281,7 +1281,7 @@
     },
     {
       "path": "node_modules/dompurify",
-      "version": "3.4.13",
+      "version": "3.4.16",
       "license": "(MPL-2.0 OR Apache-2.0)",
       "evidence": "lock metadata"
     },
