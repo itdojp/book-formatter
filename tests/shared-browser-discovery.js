@@ -22,10 +22,8 @@ export function discoverChrome({
   const diagnostics = [];
   for (const candidate of candidates) {
     const started = now();
-    const result = probe(candidate, ['--version'], {
-      encoding: 'utf8', timeout: CHROME_PROBE_TIMEOUT_MS,
-      maxBuffer: 16 * 1024
-    });
+    // Preserve the legacy probe options exactly; decode only for diagnostics.
+    const result = probe(candidate, ['--version'], { timeout: CHROME_PROBE_TIMEOUT_MS });
     const elapsedMs = Math.max(0, Math.round(now() - started));
     // Do not dump the environment, absolute override path or Error object.
     // JSON output escapes newlines rather than emitting workflow commands.

@@ -23,9 +23,7 @@ test('default candidates preserve order, stop at success and keep bounded probe 
     probe: (command, args, options) => {
       calls.push(command);
       assert.deepEqual(args, ['--version']);
-      assert.deepEqual(options, {
-        encoding: 'utf8', timeout: CHROME_PROBE_TIMEOUT_MS, maxBuffer: 16 * 1024
-      });
+      assert.deepEqual(options, { timeout: CHROME_PROBE_TIMEOUT_MS });
       return calls.length === 2 ? success : failures[0][1];
     }
   });
