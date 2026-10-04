@@ -44,7 +44,7 @@ try {
   const probe = findProbe(parse(result.stdout));
   assert.ok(probe, 'native DOM probe is absent');
   const results = JSON.parse(probe.childNodes.map((node) => node.value || '').join(''));
-  assert.equal(results.length, 20, 'all browser assertions must finish');
+  assert.equal(results.length, 39, 'all browser assertions must finish');
   assert.ok(results.every((check) => check.pass === true), JSON.stringify(results.filter((check) => !check.pass)));
   console.log(JSON.stringify({ browser: chrome, passed: results.length, results }, null, 2));
 } finally {
