@@ -1,16 +1,16 @@
 // Native CDP/CSS oracle; no DOM/layout emulation or new browser dependency.
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import { headerPage, profiles, widths } from './shared-header-fixture.js';
+import { discoverChrome } from './shared-browser-discovery.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const candidates = process.env.CHROME_PATH ? [process.env.CHROME_PATH] :
-  ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'];
-const chrome = candidates.find(candidate => spawnSync(candidate, ['--version'], { timeout: 3000 }).status === 0);
+const { chrome, diagnostics } = discoverChrome();
+console.log(`Native Chrome discovery: ${JSON.stringify(diagnostics)}`);
 assert.ok(chrome, 'Chrome is mandatory for shared header geometry');
 assert.ok(Buffer.byteLength(os.tmpdir()) <= 60, 'set TMPDIR to a short owned directory');
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'header-'));

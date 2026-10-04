@@ -101,3 +101,10 @@ test('responsive geometry has an explicit mandatory native gate', () => {
   const workflow = fs.readFileSync(new URL('../.github/workflows/quality-check.yml', import.meta.url), 'utf8');
   assert.match(workflow, /run: \|\n\s+npm run test:shared-dom-browser\n\s+npm run test:shared-header-browser/);
 });
+
+test('header native gate reuses the tested fail-closed Chrome discovery', () => {
+  const source = fs.readFileSync(new URL('./shared-header-browser.js', import.meta.url), 'utf8');
+  assert.match(source, /import \{ discoverChrome \} from '\.\/shared-browser-discovery\.js';/);
+  assert.match(source, /const \{ chrome, diagnostics \} = discoverChrome\(\);/);
+  assert.doesNotMatch(source, /\bspawnSync\b|\bconst candidates\b/);
+});
