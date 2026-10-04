@@ -48,7 +48,6 @@ test('private isolated Node24 package and exact overrides/lock', () => {
   assert.equal(require('@vivliostyle/cli/package.json').version, '11.3.3');
   assert.equal(lock.packages['node_modules/dompurify'].version, '3.4.16');
   // Check the actual CLI resolution, not only a root-level dependency declaration.
-  const cliRequire = createRequire(require.resolve('@vivliostyle/cli/package.json'));
   assert.equal(cliRequire('dompurify').version, '3.4.16');
 });
 
