@@ -2,8 +2,27 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs';
-import { parse } from 'parse5';
+import { parse, serialize } from 'parse5';
 import { headerScript, headerPage, profiles } from './shared-header-fixture.js';
+
+function* elements(node) {
+  if (node.tagName) yield node;
+  for (const child of node.childNodes ?? []) yield* elements(child);
+}
+
+const attribute = (node, name) => node.attrs?.find(attr => attr.name === name)?.value;
+
+function assertHeaderOrder(html, profile) {
+  const headers = [...elements(parse(html))].filter(node => node.tagName === 'header');
+  assert.equal(headers.length, 1);
+  const controls = [...elements(headers[0])].filter(node =>
+    ['a', 'button', 'input'].includes(node.tagName) || attribute(node, 'tabindex') !== undefined);
+  assert.deepEqual(controls.map(node => attribute(node, 'class')), [
+    'sidebar-toggle', 'header-title', 'search-input', 'theme-toggle', 'github-link',
+    ...(profile.extra ? ['fixture-edit'] : [])
+  ], 'fixed header control DOM order');
+  return headers[0];
+}
 
 function measurement({ observer = true, present = true } = {}) {
   let height = 91.25;
@@ -52,13 +71,27 @@ test('pages without a header are not modified or subscribed', () => {
 test('fixtures retain shipped control DOM order and full title text', () => {
   for (const profile of profiles) {
     const html = headerPage({ profile });
-    assert.ok(html.indexOf('header-title') < html.indexOf('id="search-input"'));
-    assert.ok(html.indexOf('id="search-input"') < html.indexOf('class="theme-toggle"'));
-    assert.ok(html.indexOf('class="theme-toggle"') < html.indexOf('class="github-link"'));
-    const tree = parse(html);
-    const find = node => node.tagName === 'h1' ? node : (node.childNodes ?? []).map(find).find(Boolean);
-    assert.equal(find(tree).childNodes[0].value, profile.title);
+    const header = assertHeaderOrder(html, profile);
+    const title = [...elements(header)].find(node => node.tagName === 'h1');
+    assert.equal(title.childNodes[0].value, profile.title);
     assert.ok(!html.includes('{{'), 'fixture must project the shipped Liquid placeholders');
+  }
+});
+
+test('CSS class mentions cannot mask a swapped title/search DOM mutation', () => {
+  for (const profile of profiles) {
+    const tree = parse(headerPage({ profile }));
+    const header = [...elements(tree)].find(node => node.tagName === 'header');
+    const left = header.childNodes.findIndex(node => attribute(node, 'class') === 'header-left');
+    const center = header.childNodes.findIndex(node => attribute(node, 'class') === 'header-center');
+    assert.ok(left >= 0 && center > left);
+    [header.childNodes[left], header.childNodes[center]] = [header.childNodes[center], header.childNodes[left]];
+    const mutated = serialize(tree);
+    // The previous string predicates all accept this wrong DOM because CSS comes first.
+    assert.ok(mutated.indexOf('header-title') < mutated.indexOf('id="search-input"'));
+    assert.ok(mutated.indexOf('id="search-input"') < mutated.indexOf('class="theme-toggle"'));
+    assert.ok(mutated.indexOf('class="theme-toggle"') < mutated.indexOf('class="github-link"'));
+    assert.throws(() => assertHeaderOrder(mutated, profile), /fixed header control DOM order/);
   }
 });
 

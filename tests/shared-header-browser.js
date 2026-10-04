@@ -95,13 +95,18 @@ try {
     await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(item.theme)}`);
     const result = await evaluate(`(${probe.toString()})()`);
     assert.equal(result.viewport, item.actualWidth, 'actual CSS viewport must match');
+    // Freeze the contract independently of the DOM being tested, including hidden controls.
+    const expectedOrder = ['sidebar-toggle', 'header-title', 'search-input', 'theme-toggle', 'github-link',
+      ...(item.profile.extra ? ['fixture-edit'] : [])];
+    assert.deepEqual(result.details.map(detail => detail.className), expectedOrder, 'fixed header control DOM order');
+    const expectedTabOrder = expectedOrder.filter(name => name !== 'sidebar-toggle' || !result.details[0].hiddenSidebar);
     const { nodes } = await command('Accessibility.getFullAXTree');
     assert.ok(nodes.some(node => node.role?.value === 'link' && node.name?.value === item.profile.title), 'visual ellipsis must preserve the complete accessible title');
     assert.ok(nodes.some(node => node.role?.value === 'searchbox' && node.name?.value === 'Search...'), 'mobile search must remain in the accessibility tree');
     // Real Tab input checks order; programmatic .focus() is not a substitute.
     await evaluate('document.body.tabIndex = -1; document.body.focus()');
     const tabbed = [];
-    for (const detail of result.details.filter(x => !x.hiddenSidebar)) {
+    for (const expectedClass of expectedTabOrder) {
       await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
       await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
       let focused = await evaluate('document.activeElement.className');
@@ -114,7 +119,7 @@ try {
         focused = await evaluate('document.activeElement.className');
       }
       tabbed.push(focused);
-      assert.equal(focused, detail.className, `Tab order: ${JSON.stringify(item)}`);
+      assert.equal(focused, expectedClass, `Tab order: ${JSON.stringify(item)}`);
       await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
       const focusStyle = await evaluate('(() => { const style = getComputedStyle(document.activeElement); return { visible: document.activeElement.matches(\':focus-visible\'), outline: style.outlineWidth, shadow: style.boxShadow }; })()');
       assert.ok(focusStyle.visible && (parseFloat(focusStyle.outline) > 0 || focusStyle.shadow !== 'none'), `keyboard focus indicator: ${JSON.stringify({ width: item.actualWidth, profile: item.profile.id, focused, focusStyle })}`);
