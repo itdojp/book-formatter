@@ -117,6 +117,7 @@
 html {
     font-size: 16px;
     scroll-behavior: smooth;
+    scroll-padding-top: calc(var(--header-height) + 1rem);
 }
 
 body {
@@ -180,25 +181,32 @@ a:hover {
     top: 0;
     left: 0;
     right: 0;
-    height: var(--header-height);
+    /* Its measured height drives content/sidebar offsets, not its own size. */
+    min-height: 4rem;
     background: var(--bg-primary);
     border-bottom: 1px solid var(--border-color);
     z-index: 1000;
     display: flex;
     align-items: center;
-    padding: 0 1rem;
-    gap: 1rem;
+    padding: 0.5rem 1rem;
+    padding-left: max(1rem, var(--book-safe-area-left, env(safe-area-inset-left, 0px)));
+    padding-right: max(1rem, var(--book-safe-area-right, env(safe-area-inset-right, 0px)));
+    gap: 0.5rem 1rem;
+    flex-wrap: wrap;
 }
 
 .header-left {
     display: flex;
     align-items: center;
     gap: 1rem;
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 50%;
 }
 
 .header-center {
-    flex: 1;
+    flex: 1 1 12rem;
+    min-width: 0;
     display: flex;
     justify-content: center;
 }
@@ -208,9 +216,28 @@ a:hover {
     align-items: center;
     gap: 0.75rem;
     flex-shrink: 0;
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 50%;
+}
+
+.header-left .sidebar-toggle {
+    flex-shrink: 0;
+}
+
+.header-right > a,
+.header-right > button {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.header-right > a {
+    padding: 0.5rem;
 }
 
 .header-title {
+    display: block;
+    min-width: 0;
     text-decoration: none;
     color: var(--text-primary);
 }
@@ -219,6 +246,10 @@ a:hover {
     margin: 0;
     font-size: 1.25rem;
     font-weight: 600;
+    /* Only the visual text is shortened; the link keeps its full name. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Sidebar */
@@ -553,8 +584,20 @@ a:hover {
         padding: 1.5rem;
     }
     
+    .header-left {
+        flex: 1 0 100%;
+        max-width: none;
+    }
+
     .header-center {
-        display: none;
+        /* Keep search visible and preserve DOM/keyboard order. */
+        display: flex;
+        flex: 1 1 10rem;
+    }
+
+    .header-right {
+        /* Long localized controls may take a separate full-width row. */
+        max-width: 100%;
     }
 }
 

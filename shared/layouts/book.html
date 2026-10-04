@@ -174,6 +174,28 @@
     <script defer src="{{ '/assets/js/theme.js' | relative_url }}"></script>
     <script defer src="{{ '/assets/js/search.js' | relative_url }}"></script>
     <script>
+        // HEADER_LAYOUT_START: keep offsets synchronized after wrap/font/resize.
+        (function() {
+            var header = document.querySelector('.book-header');
+            if (!header) return;
+            var previousHeight = 0;
+            function updateHeaderHeight() {
+                var height = Math.ceil(header.getBoundingClientRect().height);
+                if (height > 0 && height !== previousHeight) {
+                    document.documentElement.style.setProperty('--header-height', height + 'px');
+                    previousHeight = height;
+                }
+            }
+            updateHeaderHeight();
+            if (typeof ResizeObserver === 'function') {
+                new ResizeObserver(updateHeaderHeight).observe(header);
+            } else {
+                window.addEventListener('resize', updateHeaderHeight);
+            }
+        })();
+        // HEADER_LAYOUT_END
+    </script>
+    <script>
         document.addEventListener('DOMContentLoaded', function() {
             var cb = document.getElementById('sidebar-toggle-checkbox');
             if (!cb) return;

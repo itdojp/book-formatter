@@ -73,6 +73,29 @@ node src/index.js rollout-ux \
 
 ## 変更とconsumer検証
 
+### Responsive header contract (#115)
+
+共有Headerは書名の領域だけを縮小し、長い書名を視覚的に省略する。リンクの
+全文字列とaccessible nameは保持する。Controlsは折り返し、狭幅でもSearchを
+非表示にしない。DOM順序とTab順序は書名、Search、右側Controlsの順で維持する。
+新しいoverflow menuや、Header全体を隠す`overflow-x: hidden`は使わない。
+
+Headerは内容に応じた高さを持つ。layout内の小さな計測処理が
+`--header-height`を実寸へ同期し、本文、Sidebarとanchorの開始位置をそろえる。
+`ResizeObserver`が使えない環境ではwindow resizeを使う。Safe-areaは
+`env(safe-area-inset-left/right)`をpaddingへ反映する。
+
+`npm run test:shared-header-browser`はネイティブChrome必須の有限検証である。
+9幅（320〜1366px）、4種の合成書名/ラベル、Light/Dark、通常幅と200%相当の
+CSS viewport reflow、別の200%文字拡大で162条件を検証する。実際のTab入力、
+Focus表示、PointerによるTheme切替、document/Headerの幅、本文/Sidebarのoffset、
+同一ページでのresizeも検証する。これらをinteractive browser zoomの測定や、
+実端末のnotch検証とは扱わない。単体テストでCSSレンダラーを再実装しない。
+
+SidebarのEnter/Space activation、既存hidden checkboxのTab位置、Escape/focus
+managementとnested navigation landmarkは別の#116の責務である。consumerの
+同期/pin更新はこの共有修正と別PRで行う。
+
 1. formatterの監査済みcommit SHAを固定する。
 2. managed fileと`shared/version.json`を同じPRで整合させる。
 3. 代表consumerでdry-runし、変更pathを確認する。

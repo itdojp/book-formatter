@@ -287,7 +287,9 @@ jobs:
       - name: Verify shared DOM behavior in Chrome
         env:
           TMPDIR: ${{ runner.temp }}
-        run: npm run test:shared-dom-browser
+        run: |
+          npm run test:shared-dom-browser
+          npm run test:shared-header-browser
 
       - name: Install verified mdBook 0.5.4 binary
         env:
