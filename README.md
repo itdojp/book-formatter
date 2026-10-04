@@ -220,6 +220,9 @@ node src/index.js rollout-ux --plan .codex-local/tmp/core-plan.json \
 
 ## 品質チェック（ローカル）
 
+shared search を採用する consumer の実 DOM 検査は、[有限な統合検査契約](docs/shared-search-layout-guard.md)を参照してください。source/build/browser の検査を分離し、次の検索 rollout の前に代表 consumer で確認します。
+
+
 ```bash
 # リンク（内部リンク/アンカー）を検証
 npm run check-links -- <book-dir>
