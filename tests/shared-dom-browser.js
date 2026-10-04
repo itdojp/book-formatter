@@ -7,11 +7,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'parse5';
+import { discoverChrome } from './shared-browser-discovery.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const candidates = process.env.CHROME_PATH ? [process.env.CHROME_PATH] :
-  ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'];
-const chrome = candidates.find((candidate) => spawnSync(candidate, ['--version'], { timeout: 3000 }).status === 0);
+const { chrome, diagnostics } = discoverChrome();
+console.log(`Native Chrome discovery: ${JSON.stringify(diagnostics)}`);
 assert.ok(chrome, 'Chrome is required for the native shared DOM gate (CHROME_PATH may select it)');
 // Chrome's temporary Unix socket needs a short TMPDIR. The operator controls
 // this workspace-owned path; do not silently fall back outside that workspace.
