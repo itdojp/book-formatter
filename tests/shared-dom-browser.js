@@ -7,11 +7,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'parse5';
+import { discoverChrome } from './shared-browser-discovery.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const candidates = process.env.CHROME_PATH ? [process.env.CHROME_PATH] :
-  ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'];
-const chrome = candidates.find((candidate) => spawnSync(candidate, ['--version'], { timeout: 3000 }).status === 0);
+const { chrome, diagnostics } = discoverChrome();
+console.log(`Native Chrome discovery: ${JSON.stringify(diagnostics)}`);
 assert.ok(chrome, 'Chrome is required for the native shared DOM gate (CHROME_PATH may select it)');
 // Chrome's temporary Unix socket needs a short TMPDIR. The operator controls
 // this workspace-owned path; do not silently fall back outside that workspace.
@@ -44,7 +44,7 @@ try {
   const probe = findProbe(parse(result.stdout));
   assert.ok(probe, 'native DOM probe is absent');
   const results = JSON.parse(probe.childNodes.map((node) => node.value || '').join(''));
-  assert.equal(results.length, 20, 'all browser assertions must finish');
+  assert.equal(results.length, 39, 'all browser assertions must finish');
   assert.ok(results.every((check) => check.pass === true), JSON.stringify(results.filter((check) => !check.pass)));
   console.log(JSON.stringify({ browser: chrome, passed: results.length, results }, null, 2));
 } finally {
