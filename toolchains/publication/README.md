@@ -23,7 +23,7 @@ install/auditだけはnpm registryへ接続します。`--ignore-scripts`を外�
 
 `test:offline`はLinuxのuser/network namespaceとNode permissionを必須とします。namespaceが使えなければ**失敗**し、通常networkで再試行しません。親と異なるnetwork namespace、外部interfaceなし、toolchain配下だけのread、write/child process拒否を実測します。`env -i`で実行し、入力はcommit済み合成fixtureのみです。ブラウザに渡す前の任意source/config/asset loaderは未提供です。
 
-`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全17件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
+`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全24件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
 
 CIはUbuntu22.04、既存系列のcheckout/setup-node Actions、10分timeoutです。Node24.18.0固定はtoolchainだけであり、root enginesを狭めません。
 
@@ -39,6 +39,53 @@ CIはUbuntu22.04、既存系列のcheckout/setup-node Actions、10分timeoutで�
 | press-ready → uuid | 8.3.2 → 11.1.1 | [bounds advisory](https://github.com/advisories/GHSA-w5hq-g745-h8pq)、[11.1.1 backport](https://github.com/uuidjs/uuid/releases/tag/v11.1.1)。CommonJS exportを維持する版を選び、実consumerの`require('uuid').v4()`とmodule import、v5 boundsを検査。CLI直接uuid14は変更しない |
 
 是正後`npm audit --audit-level=moderate`は全severity **0**。これは検査時点のregistry advisory結果であり、未知脆弱性・CLI renderer全体の安全証明ではありません。CLIの内部schema chunkは11.3.3へ明示固定した検査用importです。上流更新時はchunk/API/overrideの要否を再監査します。任意のユーザーconfigをimport/evalする機能はありません。
+
+### Scoped DOMPurify patch (2026-10-02 JST, #174)
+
+前日のaudit0は本日の結果へ持ち越しません。DOMPurify3.4.13–3.4.15に
+[IN_PLACEとafterSanitize hookのadvisory](https://github.com/advisories/GHSA-p98j-92pf-mc4p)
+が追加され、固定CLI11.3.3のclosureでlow2（DOMPurifyと依存するCLI）、high/moderate/critical0を検出しました。
+上流CLIのexact pin3.4.13をlock-only更新では是正できないため、既存4overrideを維持したまま
+`@vivliostyle/cli → dompurify: 3.4.16`を5件目の限定overrideとして追加します。
+CLI/Node/renderer更新や`npm audit fix --force`によるdowngradeは行いません。
+
+実際のCLI依存解決、短いHTML sanitation6例、2つのafterSanitize hookによるdetached subtreeの
+inert attribute除去を直接検証します。event実行、外部resource、実書籍は使用しません。
+既存5VFM goldenは更新せずbyte一致を要求します。隔離17既存testに3testを加え、必須offline gateは
+全20件・skip0です。license inventoryと固定lock attestationのみを実lockに同期し、他のfixture/image
+pinsやgoldenを変更しません。auditの全severity結果は再実行時点を記録し、renderer全体の
+到達性・未知脆弱性・書籍販売可能性の証明とは扱いません。
+
+### Scoped cache dependency update (2026-10-04 JST, #174)
+
+公式配布の`http-cache-semantics`を4.2.0から4.3.0へ、既存の`^4.1.1`範囲内で更新します。
+追加overrideやCLI/Node更新はありません。licenseはBSD-2-Clauseのままです。
+配布物のSRIと差分を確認し、lockに対応するlicense versionとlock SHA attestationを同期します。
+4.3.0には[上流PR59](https://github.com/kornelski/http-cache-semantics/pull/59)の
+Vary wildcard/own-header修正が含まれます。直接検査8例では旧4.2.0の4例が不一致、4.3.0は全例一致です。
+
+[GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp)は確認時点で
+affected `<=4.2.0` / patched `None`のままですが、
+[メンテナーはCVEの前提に異議を示しています](https://github.com/kornelski/http-cache-semantics/pull/60#issuecomment-5975833081)。
+撤回済みとも、4.3.0がすべての再利用問題を修正したとも扱いません。
+直接ライブラリ診断では、4.3.0にも応答`no-cache`と`max-stale`/stale fallbackを組み合わせた
+再利用判定が残ります。[RFC9111の再検証要件](https://www.rfc-editor.org/rfc/rfc9111.html#section-5.2.2.4)
+に関する懸念と、利用者間の秘密流出の実証は別です。auditの範囲外になったことだけで
+安全性を証明せず、この制約を一般用途へ持ち越します。
+
+対象を本gateに限る根拠は、固定の合成入力、remote themeなし、秘密/home/shared cache非持込み、
+外部networkなしの既存実行契約です。CLIのテーマ取得経路はarborist/registry-fetchを介した
+make-fetch-happen15.0.6のprivate policyですが、`shared:false`自体は利用者分離機構ではありません。
+複数の認証主体でcache directoryを共有する一般CLI運用は未検証であり、本gateの保証対象外です。
+install/audit時のregistry接続と、offline実行を混同しません。npm自身の内蔵依存を更新したとも主張しません。
+
+実CLIからの依存解決、Vary/serialization/status、実private wrapperのfresh/stale/no-cache/
+Vary/304/503判定を4つの必須offline testで検査します。Request/Responseはメモリ上の合成値で、
+fetchやcache I/Oを実行しません。実通信例外からのconsumer独自fallbackを含む全CLI経路の
+検証ではなく、将来のremote theme/一般書籍入力では再監査が必要です。
+既存20testと5つのVFM goldenは保持し、必須offlineは24件・skip0です。
+固定EPUB2回生成・隔離・EPUBCheck・否定試験とexact-head reviewを省略せず、
+監査除外やgate免除は追加しません。
 
 ### Golden fixture provenance
 
