@@ -2055,7 +2055,7 @@
     },
     {
       "path": "node_modules/http-cache-semantics",
-      "version": "4.2.0",
+      "version": "4.3.0",
       "license": "BSD-2-Clause",
       "evidence": "lock metadata"
     },

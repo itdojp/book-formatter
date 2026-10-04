@@ -5,7 +5,7 @@
   "epubcheckVersion": "5.3.0",
   "epubcheckUrl": "https://github.com/w3c/epubcheck/releases/download/v5.3.0/epubcheck-5.3.0.zip",
   "epubcheckSha256": "6c07e68584b2e2ce2f89fe06e1246dfead3eb36b46b340e7d93524f29dcff6c5",
-  "toolchainLockSha256": "a2053741405486c71580c18d49e41d7fe5d8d2e7aa5c38f71a5294fda09f8579",
+  "toolchainLockSha256": "3aa42f3d9595b4671ea4e7f70a17b6e4574cf80e7d33bb6717cd619f987bce2f",
   "fixtures": {
     "chapter.md": "4ee73625777615dd4e2d6b7711880b6ae7c430eaf265f44ad3aacd8f5dcddc7e",
     "not-selected.md": "4f26d3214308ac5fef3b68cf6f3c3e579f0a92476403b0d6c0ef3b8ef0dbec7b",
