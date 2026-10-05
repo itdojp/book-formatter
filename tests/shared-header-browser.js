@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
-import { headerPage, profiles, widths } from './shared-header-fixture.js';
+import { headerPage, profiles, widths, searchPanelProbe } from './shared-header-fixture.js';
 import { discoverChrome } from './shared-browser-discovery.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -142,7 +142,99 @@ try {
     assert.ok(result.pass, JSON.stringify(result));
     resizeResults.push({ width, ...result });
   }
-  console.log(JSON.stringify({ browser: chrome, passed: results.length, actualResizeProbes: resizeResults.length, widthMatrix: widths, interactiveBrowserZoomClaimed: false, results, resizeResults }, null, 2));
+  const click = async selector => {
+    const point = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
+    await command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
+  };
+  const key = async (key, code, windowsVirtualKeyCode, modifiers = 0) => {
+    for (const type of ['keyDown', 'keyUp']) await command('Input.dispatchKeyEvent', { type, key, code, windowsVirtualKeyCode, modifiers });
+  };
+  const openSearch = async () => {
+    await click('#search-input');
+    await key('a', 'KeyA', 65, 2);
+    await key('Backspace', 'Backspace', 8);
+    await command('Input.insertText', { text: '学習' });
+    let ready = false;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      ready = await evaluate('document.querySelector("#search-input").value === "学習" && document.querySelector("#search-results").classList.contains("active") && document.querySelectorAll(".search-result-item").length === 10');
+      if (ready) break;
+      await delay(25);
+    }
+    assert.ok(ready, 'shipped search must open many results via real input');
+  };
+  const inspectSearch = async item => {
+    const result = await evaluate(`(${searchPanelProbe.toString()})()`);
+    assert.ok(result.active && result.count === 10 && result.belowHeader && result.fits && result.controlsReachable && result.noHorizontalOverflow && result.outerScrollable && !result.innerScrollable, JSON.stringify({ item, result }));
+    return result;
+  };
+  // Keep large/localized labels in the existing 1000px-tall matrix. Add the
+  // consumer's short 160/683 x 478 CSS viewport separately, not as a zoom claim.
+  const searchCases = cases.filter(item => item.fontSize === 16).map(item => ({ ...item, height: 1000 }));
+  for (const width of [320, 1366]) for (const theme of ['light', 'dark']) for (const profile of profiles.slice(0, 2)) {
+    searchCases.push({ width, actualWidth: width / 2, height: 478, theme, profile, reflow: 2 });
+  }
+  const searchResults = [];
+  for (const item of searchCases) {
+    await command('Emulation.setDeviceMetricsOverride', { width: item.actualWidth, height: item.height, deviceScaleFactor: 1, mobile: false });
+    await command('Page.setDocumentContent', { frameId: frameTree.frame.id, html: headerPage({ ...item, search: true }) });
+    await delay(70);
+    await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(item.theme)}`);
+    await openSearch();
+    const result = await inspectSearch(item);
+    // Pointer must reach Theme with the popup STILL OPEN, not after Escape.
+    await click('.theme-toggle');
+    assert.equal(await evaluate('document.documentElement.dataset.theme'), item.theme === 'light' ? 'dark' : 'light');
+    await openSearch();
+    await key('Escape', 'Escape', 27);
+    assert.equal(await evaluate('document.querySelector("#search-results").classList.contains("active")'), false);
+    await openSearch();
+    // Actual wheel input, not scrollTop assignment: one scrollport must expose
+    // the last displayed result, including when the list is taller than 400px.
+    await command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: (result.left + result.right) / 2, y: (result.top + result.bottom) / 2, deltaY: 10000, deltaX: 0 });
+    await delay(100);
+    const last = await evaluate(`(() => {
+      const panel = document.querySelector('#search-results'), item = panel.querySelector('.search-result-item:last-child');
+      const p = panel.getBoundingClientRect(), r = item.getBoundingClientRect();
+      const point = { x: r.left + r.width / 2, y: (Math.max(r.top, p.top + 2) + Math.min(r.bottom, p.bottom - 2)) / 2 };
+      return { ...point, hit: item.contains(document.elementFromPoint(point.x, point.y)), scrolled: panel.scrollTop > 0 };
+    })()`);
+    assert.ok(last.hit && last.scrolled, JSON.stringify({ item, last }));
+    for (const type of ['mousePressed', 'mouseReleased']) await command('Input.dispatchMouseEvent', { type, x: last.x, y: last.y, button: 'left', clickCount: 1 });
+    assert.equal(await evaluate('document.querySelector(".search-highlight")?.dataset.fixtureIndex'), '9', 'last result activates its actual indexed paragraph');
+    assert.equal(await evaluate('document.querySelector("#search-results").classList.contains("active")'), false);
+    assert.equal(await evaluate('document.querySelector("#search-input").value'), '');
+    searchResults.push({ width: item.actualWidth, height: item.height, profile: item.profile.id, theme: item.theme, ...result, wheelAndLastResultClick: true });
+  }
+  assert.equal(searchResults.length, 152);
+  await command('Page.setDocumentContent', { frameId: frameTree.frame.id, html: headerPage({ profile: profiles[1], search: true }) });
+  await delay(70);
+  await openSearch();
+  const searchResizeResults = [];
+  for (const width of [160, 683, 320]) {
+    await command('Emulation.setDeviceMetricsOverride', { width, height: 478, deviceScaleFactor: 1, mobile: false });
+    await delay(100);
+    searchResizeResults.push(await inspectSearch({ width, height: 478, openDuringResize: true }));
+  }
+  // Causal negative controls: a green test must reject each original defect
+  // independently, not merely observe that a popup appeared after typing.
+  const searchNegativeResults = [];
+  for (const mutation of [
+    { name: 'input-row anchor', css: '.book-header .search-container { position: relative; }' },
+    { name: 'unbounded fixed height', css: '.book-header .search-results { max-height: 400px; }' }
+  ]) {
+    await command('Emulation.setDeviceMetricsOverride', { width: 160, height: 478, deviceScaleFactor: 1, mobile: false });
+    await command('Page.setDocumentContent', { frameId: frameTree.frame.id, html: headerPage({ profile: profiles[0], search: true }) });
+    await evaluate(`document.head.appendChild(Object.assign(document.createElement('style'), { textContent: ${JSON.stringify(mutation.css)} }))`);
+    await delay(70);
+    await openSearch();
+    const result = await evaluate(`(${searchPanelProbe.toString()})()`);
+    assert.ok(result.active && result.count === 10);
+    if (mutation.name === 'input-row anchor') assert.ok(!result.belowHeader && !result.controlsReachable, JSON.stringify(result));
+    else assert.equal(result.fits, false, JSON.stringify(result));
+    searchNegativeResults.push({ mutation: mutation.name, detected: true, ...result });
+  }
+  console.log(JSON.stringify({ browser: chrome, passed: results.length, actualResizeProbes: resizeResults.length, expandedSearchPassed: searchResults.length, openSearchResizeProbes: searchResizeResults.length, expandedSearchNegativeControls: searchNegativeResults.length, widthMatrix: widths, interactiveBrowserZoomClaimed: false, results, resizeResults, searchResults, searchResizeResults, searchNegativeResults }, null, 2));
 } finally {
   for (const task of pending.values()) clearTimeout(task.timer);
   socket?.close();

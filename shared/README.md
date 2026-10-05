@@ -92,6 +92,16 @@ Focus表示、PointerによるTheme切替、document/Headerの幅、本文/Sideb
 同一ページでのresizeも検証する。これらをinteractive browser zoomの測定や、
 実端末のnotch検証とは扱わない。単体テストでCSSレンダラーを再実装しない。
 
+展開した検索パネルは検索欄の行ではなくHeader全体の下端に配置し、Headerの
+安全な左右padding内で中央にそろえる（最大400px）。高さは残りviewport内に
+制限し、単一のscroll領域で末尾の検索結果まで到達できる。`dvh`非対応環境には
+`vh`を使う。Controlsや検索を隠して重なりを回避しない。
+同じnative gateでshipped `search.js`に多数の「学習」検索結果を作らせ、通常/
+reflowに短い160/683×478 CSS viewportを加えた152条件を検証する。展開中の
+Control hit/Theme切替、Escape、実wheelによる末尾結果のクリック、開いたままの
+resizeも含む。別途実ブラウザ200% zoomとconsumer側の公開DOM/CSSの組合せを
+確認する必要があり、合成fixtureの成功だけでconsumer sign-offとはしない。
+
 SidebarのEnter/Space activation、既存hidden checkboxのTab位置、Escape/focus
 managementとnested navigation landmarkは別の#116の責務である。consumerの
 同期/pin更新はこの共有修正と別PRで行う。

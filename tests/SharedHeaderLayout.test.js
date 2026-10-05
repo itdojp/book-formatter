@@ -108,3 +108,12 @@ test('header native gate reuses the tested fail-closed Chrome discovery', () => 
   assert.match(source, /const \{ chrome, diagnostics \} = discoverChrome\(\);/);
   assert.doesNotMatch(source, /\bspawnSync\b|\bconst candidates\b/);
 });
+
+test('expanded header fixture uses shipped search behavior and many indexed paragraphs', () => {
+  const source = fs.readFileSync(new URL('../shared/assets/js/search.js', import.meta.url), 'utf8');
+  const html = headerPage({ search: true });
+  assert.ok(html.includes(source), 'use actual renderer/list styles, not a mock search implementation');
+  const paragraphs = [...elements(parse(html))].filter(node => attribute(node, 'data-fixture-index') !== undefined);
+  assert.deepEqual(paragraphs.map(node => attribute(node, 'data-fixture-index')), Array.from({ length: 14 }, (_, index) => String(index)));
+  assert.ok(!headerPage().includes(source), 'closed-state baseline remains independent');
+});

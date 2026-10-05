@@ -480,6 +480,32 @@ a:hover {
     display: block;
 }
 
+/* Use the whole fixed header as the popup's containing block. Anchoring to
+   the search-input row would cover controls when later rows wrap below it. */
+.book-header .search-container {
+    position: static;
+}
+
+.book-header .search-results {
+    left: max(1rem, var(--book-safe-area-left, env(safe-area-inset-left, 0px)));
+    right: max(1rem, var(--book-safe-area-right, env(safe-area-inset-right, 0px)));
+    max-width: 400px;
+    margin-inline: auto;
+    /* Retain a bottom gutter and cap the single scrollport at the remaining
+       viewport height. vh is the fallback for browsers without dynamic units. */
+    max-height: min(400px, max(0px, calc(100vh - var(--header-height) - 1rem - env(safe-area-inset-bottom, 0px))));
+    max-height: min(400px, max(0px, calc(100dvh - var(--header-height) - 1rem - env(safe-area-inset-bottom, 0px))));
+    overflow-wrap: anywhere;
+    overscroll-behavior: contain;
+}
+
+/* search.js also styles this list. Its nested 400px scrollport must not trap
+   wheel/touch scrolling before the outer viewport-bound popup can be read. */
+.book-header .search-results-list {
+    max-height: none;
+    overflow-y: visible;
+}
+
 /* Buttons */
 .sidebar-toggle,
 .theme-toggle {
