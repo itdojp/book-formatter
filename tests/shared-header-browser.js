@@ -80,8 +80,29 @@ try {
     assert.ok(!result.exceptionDetails, JSON.stringify(result.exceptionDetails));
     return result.result.value;
   };
+  // Only trusted functions defined by this test supply executable source.
+  // Per-case values travel as CDP data, never concatenated into JavaScript.
+  const call = async (fn, ...args) => {
+    const global = await command('Runtime.evaluate', { expression: 'globalThis' });
+    assert.ok(!global.exceptionDetails && global.result.objectId);
+    const objectId = global.result.objectId;
+    try {
+      const result = await command('Runtime.callFunctionOn', {
+        objectId, functionDeclaration: fn.toString(), arguments: args.map(value => ({ value })),
+        awaitPromise: true, returnByValue: true
+      });
+      assert.ok(!result.exceptionDetails, JSON.stringify(result.exceptionDetails));
+      return result.result.value;
+    } finally {
+      await command('Runtime.releaseObject', { objectId });
+    }
+  };
   await command('Page.enable');
   const { frameTree } = await command('Page.getFrameTree');
+  for (const value of ['"\'`\\\n\u2028\u2029', '</script><script>globalThis.__headerProbeInjection = 1</script>']) {
+    assert.equal(await call(value => value, value), value, 'CDP arguments preserve literal data');
+  }
+  assert.equal(await evaluate('globalThis.__headerProbeInjection'), undefined);
   const cases = [];
   for (const width of widths) for (const theme of ['light', 'dark']) for (const profile of profiles) {
     for (const reflow of [1, 2]) cases.push({ width, theme, profile, reflow, actualWidth: Math.floor(width / reflow), fontSize: 16 });
@@ -92,8 +113,8 @@ try {
     await command('Emulation.setDeviceMetricsOverride', { width: item.actualWidth, height: 1000, deviceScaleFactor: 1, mobile: false });
     await command('Page.setDocumentContent', { frameId: frameTree.frame.id, html: headerPage(item) });
     await delay(70);
-    await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(item.theme)}`);
-    const result = await evaluate(`(${probe.toString()})()`);
+    await call(theme => { document.documentElement.dataset.theme = theme; }, item.theme);
+    const result = await call(probe);
     assert.equal(result.viewport, item.actualWidth, 'actual CSS viewport must match');
     // Freeze the contract independently of the DOM being tested, including hidden controls.
     const expectedOrder = ['sidebar-toggle', 'header-title', 'search-input', 'theme-toggle', 'github-link',
@@ -138,12 +159,15 @@ try {
   for (const width of [320, 768, 1366]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
     await delay(100);
-    const result = await evaluate(`(${probe.toString()})()`);
+    const result = await call(probe);
     assert.ok(result.pass, JSON.stringify(result));
     resizeResults.push({ width, ...result });
   }
   const click = async selector => {
-    const point = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const point = await call(selector => {
+      const r = document.querySelector(selector).getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, selector);
     await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
     await command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
   };
@@ -164,7 +188,7 @@ try {
     assert.ok(ready, 'shipped search must open many results via real input');
   };
   const inspectSearch = async item => {
-    const result = await evaluate(`(${searchPanelProbe.toString()})()`);
+    const result = await call(searchPanelProbe);
     assert.ok(result.active && result.count === 10 && result.belowHeader && result.fits && result.controlsReachable && result.noHorizontalOverflow && result.outerScrollable && !result.innerScrollable, JSON.stringify({ item, result }));
     return result;
   };
@@ -179,7 +203,7 @@ try {
     await command('Emulation.setDeviceMetricsOverride', { width: item.actualWidth, height: item.height, deviceScaleFactor: 1, mobile: false });
     await command('Page.setDocumentContent', { frameId: frameTree.frame.id, html: headerPage({ ...item, search: true }) });
     await delay(70);
-    await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(item.theme)}`);
+    await call(theme => { document.documentElement.dataset.theme = theme; }, item.theme);
     await openSearch();
     const result = await inspectSearch(item);
     // Pointer must reach Theme with the popup STILL OPEN, not after Escape.
@@ -225,10 +249,14 @@ try {
   ]) {
     await command('Emulation.setDeviceMetricsOverride', { width: 160, height: 478, deviceScaleFactor: 1, mobile: false });
     await command('Page.setDocumentContent', { frameId: frameTree.frame.id, html: headerPage({ profile: profiles[0], search: true }) });
-    await evaluate(`document.head.appendChild(Object.assign(document.createElement('style'), { textContent: ${JSON.stringify(mutation.css)} }))`);
+    await call(css => {
+      const style = document.createElement('style');
+      style.textContent = css;
+      document.head.appendChild(style);
+    }, mutation.css);
     await delay(70);
     await openSearch();
-    const result = await evaluate(`(${searchPanelProbe.toString()})()`);
+    const result = await call(searchPanelProbe);
     assert.ok(result.active && result.count === 10);
     if (mutation.name === 'input-row anchor') assert.ok(!result.belowHeader && !result.controlsReachable, JSON.stringify(result));
     else assert.equal(result.fits, false, JSON.stringify(result));

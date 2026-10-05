@@ -117,3 +117,11 @@ test('expanded header fixture uses shipped search behavior and many indexed para
   assert.deepEqual(paragraphs.map(node => attribute(node, 'data-fixture-index')), Array.from({ length: 14 }, (_, index) => String(index)));
   assert.ok(!headerPage().includes(source), 'closed-state baseline remains independent');
 });
+
+test('native header case values use CDP arguments rather than code-string interpolation', () => {
+  const source = fs.readFileSync(new URL('./shared-header-browser.js', import.meta.url), 'utf8');
+  assert.match(source, /Runtime\.callFunctionOn/);
+  assert.match(source, /arguments: args\.map\(value => \(\{ value \}\)\)/);
+  assert.match(source, /Runtime\.releaseObject/);
+  assert.doesNotMatch(source, /\$\{JSON\.stringify\((?:selector|item\.theme|mutation\.css)\)\}/);
+});
