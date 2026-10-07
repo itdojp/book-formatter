@@ -1,10 +1,10 @@
 {
-  "version": "3.2.5",
-  "updated": "2026-09-30",
-  "description": "Clear short-query results and recompute current query on focus; preserve literal DOM text and mark nodes",
+  "version": "3.3.0",
+  "updated": "2026-10-04",
+  "description": "Keep responsive header controls visible and synchronize wrapped header offsets",
   "components": {
     "layouts": {
-      "version": "3.2.0",
+      "version": "3.3.0",
       "files": [
         "layouts/book.html",
         "layouts/default.html"
@@ -18,7 +18,7 @@
       ]
     },
     "assets": {
-      "version": "3.2.5",
+      "version": "3.3.0",
       "files": [
         "assets/css/main.css",
         "assets/css/mobile-responsive.css",
