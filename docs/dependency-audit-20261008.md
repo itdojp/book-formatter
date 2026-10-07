@@ -6,6 +6,13 @@ replacement proposal, after the general nested CLI compatibility proposal was
 rejected. This document defines that narrower boundary; it is not a universal
 compatibility or security guarantee.
 
+## npm prerequisite
+
+Root metadata and user guides require npm >=8.3.0, the first version with
+[overrides support](https://github.com/npm/cli/releases/tag/v8.3.0).
+Earlier npm is unsupported: it can ignore the override during dependency-tree
+recalculation and restore argparse1/sprintf-js. The Node range is unchanged.
+
 ## Supported root path: PRH and textlint
 
 A scoped `prh → js-yaml → argparse: 2.0.1` override removes the unpatched

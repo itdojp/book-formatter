@@ -177,3 +177,16 @@ test('dependency-internal CLI strict-warning mode remains explicitly unsupported
   assert.match(r.stderr, /DeprecationWarning/);
   assert.equal(r.stdout, '');
 });
+
+// The security override must not be advertised to npm versions that ignore it.
+test('npm support floor and lock metadata require overrides-aware npm', () => {
+  const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
+  const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+  assert.equal(manifest.engines.npm, '>=8.3.0');
+  assert.equal(lock.packages[''].engines.npm, manifest.engines.npm);
+  for (const guide of ['README.md', 'docs/book-creation-guide.md']) {
+    const text = readFileSync(guide, 'utf8');
+    assert.match(text, /npm 8\.3\.0以上/);
+    assert.doesNotMatch(text, /npm 8\.0\.0以上/);
+  }
+});
