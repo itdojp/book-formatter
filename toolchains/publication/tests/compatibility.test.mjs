@@ -232,3 +232,57 @@ test('offline gate has no external interface, write, child-process or outside re
   assert.throws(() => spawnSync(process.execPath, ['--version']), { code: 'ERR_ACCESS_DENIED' });
   assert.equal(process.permission.has('fs.read', fileURLToPath(root)), true);
 });
+
+
+// #182: resolve through the real PostCSS caller, not an unrelated top-level copy.
+const postcssRequire = createRequire(require.resolve('postcss/package.json'));
+const sourceMaps = postcssRequire('source-map-js');
+const flatFixtureMap = { version: 3, sources: ['fixture.css'], names: [], mappings: 'AAAA', sourcesContent: ['a{}'] };
+const indexedFixtureMap = (line, column = 0, map = flatFixtureMap) => ({
+  version: 3, sections: [{ offset: { line, column }, map }]
+});
+test('PostCSS resolves patched source-map-js and preserves small mappings', () => {
+  assert.equal(postcssRequire('source-map-js/package.json').version, '1.2.2');
+  const consumer = new sourceMaps.SourceMapConsumer(flatFixtureMap);
+  assert.equal(consumer.originalPositionFor({ line: 1, column: 0 }).source, 'fixture.css');
+  const node = sourceMaps.SourceNode.fromStringWithSourceMap('a{}', consumer);
+  assert.equal(node.toString(), 'a{}');
+  const generator = sourceMaps.SourceMapGenerator.fromSourceMap(consumer);
+  assert.equal(generator.toJSON().mappings, 'AAAA');
+  const css = require('postcss')([]).process('a { color: red; }', {
+    from: 'fixture.css', to: 'output.css', map: { inline: false, annotation: false }
+  });
+  assert.equal(css.css, 'a { color: red; }');
+  assert.ok(css.map.toJSON().sources.includes('fixture.css'));
+});
+test('indexed source-map offsets reject invalid types and bounds before serialization', () => {
+  for (const value of [-1, 1.5, Infinity, NaN, '1', null, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => new sourceMaps.SourceMapConsumer(indexedFixtureMap(value)), /non-negative integers/);
+    assert.throws(() => new sourceMaps.SourceMapConsumer(indexedFixtureMap(0, value)), /non-negative integers/);
+  }
+  // Only construct/validate; never serialize an oversized map in this regression.
+  assert.throws(() => new sourceMaps.SourceMapConsumer(indexedFixtureMap(10000001)), /must not exceed/);
+  assert.throws(() => new sourceMaps.SourceMapConsumer(indexedFixtureMap(6000000, 0, indexedFixtureMap(6000000))), /including offsets of nested sections/);
+  const normal = new sourceMaps.SourceMapConsumer(indexedFixtureMap(2));
+  const lines = [];
+  normal.eachMapping(m => lines.push(m.generatedLine));
+  assert.deepEqual(lines, [3]);
+});
+
+test('source-map bounded nesting reads innermost sources once', () => {
+  let map = flatFixtureMap;
+  for (let depth = 0; depth < 5; depth++) map = indexedFixtureMap(1, 0, map);
+  const consumer = new sourceMaps.SourceMapConsumer(map);
+  let inner = consumer;
+  for (let depth = 0; depth < 5; depth++) inner = inner._sections[0].consumer;
+  const sources = inner.sources;
+  let reads = 0;
+  Object.defineProperty(inner, 'sources', { get() { reads++; return sources; } });
+  assert.deepEqual(consumer.sources, ['fixture.css']);
+  assert.equal(reads, 1);
+  const generator = new sourceMaps.SourceMapGenerator();
+  for (const line of [1, 3, 7]) generator.addMapping({ generated: { line, column: 0 } });
+  assert.equal(generator.toJSON().mappings, 'A;;A;;;;A');
+  // Validate the maximum offset without allocating/serializing its line gap.
+  assert.doesNotThrow(() => new sourceMaps.SourceMapConsumer(indexedFixtureMap(10000000)));
+});

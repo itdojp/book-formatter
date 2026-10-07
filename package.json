@@ -72,5 +72,12 @@
     "eslint": "^10.8.0",
     "globals": "^17.9.0",
     "prettier": "^3.9.6"
+  },
+  "overrides": {
+    "prh": {
+      "js-yaml": {
+        "argparse": "2.0.1"
+      }
+    }
   }
 }

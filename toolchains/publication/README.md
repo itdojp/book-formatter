@@ -111,3 +111,13 @@ MIT530、ISC101、Apache-2.0 34、BlueOak-1.0.0 16、MPL-2.0 12、BSD-2/3各7、
 #152では固定browser/fonts/EPUBCheck、OS/container境界、edition projection、外部asset/任意JS拒否、PDF/EPUB内の可視/不可視データ、決定性を実検証してください。Node child-process権限が必要なbrowserと本テストを混同しないこと。Kindle Previewer対応OS・E Ink/tablet・印刷所要求・表紙/本文権利は実証なしに完了にしません。
 
 wrapperは名前空間不変・unshare失敗・親namespace取得失敗/空値・子namespace取得失敗/空値の6つをcommand doubleで直接拒否検証します（実隔離probeの代用ではありません）。内側bashでもerrexit/nounset/pipefailを明示し、namespace比較失敗後にNodeを開始しません。Node engineはmajorだけでなく`>=24.18.0 <25`全体を検査します。
+
+
+### 2026-10-08 source-map-js audit correction (#182)
+
+The isolated lock now selects official `source-map-js@1.2.2` within PostCSS's
+existing range, addressing GHSA-68fv-2mgg-jv7q. Its section-offset validation
+and bounded caller compatibility are tested; the license inventory and EPUB
+lock digest are regenerated. Renderer/Node/image/EPUBCheck versions and the
+moderate audit threshold are unchanged. Actual synthetic EPUB re-execution,
+not just lock preparation, is required before acceptance.
