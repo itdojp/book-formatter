@@ -23,7 +23,7 @@ install/auditだけはnpm registryへ接続します。`--ignore-scripts`を外�
 
 `test:offline`はLinuxのuser/network namespaceとNode permissionを必須とします。namespaceが使えなければ**失敗**し、通常networkで再試行しません。親と異なるnetwork namespace、外部interfaceなし、toolchain配下だけのread、write/child process拒否を実測します。`env -i`で実行し、入力はcommit済み合成fixtureのみです。ブラウザに渡す前の任意source/config/asset loaderは未提供です。
 
-`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全24件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
+`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全27件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
 
 CIはUbuntu22.04、既存系列のcheckout/setup-node Actions、10分timeoutです。Node24.18.0固定はtoolchainだけであり、root enginesを狭めません。
 
