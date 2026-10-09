@@ -47,7 +47,7 @@
   "license": "MIT",
   "engines": {
     "node": "^20.19.0 || ^22.13.0 || >=24.0.0",
-    "npm": ">=8.0.0"
+    "npm": ">=8.3.0"
   },
   "dependencies": {
     "@textlint/textlint-plugin-markdown": "^15.8.0",
@@ -72,5 +72,12 @@
     "eslint": "^10.8.0",
     "globals": "^17.9.0",
     "prettier": "^3.9.6"
+  },
+  "overrides": {
+    "prh": {
+      "js-yaml": {
+        "argparse": "2.0.1"
+      }
+    }
   }
 }

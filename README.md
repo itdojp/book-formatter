@@ -423,7 +423,7 @@ DEBUG=book-formatter:* npm start create-book
 ## システム要件
 
 - Node.js `^20.19.0 || ^22.13.0 || >=24.0.0`（`package.json`のenginesが正本）
-- npm 8.0.0以上
+- npm 8.3.0以上（依存overridesの適用に必要）
 
 ## トラブルシューティング
 

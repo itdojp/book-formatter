@@ -7,7 +7,7 @@
 ## 前提条件
 
 - Node.js 20.19.0以上、22.13.0以上、または24.0.0以上（CI検証対象は22/24、推奨は24 LTS）
-- npm 8.0.0以上
+- npm 8.3.0以上（依存overridesの適用に必要）
 - Git
 - GitHub アカウント（Pro/Team/Enterprise プラン推奨）
 
