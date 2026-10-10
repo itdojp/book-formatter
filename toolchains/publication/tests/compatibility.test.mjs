@@ -14,6 +14,8 @@ import { satisfies } from 'semver';
 import { licenseInventory } from './licenses.mjs';
 // Deliberately pinned internal schema chunk; re-audit this probe on CLI upgrades. No CLI/config loading.
 import { A as InlineConfig } from '../node_modules/@vivliostyle/cli/dist/schema-jMUYOVzB.js';
+// Fixed CLI export only: no create command, download, user config or template I/O.
+import { s as formatScaffold } from '../node_modules/@vivliostyle/cli/dist/scaffold-DlBNHRiW.js';
 
 const root = new URL('../', import.meta.url);
 const json = (file) => JSON.parse(readFileSync(new URL(file, root), 'utf8'));
@@ -38,7 +40,7 @@ test('private isolated Node24 package and exact overrides/lock', () => {
   assert.equal(p.engines.node, '>=24.18.0 <25');
   assertNodeVersion();
   assert.deepEqual(p.dependencies, { '@vivliostyle/cli': '11.3.3' });
-  assert.deepEqual(p.overrides, { trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2', 'press-ready': { uuid: '11.1.1' }, '@vivliostyle/cli': { dompurify: '3.4.16' } });
+  assert.deepEqual(p.overrides, { trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2', 'press-ready': { uuid: '11.1.1' }, '@vivliostyle/cli': { dompurify: '3.4.16', handlebars: '4.7.10' } });
   for (const [name, version] of Object.entries({ trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2' })) {
     const entries = Object.entries(lock.packages).filter(([key]) => key.endsWith(`/node_modules/${name}`) || key === `node_modules/${name}`);
     assert.ok(entries.length > 0);
@@ -49,6 +51,8 @@ test('private isolated Node24 package and exact overrides/lock', () => {
   assert.equal(lock.packages['node_modules/dompurify'].version, '3.4.16');
   // Check the actual CLI resolution, not only a root-level dependency declaration.
   assert.equal(cliRequire('dompurify').version, '3.4.16');
+  assert.equal(cliRequire('handlebars').VERSION, '4.7.10');
+  assert.equal(lock.packages['node_modules/handlebars'].version, '4.7.10');
 });
 
 test('Node engine gate rejects unsupported patches and prereleases', () => {
@@ -285,4 +289,63 @@ test('source-map bounded nesting reads innermost sources once', () => {
   assert.equal(generator.toJSON().mappings, 'A;;A;;;;A');
   // Validate the maximum offset without allocating/serializing its line gap.
   assert.doesNotThrow(() => new sourceMaps.SourceMapConsumer(indexedFixtureMap(10000000)));
+});
+
+// #184: short synthetic data only. Do not execute precompiled output or load user templates.
+test('Handlebars actual CLI scaffold caller preserves helpers, noEscape and finite iteration', () => {
+  const context = { name: 'synthetic sample', data: { title: '合成 & <fixture>' } };
+  assert.equal(formatScaffold(
+    '{{upper name}}|{{lower name}}|{{capital name}}|{{camel name}}|{{snake name}}|{{kebab name}}|{{proper name}}|{{json data}}', context),
+  'SYNTHETIC SAMPLE|synthetic sample|Synthetic Sample|syntheticSample|synthetic_sample|synthetic-sample|Synthetic Sample|{"title":"合成 & <fixture>"}');
+  assert.equal(formatScaffold('{{lorem}}', {}),
+    'Lorem ipsum dolor sit amet consectetur adipisicing elit. Odio, maxime et saepe facilis dolor aut maiores cupiditate rem voluptatem placeat accusamus voluptates laborum ratione enim blanditiis nisi voluptas non mollitia.');
+  for (const items of [['合成', 'sample'], new Set(['合成', 'sample'])]) {
+    assert.equal(formatScaffold('{{#each items}}{{@index}}:{{this}}{{#unless @last}};{{/unless}}{{/each}}', { items }), '0:合成;1:sample');
+  }
+  assert.equal(formatScaffold('before \n {{~#if enabled}}yes{{else}}no{{/if~}} \n after', { enabled: true }), 'beforeyesafter');
+  assert.equal(formatScaffold('{{#if enabled}}yes{{else}}no{{/if}}', { enabled: false }), 'no');
+  // noEscape is the caller's existing contract, NOT a sanitation boundary.
+  assert.equal(formatScaffold('{{value}}', { value: '<fixture> & "quoted"' }), '<fixture> & "quoted"');
+  const h = cliRequire('handlebars').create();
+  assert.equal(h.compile('{{value}}')({ value: '<fixture> & "quoted"' }), '&lt;fixture&gt; &amp; &quot;quoted&quot;');
+});
+
+test('Handlebars compiler validates bounded AST shapes and runtime ignores special context properties', () => {
+  const h = cliRequire('handlebars').create();
+  for (const [input, mutate, message] of [
+    ['{{value}}', ast => { ast.body[0].path.depth = -1; }, /depth must be a non-negative integer/],
+    ['{{value}}', ast => { ast.body[0].path.parts = [1]; }, /parts must only contain strings/],
+    ['{{helper 1}}', ast => { ast.body[0].params[0].value = '1'; }, /value must be a number/],
+    ['{{helper true}}', ast => { ast.body[0].params[0].value = 'true'; }, /value must be a boolean/],
+    ['{{helper "sample"}}', ast => { ast.body[0].params[0].value = 1; }, /value must be a string/],
+    ['sample', ast => { ast.body[0].type = 'UnknownFixture'; }, /Unknown type/],
+    ['sample', ast => { ast.blockParams = [1]; }, /blockParams must only contain strings/],
+  ]) {
+    const ast = h.parse(input);
+    mutate(ast);
+    assert.throws(() => h.precompile(ast), message);
+    assert.throws(() => h.compile(ast)({}), message);
+  }
+  // No constructors are invoked: inspect lookup classification only.
+  function SyntheticFixture() {}
+  h.registerHelper('kind', (object, key, options) => typeof options.lookupProperty(object, key));
+  assert.equal(h.compile('{{kind this "constructor"}}')(SyntheticFixture.prototype), 'undefined');
+  assert.equal(h.compile('{{kind this "constructor"}}')({ constructor: 'ordinary label' }), 'string');
+  assert.equal(h.compile('{{label}}')({ label: '合成', hasOwnProperty: () => false }), '合成');
+  assert.equal(h.compile('{{value}}')({ value: { toHTML: 'not a function' } }), '[object Object]');
+  h.registerPartial('sample', { type: 'Program', body: [] });
+  assert.throws(() => h.compile('{{> sample}}')({}), /partials must be strings or functions returning strings/);
+  h.registerPartial('sample', '{{label}}');
+  assert.equal(h.compile('{{> sample}}')({ label: '合成' }), '合成');
+});
+
+test('Handlebars precompile escapes inert inline delimiters without changing rendered literal text', () => {
+  const h = cliRequire('handlebars').create();
+  // Lexical delimiters only, no JavaScript body, browser, eval or payload.
+  for (const literal of ['<!--', '<script', '</script', '<ScRiPt']) {
+    const code = h.precompile(literal);
+    assert.ok(!code.toLowerCase().includes(literal.toLowerCase()));
+    assert.ok(code.includes('\\u003C'));
+    assert.equal(h.compile(literal)({}), literal);
+  }
 });

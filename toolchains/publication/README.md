@@ -23,7 +23,7 @@ install/auditだけはnpm registryへ接続します。`--ignore-scripts`を外�
 
 `test:offline`はLinuxのuser/network namespaceとNode permissionを必須とします。namespaceが使えなければ**失敗**し、通常networkで再試行しません。親と異なるnetwork namespace、外部interfaceなし、toolchain配下だけのread、write/child process拒否を実測します。`env -i`で実行し、入力はcommit済み合成fixtureのみです。ブラウザに渡す前の任意source/config/asset loaderは未提供です。
 
-`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全27件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
+`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全30件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
 
 CIはUbuntu22.04、既存系列のcheckout/setup-node Actions、10分timeoutです。Node24.18.0固定はtoolchainだけであり、root enginesを狭めません。
 
@@ -121,3 +121,34 @@ and bounded caller compatibility are tested; the license inventory and EPUB
 lock digest are regenerated. Renderer/Node/image/EPUBCheck versions and the
 moderate audit threshold are unchanged. Actual synthetic EPUB re-execution,
 not just lock preparation, is required before acceptance.
+
+
+### Scoped Handlebars patch (2026-10-10 JST, #184)
+
+PR183 merge後のfresh auditで、CLI11.3.3のexact `handlebars@4.7.9`に
+Critical1 / Moderate1（依存CLIへの伝播を含む影響package数）を検出しました。
+[4.7.10公式release](https://github.com/handlebars-lang/handlebars.js/releases/tag/v4.7.10)と
+[AST validation](https://github.com/advisories/GHSA-8r5x-fm3f-whwj)、
+[context own-property](https://github.com/advisories/GHSA-p8wg-vrv2-v86f)、
+[precompiled output escaping](https://github.com/advisories/GHSA-xw65-4hp5-5hc7)の
+3advisoryを確認し、CLI配下のみ`handlebars:4.7.10`を追加overrideします。
+当日時点のCLI latestは11.3.3のままです。tarballのSHA512 SRIを検証し、配布sourceの
+AST/Visitor validation、context/partial処理、escaping、有限iterationの変更を確認しました。
+lockのpackage version変更はHandlebars1件だけで、MIT licenseとEPUB lock digestを同期します。
+CLI、Node、root依存、image、EPUBCheck、audit moderate閾値、既存goldenは変更しません。
+
+実CLI11.3.3の`scaffold-DlBNHRiW.js` export `format`を使い、9helper、`compile`の
+`noEscape:true`、条件分岐、有限array/Set、空白処理を検査します。固定chunkへの依存は
+検査限定で、CLI更新時は再監査が必要です。scaffold command、remote template取得、
+任意config読込やfile出力は呼びません。`noEscape`は既存の文字列生成仕様であり、
+出力のHTML安全性や任意templateの信頼境界ではありません。
+
+CLI配布JSからはHandlebars `precompile`直接呼出しを確認できませんでした。
+追加の短いprecompile/AST/own-property/partial検査は依存APIの回帰確認であり、
+formatterからのexploit到達性の実証ではありません。悪性コード、巨大入力、browser実行、
+precompiled codeのevalは使いません。4.7.10の`#each`はiterableをlazyに読むため、
+render中に変更するcollectionの一般互換性は保証しません。本gateでは変更しない有限値のみです。
+
+新規3testを既存27testに加え、必須offlineは30件・skip0、wrapperは別6件です。
+5VFM goldenと、hosted CIでの2実合成EPUB/EPUBCheck/同等性gateを維持します。
+実書籍入力・販売承認・consumer pin採用とは別工程であり、fresh audit成功は時点付き観測です。
