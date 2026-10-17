@@ -79,7 +79,7 @@ npm start build -- \
 ## 生成reference labelの長さと互換性（#145）
 
 比較HTMLと連結Markdownの回帰基準はlockfile固定の`markdown-it`と
-`markdown-it-footnote`である。確認時はそれぞれ14.3.0 / 4.0.0。
+`markdown-it-footnote`である。確認時はそれぞれ14.3.2 / 4.0.0。
 strict CommonMark rendererへの切替や、package全文のCommonMark適合は保証しない。
 ただし生成reference labelには、[CommonMark 0.31.2 §6.3](https://spec.commonmark.org/0.31.2/#link-label)
 の上限に合わせ、括弧の内側を999文字以下とする限定的な出力契約を設ける。
@@ -99,7 +99,8 @@ strict CommonMark rendererへの切替や、package全文のCommonMark適合は�
 
 有限回帰はfree/paidの999/1000/2000文字、9→10の衝突、同一・後続文書にある
 hash候補の予約、文書/fragment独立性、MD/比較HTML、再生成一致を検査する。
-固定14.3.0は元の長いlabelも受理しており、本変更は現行runtimeのリンク消失の修正ではない。
+#145の元probe（14.3.0）と現行14.3.2の有限parser probeは1000/2000文字も受理しており、
+本変更は現行runtimeのリンク消失の修正ではない。
 新しいstrict renderer依存は追加しない。parser/plugin/pinまたはstrict consumerを変更するときは
 当該rendererの固定版で再監査する。実note公開前の人間によるリンク・表示確認gateは維持する。
 
