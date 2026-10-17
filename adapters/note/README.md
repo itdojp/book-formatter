@@ -76,6 +76,33 @@ npm start build -- \
 
 `--dry-run`はmetadata、両edition、source digest、変換、画像/PDF候補、既存output ownershipまで検査するがfileを書かない。
 
+## 生成reference labelの長さと互換性（#145）
+
+比較HTMLと連結Markdownの回帰基準はlockfile固定の`markdown-it`と
+`markdown-it-footnote`である。確認時はそれぞれ14.3.0 / 4.0.0。
+strict CommonMark rendererへの切替や、package全文のCommonMark適合は保証しない。
+ただし生成reference labelには、[CommonMark 0.31.2 §6.3](https://spec.commonmark.org/0.31.2/#link-label)
+の上限に合わせ、括弧の内側を999文字以下とする限定的な出力契約を設ける。
+
+- `note-<document ID>-<fragment>-ref-<counter>`が999文字以下なら従来出力を維持する。
+- counter込みの候補が999文字を超える場合だけ、counter以外のprefix全体のUTF-8
+  SHA-256（64桁hex）を使った`note-sha256-<digest>-<counter>`へ切り替える。
+  文書ID・free/paid・reference種別をdigestへ含め、同じ入力・順序で決定的に生成する。
+- 衝突解決は短い形式と同じfragment-wide予約集合を使う。hashの一意性だけを前提にせず、
+  大小文字・空白を正規化した予約と照合し、衝突時はcounterを進める。
+  9から10への桁数増加の都度も長さを確認する。
+- 生成文字はASCIIなのでcode unitとcode pointの長さは一致する。
+  原稿のstructure IDや他adapterに新しい長さ制限は設けない。表示文字列・本文・リンク先は保持する。
+- named footnoteはCommonMark本体ではなく固定pluginの拡張である。`fn` namespaceと
+  独立した予約集合・既存出力を維持し、この999文字契約を適用しない。
+  footnoteを含む全renderer互換性やnote編集画面での動作を保証するものではない。
+
+有限回帰はfree/paidの999/1000/2000文字、9→10の衝突、同一・後続文書にある
+hash候補の予約、文書/fragment独立性、MD/比較HTML、再生成一致を検査する。
+固定14.3.0は元の長いlabelも受理しており、本変更は現行runtimeのリンク消失の修正ではない。
+新しいstrict renderer依存は追加しない。parser/plugin/pinまたはstrict consumerを変更するときは
+当該rendererの固定版で再監査する。実note公開前の人間によるリンク・表示確認gateは維持する。
+
 ## callout、画像、link
 
 - `note` / `tip` / `warning` calloutはblockquoteへ劣化変換し、`callout_degraded_to_blockquote`を記録する。
