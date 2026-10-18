@@ -52,6 +52,33 @@ rootでnavigationを出さないincludeの判断は変更しない。`page-navig
 ブラウザーでの表示、consumer固有のwrapperは別途確認する。sidebarのkeyboard/focusと
 親#116の総合検証は別の残作業であり、formatterの更新だけでconsumerへ反映されない。
 
+### Sidebarのkeyboard/state（#116）
+
+layout 3.3.2は既存checkbox/CSS drawerをlayout内のcontrollerで拡張する。
+Enter/Space（repeat除外）とpointerは単一stateを更新し、`aria-controls="sidebar"`、
+`aria-expanded`を実際のmobile/desktop表示へ同期する。閉じたmobile sidebarは
+`inert`になり、不可視checkboxはTab順から除外する。desktopは常に表示し、
+1024px境界をまたいでmobileへ戻ると閉じる。
+
+Escapeはtoggle/sidebar内だけで処理し、search等の別widgetから奪わない。
+overlay/通常のnavigation選択でも閉じ、sidebar内に残るfocusを可視toggleへ戻す。
+修飾key付き別tab操作とリンクのdefault navigationを妨げない。Tabでheader/sidebarを離れたら
+overlayを閉じ、移動先のfocusを維持する。modal focus trapや
+ARIA menuではなく通常の文書navigationである。active TOCへの既存scrollも保持する。
+
+JS無効時のlabel/checkbox pointer fallbackは保持するが、新しいkeyboard/ARIA同期は
+JSと`inert`/`matchMedia.addEventListener`対応browserを前提とする。未読込のlegacy
+`sidebar.js`等を併用した動作や全browser/支援技術の適合までは保証しない。
+[`Disclosure Pattern`](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)と
+[Navigation example](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/)
+（2026-10-18確認）を参考にし、製品固有のkeyboard/pointer/AX/resizeの回帰を実行する。
+
+`SharedSidebar.test.js`は有限state/event検査でDOMの再実装ではない。
+`npm run test:shared-dom-browser`は既存modal/searchに加え、shipped layout/controllerを
+使うnative Tab/Enter/Space/Escape/pointer/inert/AX/resize検査を実行する。
+実ブラウザーzoomとconsumer Book QA/採用確認は別gateであり、合成fixture成功を代替にしない。
+consumerのpin/sync/公開はこのformatter変更では実施しない。
+
 ### 同期手順
 
 最初のdry-runから[`web-jekyll-legacy` adapter contractの「安全な同期手順」](../adapters/web-jekyll-legacy/README.md#安全な同期手順)を正本として実行する。この入口はformatterの全tracked fileを監査済みSHAのblobへ照合し、照合済みlockfileから依存関係を再構築してから予定componentを確認する。`shared/README.md`には同等の実行blockを複製しない。

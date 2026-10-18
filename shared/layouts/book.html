@@ -52,13 +52,13 @@
     {% assign repo_branch = site.repository_branch | default: 'main' %}
 
     <!-- CSS-only sidebar toggle (hidden checkbox for state management) -->
-    <input type="checkbox" id="sidebar-toggle-checkbox" class="sidebar-toggle-checkbox" aria-hidden="true">
+    <input type="checkbox" id="sidebar-toggle-checkbox" class="sidebar-toggle-checkbox" aria-hidden="true" tabindex="-1">
     
     <div class="book-layout">
         <!-- Header -->
         <header class="book-header">
             <div class="header-left">
-                <label for="sidebar-toggle-checkbox" class="sidebar-toggle" aria-label="Toggle sidebar" role="button" tabindex="0">
+                <label for="sidebar-toggle-checkbox" class="sidebar-toggle" aria-label="Toggle sidebar" role="button" tabindex="0" aria-controls="sidebar">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="3" y1="6" x2="21" y2="6"></line>
                         <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -196,9 +196,14 @@
         // HEADER_LAYOUT_END
     </script>
     <script>
+        // SIDEBAR_CONTROLLER_START: progressively enhance the CSS checkbox drawer.
         document.addEventListener('DOMContentLoaded', function() {
             var cb = document.getElementById('sidebar-toggle-checkbox');
-            if (!cb) return;
+            var toggle = document.querySelector('.sidebar-toggle');
+            var sidebar = document.getElementById('sidebar');
+            var overlay = document.getElementById('sidebar-overlay');
+            if (!cb || !toggle || !sidebar) return;
+            var mobile = window.matchMedia('(max-width: 1024px)');
 
 	            // Reset sidebar checkbox on page load to prevent stuck open state.
 	            cb.checked = false;
@@ -251,13 +256,76 @@
                 } catch (_) {}
             }
 
-            // When the drawer is opened, scroll the active TOC item into view if it's out of view.
-            cb.addEventListener('change', function() {
-                if (!cb.checked) return;
-                // Wait a tick for CSS to apply and the sidebar to become visible.
-                setTimeout(ensureActiveTocVisible, 0);
+            function syncSidebar() {
+                var visible = !mobile.matches || cb.checked;
+                // Move focus before making a focused descendant inert. Never
+                // send desktop focus to the hidden mobile toggle or steal it
+                // from another header/content control.
+                if (!visible && sidebar.contains(document.activeElement)) {
+                    toggle.focus({ preventScroll: true });
+                }
+                sidebar.inert = !visible;
+                toggle.setAttribute('aria-expanded', String(visible));
+                if (mobile.matches && cb.checked) {
+                    setTimeout(ensureActiveTocVisible, 0);
+                }
+            }
+
+            function setOpen(open) {
+                cb.checked = open;
+                syncSidebar();
+            }
+
+            // Keep the label/checkbox no-JS pointer fallback. With JS active,
+            // all activation uses one state transition, not label default + JS.
+            toggle.addEventListener('click', function(event) {
+                event.preventDefault();
+                if (mobile.matches) setOpen(!cb.checked);
             });
+            toggle.addEventListener('keydown', function(event) {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                if (mobile.matches && !event.repeat) setOpen(!cb.checked);
+            });
+            cb.addEventListener('change', syncSidebar);
+            if (overlay) {
+                // Preserve a sidebar focus until click can return it safely;
+                // the label's mousedown default would otherwise blur it first.
+                overlay.addEventListener('mousedown', function(event) {
+                    if (event.button === 0) event.preventDefault();
+                });
+                overlay.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    if (mobile.matches) setOpen(false);
+                });
+            }
+            document.addEventListener('keydown', function(event) {
+                if (event.defaultPrevented || event.key !== 'Escape' || !mobile.matches || !cb.checked) return;
+                // Do not intercept Escape owned by search or another widget.
+                if (document.activeElement !== toggle && !sidebar.contains(document.activeElement)) return;
+                event.preventDefault();
+                setOpen(false);
+            });
+            document.addEventListener('focusin', function(event) {
+                if (!mobile.matches || !cb.checked || sidebar.contains(event.target) || event.target === toggle) return;
+                if (event.target.closest && event.target.closest('.book-header')) return;
+                // This is not a modal: allow Tab to leave, then remove the
+                // overlay rather than obscure the newly focused content.
+                setOpen(false);
+            });
+            sidebar.addEventListener('click', function(event) {
+                if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+                var link = event.target.closest('a[href]');
+                if (mobile.matches && link && sidebar.contains(link)) setOpen(false);
+                // Leave the link's normal navigation/default action intact.
+            });
+            mobile.addEventListener('change', function() {
+                // Desktop is always visible; returning to mobile starts closed.
+                setOpen(false);
+            });
+            syncSidebar();
         });
+        // SIDEBAR_CONTROLLER_END
     </script>
 </body>
 </html>
