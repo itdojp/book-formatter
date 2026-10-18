@@ -68,11 +68,16 @@ book-formatterで作成した書籍サイトにおけるパフォーマンス問
 ```
 
 **レイアウトテンプレートの修正**
+
+このwrapper例のみlayout 3.3.1に合わせて更新した。外側は装飾用の`div`とし、
+include内の名前付きnavigation landmarkを重複させない。この変更は、本文中の
+過去のcommandや測定結果を現行環境で再検証したことを意味しない。
+
 ```html
-<!-- 常にページナビゲーションを表示 -->
-<nav class="page-navigation" aria-label="Page navigation">
+<!-- 名前付きnavigationはinclude側に保持 -->
+<div class="page-navigation">
     {% include page-navigation.html %}
-</nav>
+</div>
 ```
 
 ## パフォーマンステスト手順

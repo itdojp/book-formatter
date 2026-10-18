@@ -4,6 +4,62 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import { BookGenerator } from '../src/BookGenerator.js';
+import { parseFragment } from 'parse5';
+
+// Bounded markup composition, not a Liquid interpreter. Actual Jekyll output
+// is checked separately; these probes bind the shipped wrapper/include shape.
+const sharedLayout = await fs.readFile(new URL('../shared/layouts/book.html', import.meta.url), 'utf8');
+const pageNavigation = await fs.readFile(new URL('../shared/includes/page-navigation.html', import.meta.url), 'utf8');
+const navigationGuide = await fs.readFile(new URL('../docs/PERFORMANCE_GUIDE.md', import.meta.url), 'utf8');
+
+function assertPageNavigationLandmark(layout, include) {
+  const marker = /\{%\s*include page-navigation\.html\s*%\}/g;
+  assert.strictEqual([...layout.matchAll(marker)].length, 1, 'exactly one page-navigation include');
+  const wrapper = layout.match(/<(nav|div)\b[^>]*class="page-navigation"[^>]*>\s*\{%\s*include page-navigation\.html\s*%\}\s*<\/\1>/);
+  assert(wrapper, 'explicit page-navigation wrapper');
+  const root = parseFragment(wrapper[0].replace(marker, () => include));
+  const elements = [];
+  const visit = node => {
+    if (node.tagName) elements.push(node);
+    for (const child of node.childNodes ?? []) visit(child);
+  };
+  visit(root);
+  const attr = (node, name) => node.attrs.find(attribute => attribute.name === name)?.value;
+  const landmarks = elements.filter(node => node.tagName === 'nav' || attr(node, 'role') === 'navigation');
+  assert.strictEqual(landmarks.length, 1, 'one page-bottom navigation landmark');
+  assert.strictEqual(attr(landmarks[0], 'class'), 'book-navigation');
+  assert.strictEqual(attr(landmarks[0], 'aria-label'), 'Chapter navigation', 'named chapter navigation');
+  assert.strictEqual(elements[0].tagName, 'div', 'non-landmark styling wrapper');
+  assert.strictEqual(attr(elements[0], 'class'), 'page-navigation');
+}
+
+describe('Shared page-bottom navigation landmark', () => {
+  it('retains one named include landmark within the styling wrapper', () => {
+    assertPageNavigationLandmark(sharedLayout, pageNavigation);
+  });
+
+  it('keeps the copyable historical-guide wrapper consistent with the shipped landmark', () => {
+    assertPageNavigationLandmark(navigationGuide, pageNavigation);
+  });
+
+  it('rejects reintroduction of the nested nav in the documented example', () => {
+    const oldGuide = navigationGuide.replace('<div class="page-navigation">', '<nav class="page-navigation">')
+      .replace('{% include page-navigation.html %}\n</div>', '{% include page-navigation.html %}\n</nav>');
+    assert.throws(() => assertPageNavigationLandmark(oldGuide, pageNavigation), /one page-bottom/);
+  });
+
+  for (const [name, mutateLayout, mutateInclude, reason] of [
+    ['nested nav wrapper', text => text.replace('<div class="page-navigation">', '<nav class="page-navigation">').replace('{% include page-navigation.html %}\n                </div>', '{% include page-navigation.html %}\n                </nav>'), text => text, /one page-bottom/],
+    ['navigation role on wrapper', text => text.replace('<div class="page-navigation">', '<div class="page-navigation" role="navigation">'), text => text, /one page-bottom/],
+    ['unnamed inner landmark', text => text, text => text.replace(' aria-label="Chapter navigation"', ''), /named chapter navigation/],
+    ['missing inner landmark', text => text, text => text.replace('<nav class="book-navigation"', '<div class="book-navigation"').replace('</nav>', '</div>'), /one page-bottom/],
+    ['duplicate inner landmark', text => text, text => text + '<nav aria-label="Duplicate"></nav>', /one page-bottom/]
+  ]) {
+    it(`rejects ${name}`, () => {
+      assert.throws(() => assertPageNavigationLandmark(mutateLayout(sharedLayout), mutateInclude(pageNavigation)), reason);
+    });
+  }
+});
 
 describe('Navigation Auto-generation', () => {
   let generator;
