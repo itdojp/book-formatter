@@ -31,7 +31,7 @@ inert and local; no external target or executable payload is needed.
 
 `npm run test:shared-dom-browser` runs the shipped scripts against the native
 Chrome DOM and the checked-in synthetic fixture. It fails if Chrome is absent
-or any of 39 probes fails (there is no skip). `CHROME_PATH` may select an
+or any of 54 probes fails (there is no skip). `CHROME_PATH` may select an
 installed Chrome; `TMPDIR` must be a short, operator-owned directory for Unix
 sockets. For example, create a unique short directory beneath the authorized
 workspace, export it as `TMPDIR`, and remove only that owned directory after
@@ -45,6 +45,12 @@ pending-query lifecycle checks. Shared/assets `3.2.5` retains the literal DOM
 rendering fix and clears sub-threshold results; focus re-evaluates the current
 trimmed query rather than revealing an earlier query's results. These checks
 remain synthetic/offline and do not prove arbitrary consumer layout behavior.
+
+Issue #186 adds 15 modal-listener lifecycle probes to those 39 checks, for 54
+in total. Button, backdrop and Escape dismissals remove the same named document
+listener. Repeated closes, stale-modal callbacks and unrelated listeners are
+checked without changing safe text-to-DOM construction. This does not add
+`main.js` to the managed asset inventory or claim full sidebar accessibility.
 
 The managed `search.js` change bumps shared/assets versions to `3.2.4` so a
 `3.2.3` consumer's read-only `sync-components --dry-run` reports an update.

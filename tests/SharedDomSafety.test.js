@@ -60,7 +60,8 @@ class Element {
     this.listeners.set(event, [...(this.listeners.get(event) || []), callback]);
   }
   removeEventListener(event, callback) {
-    this.listeners.set(event, this.listeners.get(event).filter((fn) => fn !== callback));
+    const callbacks = this.listeners.get(event);
+    if (callbacks) this.listeners.set(event, callbacks.filter((fn) => fn !== callback));
   }
   emit(event, data = {}) {
     for (const callback of this.listeners.get(event) || []) callback.call(this, { target: this, ...data });
@@ -68,6 +69,23 @@ class Element {
   scrollIntoView() { this.scrolled = true; }
   blur() { this.blurred = true; }
 }
+
+test('bounded test DOM removal of an unregistered event or callback is a no-op', () => {
+  const element = new Element('div');
+  let count = 0;
+  const active = () => { count++; };
+  const unknown = () => {};
+  element.removeEventListener('keydown', unknown);
+  assert.equal(element.listeners.has('keydown'), false);
+  element.addEventListener('keydown', active);
+  element.removeEventListener('keydown', unknown);
+  element.emit('keydown');
+  assert.equal(count, 1);
+  element.removeEventListener('keydown', active);
+  element.removeEventListener('keydown', active);
+  element.emit('keydown');
+  assert.equal(count, 1);
+});
 
 test('test DOM class selectors share className/classList token state', () => {
   const element = new Element('div');
@@ -231,6 +249,41 @@ for (const dismiss of ['button', 'backdrop', 'Escape']) {
     else if (dismiss === 'backdrop') modal.emit('click');
     else f.document.emit('keydown', { key: 'Escape' });
     assert.equal(f.document.body.querySelector('.image-modal'), null);
+  });
+}
+
+for (const dismiss of ['button', 'backdrop', 'Escape']) {
+  test(`image modal: repeated ${dismiss} teardown retains unrelated listeners`, () => {
+    const f = fixture('main.js');
+    const img = new Element('img');
+    img.src = 'https://assets.example/image.png';
+    f.content.appendChild(img);
+    f.flush();
+    let unrelatedCalls = 0;
+    const unrelated = () => { unrelatedCalls++; };
+    f.document.addEventListener('keydown', unrelated);
+    for (let iteration = 0; iteration < 3; iteration++) {
+      img.emit('click');
+      const modal = f.document.body.querySelector('.image-modal');
+      assert.equal(f.document.listeners.get('keydown').length, 2);
+      // An ordinary key and a click inside the dialog must not dismiss it.
+      f.document.emit('keydown', { key: 'a' });
+      modal.emit('click', { target: modal.querySelector('img') });
+      assert.equal(f.document.body.querySelector('.image-modal'), modal);
+      if (dismiss === 'button') modal.querySelector('button').emit('click');
+      else if (dismiss === 'backdrop') modal.emit('click');
+      else f.document.emit('keydown', { key: 'Escape' });
+      assert.equal(f.document.body.querySelector('.image-modal'), null);
+      assert.deepEqual(f.document.listeners.get('keydown'), [unrelated]);
+      // Repeat a stale close after reopening: it must not remove the new handler.
+      img.emit('click');
+      modal.querySelector('button').emit('click');
+      assert.equal(f.document.listeners.get('keydown').length, 2);
+      f.document.emit('keydown', { key: 'Escape' });
+      assert.equal(f.document.body.querySelector('.image-modal'), null);
+      assert.deepEqual(f.document.listeners.get('keydown'), [unrelated]);
+    }
+    assert.ok(unrelatedCalls >= 6);
   });
 }
 

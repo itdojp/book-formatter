@@ -220,20 +220,20 @@
         
         // Close handlers
         const closeModal = () => {
+            document.removeEventListener('keydown', escHandler);
             modal.remove();
         };
+
+        function escHandler(e) {
+            if (e.key === 'Escape') closeModal();
+        }
         
         modal.querySelector('.image-modal-close').addEventListener('click', closeModal);
         modal.addEventListener('click', (e) => {
             if (e.target === modal) closeModal();
         });
         
-        document.addEventListener('keydown', function escHandler(e) {
-            if (e.key === 'Escape') {
-                closeModal();
-                document.removeEventListener('keydown', escHandler);
-            }
-        });
+        document.addEventListener('keydown', escHandler);
     }
     
     // Add additional styles

@@ -3,6 +3,12 @@
  const value='literal <em data-fixture="markup">日本語</em> [test] &';
  for(let i=0;i<12;i++){const p=document.createElement('p');p.textContent=value+' '+i;content.append(p)}
  const img=document.createElement('img');img.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';img.alt='" data-fixture="attribute"><em>literal</em>';content.append(img);
+ // Observe only this fixture's default-phase document keydown registrations;
+ // dispatch/removal still run in the native browser, not a simulated DOM.
+ const documentKeys=new Set();
+ const nativeAdd=document.addEventListener.bind(document),nativeRemove=document.removeEventListener.bind(document);
+ document.addEventListener=(type,fn,...options)=>{if(type==='keydown')documentKeys.add(fn);return nativeAdd(type,fn,...options)};
+ document.removeEventListener=(type,fn,...options)=>{if(type==='keydown')documentKeys.delete(fn);return nativeRemove(type,fn,...options)};
  </script><script>/* SHARED_SOURCE:search */</script><script>/* SHARED_SOURCE:main */</script><script>
  window.addEventListener('load',async()=>{
  const checks=[];const check=(name,pass)=>checks.push({name,pass:!!pass});
@@ -38,7 +44,25 @@
  check('modal literal alt '+close,copy?.alt===img.alt);check('no modal attribute injection '+close,!copy?.hasAttribute('data-fixture')&&!modal?.querySelector('em'));check('modal source '+close,copy?.src===img.src);
  if(close==='button')modal?.querySelector('button')?.click();else if(close==='backdrop')modal?.click();else document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));
  check('modal closed '+close,!document.querySelector('.image-modal'));
+ check('modal keydown teardown '+close,documentKeys.size===0);
  }
+ const noListener=()=>{};document.removeEventListener('never-registered',noListener);
+ check('native removal of unknown event is no-op',documentKeys.size===0);
+ let unrelatedCalls=0;const unrelated=()=>{unrelatedCalls++};document.addEventListener('keydown',unrelated);
+ for(const close of ['button','backdrop','Escape']){
+ let allClosed=true,allCounts=true,allFresh=true;
+ for(let i=0;i<3;i++){
+ img.click();const modal=document.querySelector('.image-modal');allCounts&&=documentKeys.size===2;
+ modal?.querySelector('img')?.click();document.dispatchEvent(new KeyboardEvent('keydown',{key:'a'}));allFresh&&=document.querySelector('.image-modal')===modal;
+ if(close==='button')modal?.querySelector('button')?.click();else if(close==='backdrop')modal?.click();else document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));
+ allClosed&&=!document.querySelector('.image-modal');allCounts&&=documentKeys.size===1&&documentKeys.has(unrelated);
+ img.click();modal?.querySelector('button')?.click();allFresh&&=documentKeys.size===2&&!!document.querySelector('.image-modal');
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));allFresh&&=documentKeys.size===1&&!document.querySelector('.image-modal');
+ }
+ check('repeated modal closed '+close,allClosed);check('repeated modal listeners '+close,allCounts);check('fresh/stale modal separation '+close,allFresh);
+ }
+ check('unrelated native keydown handler retained',unrelatedCalls>=18&&documentKeys.has(unrelated));document.removeEventListener('keydown',unrelated);
+ check('all modal keydown handlers released',documentKeys.size===0);
  }catch(e){checks.push({name:'exception',pass:false,error:String(e)})}
  document.getElementById('probe').textContent=JSON.stringify(checks);
  });</script></body></html>
