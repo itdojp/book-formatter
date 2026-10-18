@@ -10,6 +10,7 @@ import { parseFragment } from 'parse5';
 // is checked separately; these probes bind the shipped wrapper/include shape.
 const sharedLayout = await fs.readFile(new URL('../shared/layouts/book.html', import.meta.url), 'utf8');
 const pageNavigation = await fs.readFile(new URL('../shared/includes/page-navigation.html', import.meta.url), 'utf8');
+const navigationGuide = await fs.readFile(new URL('../docs/PERFORMANCE_GUIDE.md', import.meta.url), 'utf8');
 
 function assertPageNavigationLandmark(layout, include) {
   const marker = /\{%\s*include page-navigation\.html\s*%\}/g;
@@ -35,6 +36,16 @@ function assertPageNavigationLandmark(layout, include) {
 describe('Shared page-bottom navigation landmark', () => {
   it('retains one named include landmark within the styling wrapper', () => {
     assertPageNavigationLandmark(sharedLayout, pageNavigation);
+  });
+
+  it('keeps the copyable historical-guide wrapper consistent with the shipped landmark', () => {
+    assertPageNavigationLandmark(navigationGuide, pageNavigation);
+  });
+
+  it('rejects reintroduction of the nested nav in the documented example', () => {
+    const oldGuide = navigationGuide.replace('<div class="page-navigation">', '<nav class="page-navigation">')
+      .replace('{% include page-navigation.html %}\n</div>', '{% include page-navigation.html %}\n</nav>');
+    assert.throws(() => assertPageNavigationLandmark(oldGuide, pageNavigation), /one page-bottom/);
   });
 
   for (const [name, mutateLayout, mutateInclude, reason] of [
