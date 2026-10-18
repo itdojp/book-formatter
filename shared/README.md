@@ -39,6 +39,21 @@
 
 ## ローカル同期
 
+### ページ末尾navigationのlandmark（#189 / #116）
+
+layout 3.3.1では、`book.html`の`.page-navigation`を非landmarkの`div`とし、
+includeが出力する`nav.book-navigation`（名前は`Chapter navigation`）だけを
+ページ末尾のnavigation landmarkとする。class、前/次/目次リンクとその解決順序、
+rootでnavigationを出さないincludeの判断は変更しない。`page-navigation.html`を
+単独で使用するconsumerのlandmarkも維持する。
+
+既存navigation suiteは実sourceのwrapper/includeを有限に組み合わせたDOM構造を
+検査するもので、Liquidの条件分岐や全a11y適合の証明ではない。実Jekyllのroot/章出力、
+ブラウザーでの表示、consumer固有のwrapperは別途確認する。sidebarのkeyboard/focusと
+親#116の総合検証は別の残作業であり、formatterの更新だけでconsumerへ反映されない。
+
+### 同期手順
+
 最初のdry-runから[`web-jekyll-legacy` adapter contractの「安全な同期手順」](../adapters/web-jekyll-legacy/README.md#安全な同期手順)を正本として実行する。この入口はformatterの全tracked fileを監査済みSHAのblobへ照合し、照合済みlockfileから依存関係を再構築してから予定componentを確認する。`shared/README.md`には同等の実行blockを複製しない。
 
 現行dry-runはconsumerの`shared.version`が一致する場合も、選択されたmanaged fileをbyte比較し、欠落・差分があれば表示する。「最新です」はその選択範囲の確認結果であり、未選択・opt-out fileや同時変更まで含む差分0の証明ではない。version不一致時は引き続き予定componentの一覧を示す。隔離worktreeへの通常同期も同じadapter contractの手順4を実行する。`sync-components` runtime自体も、選択された全managed destinationと`book-config.json`を最初のwrite前に`lstat`し、root/ancestor/final symlink、non-directory ancestor、non-regular final、root escapeを拒否する。runtime検査は固定SHA・clean base・差分reviewを代替しない。
