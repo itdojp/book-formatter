@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import fs from 'fs-extra';
@@ -27,6 +27,9 @@ const NOTE_HASHTAG = /^[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}A-Za
 const NOTE_IMAGE_EXTENSIONS = new Set(['.gif', '.heic', '.jpeg', '.jpg', '.png']);
 const NOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 const NOTE_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
+// CommonMark 0.31.2 §6.3; generated reference labels are ASCII. Footnotes
+// remain a separate plugin contract, not CommonMark reference labels.
+const NOTE_REFERENCE_LABEL_MAX_LENGTH = 999;
 const SAFE_IO = createAdapterSafeIO({ adapterName: 'note', target: 'note' });
 const REFERENCE_DEFINITION_RANGES = Symbol('note-reference-definition-ranges');
 const FOOTNOTE_DEFINITION_RANGES = Symbol('note-footnote-definition-ranges');
@@ -329,11 +332,16 @@ function compareCodeUnits(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function createUniqueLabel(existingLabels, prefix, index, normalize = (value) => value) {
+function createUniqueLabel(existingLabels, prefix, index, normalize = (value) => value, maxLength = Infinity) {
   let suffix = index;
   let candidate;
+  let boundedPrefix;
   do {
     candidate = `${prefix}-${suffix}`;
+    if (candidate.length > maxLength) {
+      boundedPrefix ??= `note-sha256-${createHash('sha256').update(prefix).digest('hex')}`;
+      candidate = `${boundedPrefix}-${suffix}`;
+    }
     suffix += 1;
   } while (existingLabels.has(normalize(candidate)));
   existingLabels.add(normalize(candidate));
@@ -354,7 +362,8 @@ function createDocumentLabelNamespace(source, documentId, reservations = createL
       existingReferences,
       `note-${documentId}-ref`,
       index + 1,
-      SOURCE_MARKDOWN.utils.normalizeReference
+      SOURCE_MARKDOWN.utils.normalizeReference,
+      NOTE_REFERENCE_LABEL_MAX_LENGTH
     )
   ]));
 

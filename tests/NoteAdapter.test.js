@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterEach, describe, test } from 'node:test';
 import assert from 'node:assert';
 import path from 'node:path';
@@ -843,6 +844,141 @@ describe('NoteAdapter', () => {
       });
     }
   }
+
+  // #145: finite output-length contract, not a strict CommonMark renderer.
+  async function renameDocument(book, oldId, newId) {
+    await updateMetadata(book, (metadata) => {
+      for (const entries of Object.values(metadata.structure)) {
+        for (const entry of entries) if (entry.id === oldId) entry.id = newId;
+      }
+      for (const edition of metadata.editions) {
+        edition.documents = edition.documents.map((id) => id === oldId ? newId : id);
+      }
+    });
+  }
+
+  function hashedReferencePrefix(prefix) {
+    return `note-sha256-${createHash('sha256').update(prefix).digest('hex')}`;
+  }
+
+  for (const [fragment, owner, , file, laterFile, outputFile] of [
+    ['free', 'preface', 'introduction', 'frontmatter/preface.md', 'manuscript/01-introduction.md', '01-free-sample'],
+    ['paid', 'workflow', 'afterword', 'manuscript/02-workflow.md', 'backmatter/afterword.md', '02-paid-body']
+  ]) {
+    for (const originalLength of [999, 1000, 2000]) {
+      test(`bounded reference labels/${fragment}/length-${originalLength}`, async () => {
+        const book = await copySampleBook();
+        const id = 'x'.repeat(originalLength - 16);
+        await renameDocument(book, owner, id);
+        const prefix = `note-${id}-${fragment}-ref`;
+        const originalLabel = `${prefix}-1`;
+        assert.strictEqual(originalLabel.length, originalLength);
+        await fs.writeFile(path.join(book, file),
+          '# Owner\n\n[real][shared] [^note]\n\n' +
+          '[shared]: https://length.example/reference\n[^note]: Independent plugin note.\n');
+        const outputRoot = await temporaryDirectory('tmp-note-bounded-');
+        const output = packageDirectory(await build(book, outputRoot));
+        const markdown = await fs.readFile(path.join(output, `${outputFile}.md`), 'utf8');
+        const html = await fs.readFile(path.join(output, `${outputFile}.html`), 'utf8');
+        const expected = originalLength <= 999 ? originalLabel : `${hashedReferencePrefix(prefix)}-1`;
+        assert.ok(markdown.includes(`[real][${expected}]`));
+        assert.ok(markdown.includes(`[${expected}]: https://length.example/reference`));
+        assert.ok(expected.length <= 999);
+        // Footnotes are a separate extension, not CommonMark link labels.
+        assert.ok(markdown.includes(`[^note-${id}-${fragment}-fn-1]: Independent plugin note.`));
+        for (const rendered of [html, new MarkdownIt().use(markdownItFootnote).render(markdown)]) {
+          assert.strictEqual((rendered.match(/href="https:\/\/length\.example\/reference"/gu) || []).length, 1);
+          assert.strictEqual((rendered.match(/class="footnote-ref"/gu) || []).length, 1);
+        }
+        await build(book, outputRoot);
+        assert.strictEqual(await fs.readFile(path.join(output, `${outputFile}.md`), 'utf8'), markdown);
+        assert.strictEqual(await fs.readFile(path.join(output, `${outputFile}.html`), 'utf8'), html);
+      });
+    }
+
+    for (const originalLength of [999, 2000]) {
+      for (const placement of ['same', 'later']) {
+        test(`bounded reference collision/${fragment}/${originalLength}/${placement}`, async () => {
+          const book = await copySampleBook();
+          const id = 'x'.repeat(originalLength - 16);
+          await renameDocument(book, owner, id);
+          const prefix = `note-${id}-${fragment}-ref`;
+          const hashPrefix = hashedReferencePrefix(prefix);
+          const candidates = [
+            ...Array.from({ length: 9 }, (_, index) => `[${prefix}-${index + 1}]`),
+            ...Array.from({ length: 10 }, (_, index) => `[ ${hashPrefix.toUpperCase()}-${index + 1} ]`)
+          ].join('\n\n');
+          await fs.writeFile(path.join(book, file),
+            '# Owner\n\n[real][shared]\n\n' +
+            (placement === 'same' ? `${candidates}\n\n` : '') +
+            '[shared]: https://collision.example/reference\n');
+          if (placement === 'later') await fs.writeFile(path.join(book, laterFile), `# Later\n\n${candidates}\n`);
+          const outputRoot = await temporaryDirectory('tmp-note-bounded-collision-');
+          const output = packageDirectory(await build(book, outputRoot));
+          const markdown = await fs.readFile(path.join(output, `${outputFile}.md`), 'utf8');
+          const html = await fs.readFile(path.join(output, `${outputFile}.html`), 'utf8');
+          assert.ok(markdown.includes(`[real][${hashPrefix}-11]`));
+          assert.ok(markdown.includes(candidates));
+          assert.ok(`${hashPrefix}-11`.length <= 999);
+          for (const rendered of [html, new MarkdownIt().use(markdownItFootnote).render(markdown)]) {
+            assert.strictEqual((rendered.match(/href="https:\/\/collision\.example\/reference"/gu) || []).length, 1);
+            assert.ok(rendered.includes(`[ ${hashPrefix.toUpperCase()}-10 ]`));
+          }
+          await build(book, outputRoot);
+          assert.strictEqual(await fs.readFile(path.join(output, `${outputFile}.md`), 'utf8'), markdown);
+        });
+      }
+    }
+  }
+
+  test('bounded reference namespaces remain document-specific', async () => {
+    const book = await copySampleBook();
+    const ids = ['x'.repeat(1984), 'y'.repeat(1984)];
+    for (const [index, owner, file] of [
+      [0, 'preface', 'frontmatter/preface.md'],
+      [1, 'introduction', 'manuscript/01-introduction.md']
+    ]) {
+      await renameDocument(book, owner, ids[index]);
+      await fs.writeFile(path.join(book, file),
+        `# Owner\n\n[real-${index}][shared]\n\n[shared]: https://document.example/${index}\n`);
+    }
+    const output = packageDirectory(await build(book, await temporaryDirectory('tmp-note-bounded-documents-')));
+    const markdown = await fs.readFile(path.join(output, '01-free-sample.md'), 'utf8');
+    const html = new MarkdownIt().render(markdown);
+    for (const [index, id] of ids.entries()) {
+      const label = `${hashedReferencePrefix(`note-${id}-free-ref`)}-1`;
+      assert.ok(markdown.includes(`[real-${index}][${label}]`));
+      assert.ok(html.includes(`href="https://document.example/${index}">real-${index}</a>`));
+    }
+  });
+
+  test('bounded reference reservations remain fragment-specific', async () => {
+    const book = await copySampleBook();
+    const id = 'x'.repeat(1984);
+    await renameDocument(book, 'workflow', id);
+    await updateMetadata(book, (metadata) => {
+      metadata.editions.find((edition) => edition.id === 'sample').documents.push(id);
+    });
+    const freeLabel = `${hashedReferencePrefix(`note-${id}-free-ref`)}-1`;
+    const paidLabel = `${hashedReferencePrefix(`note-${id}-paid-ref`)}-1`;
+    await fs.writeFile(path.join(book, 'manuscript/02-workflow.md'),
+      '# Split\n\nFree [real][shared]\n\n' +
+      `:::paid\nPaid [real][shared]. Unresolved [${freeLabel}].\n:::\n\n` +
+      `:::internal\nInternal [${freeLabel}].\n:::\n\n` +
+      '[shared]: https://fragment.example/reference\n');
+    const output = packageDirectory(await build(book, await temporaryDirectory('tmp-note-bounded-fragments-')));
+    const free = await fs.readFile(path.join(output, '01-free-sample.md'), 'utf8');
+    const paid = await fs.readFile(path.join(output, '02-paid-body.md'), 'utf8');
+    assert.ok(free.includes(`[real][${freeLabel}]`));
+    assert.ok(paid.includes(`[real][${paidLabel}]`));
+    assert.ok(paid.includes(`Unresolved [${freeLabel}].`));
+    assert.doesNotMatch(free, /Unresolved|Internal/u);
+    assert.doesNotMatch(paid, /Internal/u);
+    for (const text of [free, paid]) {
+      const html = new MarkdownIt().render(text);
+      assert.strictEqual((html.match(/href="https:\/\/fragment\.example\/reference"/gu) || []).length, 1);
+    }
+  });
 
   test('label予約はcode・escape・HTML/link metadataを再解釈しない', async () => {
     const bookDirectory = await copySampleBook();
