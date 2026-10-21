@@ -26,7 +26,8 @@
     },
     "@vivliostyle/cli": {
       "dompurify": "3.4.16",
-      "handlebars": "4.7.10"
+      "handlebars": "4.7.10",
+      "vite": "8.1.6"
     }
   }
 }

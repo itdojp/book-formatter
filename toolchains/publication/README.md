@@ -152,3 +152,20 @@ render中に変更するcollectionの一般互換性は保証しません。本g
 新規3testを既存27testに加え、必須offlineは30件・skip0、wrapperは別6件です。
 5VFM goldenと、hosted CIでの2実合成EPUB/EPUBCheck/同等性gateを維持します。
 実書籍入力・販売承認・consumer pin採用とは別工程であり、fresh audit成功は時点付き観測です。
+
+### Scoped Vite patch (2026-10-21 JST, #194)
+
+A fresh audit of merged PR191 detected high1/moderate1 through bundled
+launch-editor in Vite8.1.0. Add only the CLI-scoped `vite:8.1.6` override; keep
+CLI11.3.3, existing overrides, Node/image/EPUBCheck and moderate audit threshold.
+The latest CLI11.4.0 still pins8.1.0 at inspection. The lock changes Vite and adds
+its nested picomatch4.0.7 (MIT); the CLI's direct picomatch4.0.4 is retained.
+License inventory and EPUB lock attestation follow the real lock.
+
+The offline suite adds one bounded bundle/helper probe (31 tests, plus6 wrapper
+cases). It does not start Vite, an editor, a server or a browser under the
+no-addon gate. Pure command-string checks and source guards are not proof of
+Windows editor execution. Native compatibility requires the existing two real
+synthetic EPUB CI runs. See the [audit record](../../docs/dependency-audit-2026-10-21.md)
+for sources, old/new caller probes, the native-import diagnostic failure and
+explicit limits. Do not bypass confinement to make that diagnostic pass.

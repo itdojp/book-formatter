@@ -1813,3 +1813,15 @@ describe('NoteAdapter', () => {
     assert.strictEqual(await fs.pathExists(path.join(outputRoot, 'note')), false);
   });
 });
+
+// #194: bounded parser compatibility, not an unbounded timing/DoS experiment.
+test('patched Markdown parser preserves multiline references and bounded inline HTML', async () => {
+  assert.strictEqual((await fs.readJson(path.join(REPOSITORY_ROOT, 'node_modules/markdown-it/package.json'))).version, '14.3.3');
+  const parser = new MarkdownIt({ html: true, linkify: false, typographer: false }).use(markdownItFootnote);
+  const fixtures = [
+    ['[read][ref]\n\n[ref]: /guide\n  "First\n  second"\n', '<p><a href="/guide" title="First\nsecond">read</a></p>\n'],
+    ['A <span title="a > b">label</span>.\n', '<p>A <span title="a > b">label</span>.</p>\n'],
+    ['A <span unfinished\n', '<p>A &lt;span unfinished</p>\n']
+  ];
+  for (const [input, expected] of fixtures) assert.strictEqual(parser.render(input), expected);
+});

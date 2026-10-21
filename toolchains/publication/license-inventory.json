@@ -4107,7 +4107,13 @@
     },
     {
       "path": "node_modules/vite",
-      "version": "8.1.0",
+      "version": "8.1.6",
+      "license": "MIT",
+      "evidence": "lock metadata"
+    },
+    {
+      "path": "node_modules/vite/node_modules/picomatch",
+      "version": "4.0.7",
       "license": "MIT",
       "evidence": "lock metadata"
     },

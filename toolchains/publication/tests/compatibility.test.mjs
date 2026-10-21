@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { networkInterfaces } from 'node:os';
+import { runInNewContext } from 'node:vm';
 import { stringify, readMetadata, StringifyMarkdownOptionsSchema } from '@vivliostyle/vfm';
 import * as v from 'valibot';
 import createDOMPurify from 'dompurify';
@@ -40,7 +41,7 @@ test('private isolated Node24 package and exact overrides/lock', () => {
   assert.equal(p.engines.node, '>=24.18.0 <25');
   assertNodeVersion();
   assert.deepEqual(p.dependencies, { '@vivliostyle/cli': '11.3.3' });
-  assert.deepEqual(p.overrides, { trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2', 'press-ready': { uuid: '11.1.1' }, '@vivliostyle/cli': { dompurify: '3.4.16', handlebars: '4.7.10' } });
+  assert.deepEqual(p.overrides, { trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2', 'press-ready': { uuid: '11.1.1' }, '@vivliostyle/cli': { dompurify: '3.4.16', handlebars: '4.7.10', vite: '8.1.6' } });
   for (const [name, version] of Object.entries({ trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2' })) {
     const entries = Object.entries(lock.packages).filter(([key]) => key.endsWith(`/node_modules/${name}`) || key === `node_modules/${name}`);
     assert.ok(entries.length > 0);
@@ -348,4 +349,39 @@ test('Handlebars precompile escapes inert inline delimiters without changing ren
     assert.ok(code.includes('\\u003C'));
     assert.equal(h.compile(literal)({}), literal);
   }
+});
+
+// #194: inspect the CLI-resolved bundle; do not import Vite's native addon under
+// this no-addon offline gate. Actual Vite build use is covered by the EPUB gate.
+test('CLI resolves patched Vite and its bundled launch-editor guards', () => {
+  assert.equal(cliRequire('vite/package.json').version, '8.1.6');
+  const source = readFileSync(cliRequire.resolve('vite/package.json').replace(/package\.json$/, 'dist/node/chunks/node.js'), 'utf8');
+  assert.ok(source.includes('launch-editor@2.14.2/'));
+  const startMarker = 'var require_construct_windows_launch_command =';
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf('//#endregion', start);
+  assert.ok(start >= 0 && end > start, 'pinned Vite helper boundary; re-audit on update');
+  const bundledModule = source.slice(start, end);
+  // Only the shipped pure string helper, not launchEditor, fs or child_process.
+  const command = runInNewContext(`
+    const __commonJSMin = (init) => () => { const module = { exports: {} }; init(module.exports, module); return module.exports; };
+    ${bundledModule}
+    require_construct_windows_launch_command();
+  `, {}, { timeout: 1000 });
+  assert.equal(command('editor', ['guide.md']), 'editor guide.md');
+  assert.equal(command('editor', ['chapter one.md']), 'editor "chapter one.md"');
+  for (const value of ['50%complete.md', 'chapter\none.md', 'chapter\rone.md']) {
+    assert.throws(() => command('editor', [value]), /Cannot launch an editor/);
+  }
+  // Fail closed if the Windows UNC pre-check or absolute-file normalization is lost.
+  const launchStart = source.indexOf('function launchEditor(file,');
+  const launchEnd = source.indexOf('const [editor, ...args] = guessEditor', launchStart);
+  assert.ok(launchStart >= 0 && launchEnd > launchStart);
+  const preflight = source.slice(launchStart, launchEnd);
+  assert.ok(preflight.includes('UNC paths are not supported on Windows'));
+  assert.ok(preflight.indexOf('UNC paths are not supported on Windows') < preflight.indexOf('.existsSync(fileName)'));
+  const argsStart = source.indexOf('module.exports = function getArgumentsForFile(');
+  const argsEnd = source.indexOf('if (!lineNumber)', argsStart);
+  assert.ok(argsStart >= 0 && argsEnd > argsStart);
+  assert.match(source.slice(argsStart, argsEnd), /fileName = path\$\d+\.resolve\(fileName\)/);
 });
