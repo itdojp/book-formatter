@@ -21,10 +21,11 @@ test('mobile drawer CSS caps width and wraps without hiding full labels', () => 
   assert.doesNotMatch(block, /overflow(?:-x)?:\s*(?:hidden|clip)/);
 });
 
-test('drawer CSS remains a managed asset rather than an automatic consumer update', () => {
+test('drawer CSS is present in the independently versioned managed asset inventory', () => {
   const version = JSON.parse(fs.readFileSync(new URL('../shared/version.json', import.meta.url), 'utf8'));
   assert.ok(version.components.assets.files.includes('assets/css/mobile-responsive.css'));
-  assert.equal(version.components.assets.version, version.version);
+  assert.match(version.components.assets.version, /^\d+\.\d+\.\d+$/);
+  assert.ok(version.components.assets.files.every(file => fs.existsSync(new URL(`../shared/${file}`, import.meta.url))));
 });
 
 // State/event harness only. Native Tab/label activation/inert/CSS are tested
