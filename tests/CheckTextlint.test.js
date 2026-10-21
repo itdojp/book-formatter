@@ -190,3 +190,28 @@ test('npm support floor and lock metadata require overrides-aware npm', () => {
     assert.doesNotMatch(text, /npm 8\.0\.0以上/);
   }
 });
+
+// #194: exercise the actual textlint caller without opening HTTP or stdio transports.
+test('textlint resolves the patched MCP pair and can register independent unconnected servers', async () => {
+  const textlintRequire = createRequire(prhRequire.resolve('textlint/package.json'));
+  const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+  for (const name of ['server', 'core']) {
+    const id = `@modelcontextprotocol/${name}`;
+    assert.equal(lock.packages[`node_modules/${id}`].version, '2.3.1');
+  }
+  const { McpServer } = textlintRequire('@modelcontextprotocol/server');
+  const { serveStdio } = textlintRequire('@modelcontextprotocol/server/stdio');
+  assert.equal(typeof serveStdio, 'function');
+  const { setupServer } = textlintRequire('./lib/src/mcp/server.js');
+  const servers = [];
+  try {
+    servers.push(await setupServer(), await setupServer());
+    assert.notEqual(servers[0], servers[1]);
+    for (const server of servers) {
+      assert.ok(server instanceof McpServer);
+      assert.equal(server.isConnected(), false);
+    }
+  } finally {
+    await Promise.all(servers.map(server => server.close()));
+  }
+});

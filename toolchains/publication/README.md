@@ -23,7 +23,7 @@ install/auditだけはnpm registryへ接続します。`--ignore-scripts`を外�
 
 `test:offline`はLinuxのuser/network namespaceとNode permissionを必須とします。namespaceが使えなければ**失敗**し、通常networkで再試行しません。親と異なるnetwork namespace、外部interfaceなし、toolchain配下だけのread、write/child process拒否を実測します。`env -i`で実行し、入力はcommit済み合成fixtureのみです。ブラウザに渡す前の任意source/config/asset loaderは未提供です。
 
-`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全30件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
+`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全31件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
 
 CIはUbuntu22.04、既存系列のcheckout/setup-node Actions、10分timeoutです。Node24.18.0固定はtoolchainだけであり、root enginesを狭めません。
 
@@ -96,15 +96,15 @@ fetchやcache I/Oを実行しません。実通信例外からのconsumer独自f
 - golden SHA-256: `ecacac558ef44776c3e69b5587dd859988dc9bd1dcdea15b620fbda5bb09f969`
 - renderer関数はVFM2.7.2 `stringify(markdown, {partial:false, language:'ja', title:'Synthetic fixture'})`。本packageの同じテストコードから呼びます。
 
-### Measured installation cost
+### Measured installation cost (2026-09-15 historical measurement)
 
-Linux / Node24.18.0、既存workspace npm cache利用、install scriptなし。初期18.44秒 / peak RSS474396KiB / node_modules259MiB、是正後14.33秒 / peak RSS678164KiB / 260MiB、いずれも679packages追加。cold-cache比較でもrender benchmarkでもありません。lock inventoryは他OS optional packageを含む722entryです。
+Linux / Node24.18.0、既存workspace npm cache利用、install scriptなし。初期18.44秒 / peak RSS474396KiB / node_modules259MiB、是正後14.33秒 / peak RSS678164KiB / 260MiB、いずれも679packages追加。cold-cache比較でもrender benchmarkでもありません。当時のlock inventoryは他OS optional packageを含む722entryでした。#194後の現行inventoryは723entry（2026-10-21）であり、過去のinstall時間・RSSを現在の測定値として再利用しません。
 
 ## License inventory and release limits
 
 [`license-inventory.json`](license-inventory.json)はlock全entry（optional各OSを含む）を再現する機械inventoryです。lockのlicenseが空のcli-table0.3.11 / format0.2.2 / not0.1.0 / rechoir0.6.2 / trim0.0.3は、配布packageのLICENSE/LICENCE/Readme License節またはlegacy licenses[]を個別確認しました。未知versionの空licenseは失敗します。生成は`node tests/licenses.mjs`、CIで比較します。
 
-MIT530、ISC101、Apache-2.0 34、BlueOak-1.0.0 16、MPL-2.0 12、BSD-2/3各7、0BSD5、AGPL-3.0 3、その他各1（詳細inventory）。CLIのAGPL-3.0とMuPDFのAGPL-3.0-or-later、font/ICC等を含む将来のtoolchain再配布条件は別途確認が必要です。package自身のMIT表記を依存全体へ適用しません。inventoryは書籍成果物の権利/販売承認、法的助言、完全な再配布noticeの代用ではありません。
+現行723entry（2026-10-21）: MIT531、ISC101、Apache-2.0 34、BlueOak-1.0.0 16、MPL-2.0 12、BSD-2/3各7、0BSD5、AGPL-3.0 3、その他各1（詳細inventory）。CLIのAGPL-3.0とMuPDFのAGPL-3.0-or-later、font/ICC等を含む将来のtoolchain再配布条件は別途確認が必要です。package自身のMIT表記を依存全体へ適用しません。inventoryは書籍成果物の権利/販売承認、法的助言、完全な再配布noticeの代用ではありません。
 
 ## Handoff to real rendering
 
@@ -152,3 +152,20 @@ render中に変更するcollectionの一般互換性は保証しません。本g
 新規3testを既存27testに加え、必須offlineは30件・skip0、wrapperは別6件です。
 5VFM goldenと、hosted CIでの2実合成EPUB/EPUBCheck/同等性gateを維持します。
 実書籍入力・販売承認・consumer pin採用とは別工程であり、fresh audit成功は時点付き観測です。
+
+### Scoped Vite patch (2026-10-21 JST, #194)
+
+A fresh audit of merged PR191 detected high1/moderate1 through bundled
+launch-editor in Vite8.1.0. Add only the CLI-scoped `vite:8.1.6` override; keep
+CLI11.3.3, existing overrides, Node/image/EPUBCheck and moderate audit threshold.
+The latest CLI11.4.0 still pins8.1.0 at inspection. The lock changes Vite and adds
+its nested picomatch4.0.7 (MIT); the CLI's direct picomatch4.0.4 is retained.
+License inventory and EPUB lock attestation follow the real lock.
+
+The offline suite adds one bounded bundle/helper probe (31 tests, plus6 wrapper
+cases). It does not start Vite, an editor, a server or a browser under the
+no-addon gate. Pure command-string checks and source guards are not proof of
+Windows editor execution. Native compatibility requires the existing two real
+synthetic EPUB CI runs. See the [audit record](../../docs/dependency-audit-2026-10-21.md)
+for sources, old/new caller probes, the native-import diagnostic failure and
+explicit limits. Do not bypass confinement to make that diagnostic pass.
