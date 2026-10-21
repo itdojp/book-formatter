@@ -48,7 +48,10 @@ html {
     position: fixed;
     top: var(--header-height);
     left: 0;
-    width: var(--sidebar-width);
+    /* Keep a reachable backdrop strip, including narrow browser-zoom viewports. */
+    width: min(var(--sidebar-width), calc(100% - 1rem));
+    /* Preserve the full label instead of clipping long words in the drawer. */
+    overflow-wrap: anywhere;
     height: calc(100vh - var(--header-height));
     background: var(--bg-primary);
     border-right: 1px solid var(--border-color);

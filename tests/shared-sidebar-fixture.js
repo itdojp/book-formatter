@@ -10,14 +10,18 @@ export const checkbox = layout.match(/<input[^>]+id="sidebar-toggle-checkbox"[^>
 const overlay = layout.match(/<label[^>]+id="sidebar-overlay"[^>]*><\/label>/)?.[0];
 assert.ok(checkbox && overlay, 'shipped checkbox and overlay');
 
-export function sidebarPage({ theme = 'light', profile = profiles[0], script = sidebarScript } = {}) {
-  return headerPage({ theme, profile })
+export const longSidebarLabel = 'SyntheticOfflineNavigationWithoutBreaks'.repeat(4);
+
+export function sidebarPage({ theme = 'light', profile = profiles[0], script = sidebarScript, stress = false, css } = {}) {
+  const stressContent = stress ? `<div class="sidebar-content"><h2 class="book-title">${longSidebarLabel}</h2>
+<ul class="toc-sections"><li><a class="toc-link stress-link" href="#content">${longSidebarLabel}</a></li></ul>` : '';
+  return headerPage({ theme, profile, css })
     .replace(/<input[^>]+id="sidebar-toggle-checkbox"[^>]*>/, () => checkbox)
-    .replace('<aside class="book-sidebar"></aside>', `<aside class="book-sidebar" id="sidebar"><nav aria-label="Main navigation">
+    .replace('<aside class="book-sidebar"></aside>', `<aside class="book-sidebar" id="sidebar"><nav aria-label="Main navigation">${stressContent}
 <a class="toc-link" href="#content">First synthetic chapter</a>
 <div style="height:1200px" aria-hidden="true"></div>
 <a class="toc-link active" href="#content">Active synthetic chapter</a>
-</nav></aside>`)
+${stress ? '</div>' : ''}</nav></aside>`)
     .replace('<h2>合成教材</h2>', '<h2>合成教材</h2><a id="after-sidebar" href="#content">Continue reading</a>')
     .replace('</body>', () => `${overlay}<script>${script}</script></body>`);
 }
