@@ -10,8 +10,11 @@
     <!-- CSS -->
     <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
     
-    <!-- Favicon -->
-    <link rel="icon" type="image/x-icon" href="{{ '/assets/favicon.ico' | relative_url }}">
+    <!-- Optional consumer-owned icon: emit only files Jekyll will publish. -->
+    {% assign shared_favicon_file = site.static_files | where: 'path', '/assets/favicon.ico' | first %}
+    {% if shared_favicon_file %}
+    <link rel="icon" type="image/x-icon" href="{{ '/assets/favicon.ico' | relative_url | escape }}">
+    {% endif %}
 </head>
 <body>
     <div class="container">

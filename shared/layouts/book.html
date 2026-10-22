@@ -16,9 +16,15 @@
     <link rel="stylesheet" href="{{ '/assets/css/main.css' | relative_url }}">
     <link rel="stylesheet" href="{{ '/assets/css/syntax-highlighting.css' | relative_url }}">
     
-    <!-- Favicon -->
-    <link rel="icon" type="image/x-icon" href="{{ '/assets/favicon.ico' | relative_url }}">
-    <link rel="apple-touch-icon" href="{{ '/assets/apple-touch-icon.png' | relative_url }}">
+    <!-- Optional consumer-owned icons: emit only files Jekyll will publish. -->
+    {% assign shared_favicon_file = site.static_files | where: 'path', '/assets/favicon.ico' | first %}
+    {% if shared_favicon_file %}
+    <link rel="icon" type="image/x-icon" href="{{ '/assets/favicon.ico' | relative_url | escape }}">
+    {% endif %}
+    {% assign shared_touch_icon_file = site.static_files | where: 'path', '/assets/apple-touch-icon.png' | first %}
+    {% if shared_touch_icon_file %}
+    <link rel="apple-touch-icon" href="{{ '/assets/apple-touch-icon.png' | relative_url | escape }}">
+    {% endif %}
     
     <!-- Open Graph -->
     <meta property="og:title" content="{% if page.title %}{{ page.title | escape }}{% else %}{{ site.title | escape }}{% endif %}">
