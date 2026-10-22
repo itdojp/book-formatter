@@ -1,10 +1,10 @@
 {
-  "version": "3.3.3",
+  "version": "3.3.4",
   "updated": "2026-10-22",
-  "description": "Bound narrow mobile drawers and wrap full navigation labels without changing desktop geometry",
+  "description": "Emit optional consumer-owned icon links only for published static files",
   "components": {
     "layouts": {
-      "version": "3.3.2",
+      "version": "3.3.4",
       "files": [
         "layouts/book.html",
         "layouts/default.html"

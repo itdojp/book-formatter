@@ -39,6 +39,31 @@
 
 ## ローカル同期
 
+### 任意iconの配信ファイル確認（#193）
+
+layout 3.3.4では、`book.html`の`/assets/favicon.ico`と
+`/assets/apple-touch-icon.png`、`default.html`の`/assets/favicon.ico`を、
+Jekyllの`site.static_files`に存在するときだけ出力する。ファイルがない場合や
+`exclude`された場合はlinkを出さない。ファイルを置くことで有効化する既存path、
+`relative_url`によるbaseurlを保持し、hrefのHTML属性をescapeする。
+
+iconはconsumer所有であり、managed inventoryに追加・上書きしない。新しいロゴ、
+configキー、外部icon URLは導入しない。既存shared layoutに任意pathのconfig契約はなく、
+独自layoutのbrandingやlegacy `MobileOptimizer`の生成先はこの変更の対象外。
+consumerの独自layoutを同期する場合は、従来どおり変更差分を事前に確認する。
+
+`npm run test:shared-icons-jekyll`は実Jekyllを必須とし、root/章、両layout、
+空/非空/HTML特殊文字を含むbaseurl、ファイルなし/片方/両方/除外をビルドする。
+生成HTMLをparse5で読み、linkの有無、属性、配信先の存在と元assetのbyte一致を検査する。
+旧無条件link、存在するiconの欠落、baseurl欠落の負例も同じoracleで拒否する。
+CIでは既存Book Generation TestのRuby環境と`test-book/Gemfile`を使う独立した必須stepで
+実行する。ローカルではJekyllが必要（既存Gemfileを使う場合は`BUNDLE_GEMFILE`を指定）。
+これは全画像形式の妥当性やブラウザーの暗黙の`/favicon.ico`取得を保証する検査ではない。
+
+根拠: [Jekyll Static Files](https://jekyllrb.com/docs/static-files/)と
+[Liquid filters](https://jekyllrb.com/docs/liquid/filters/)（2026-10-22確認）。
+`where`/`first`と`relative_url`を使い、既存Jekyll >=3.9の契約を維持する。
+
 ### ページ末尾navigationのlandmark（#189 / #116）
 
 layout 3.3.1では、`book.html`の`.page-navigation`を非landmarkの`div`とし、

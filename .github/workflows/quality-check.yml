@@ -224,6 +224,11 @@ jobs:
           # Try to build with Jekyll
           bundle exec jekyll build || echo "⚠️  Jekyll build failed (expected without theme)"
       
+      - name: Test shared optional icons with Jekyll
+        env:
+          BUNDLE_GEMFILE: ${{ github.workspace }}/test-book/Gemfile
+        run: npm run test:shared-icons-jekyll
+
       - name: Upload generated book
         if: always()
         uses: actions/upload-artifact@v7
