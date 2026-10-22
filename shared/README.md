@@ -79,6 +79,22 @@ JSと`inert`/`matchMedia.addEventListener`対応browserを前提とする。未�
 実ブラウザーzoomとconsumer Book QA/採用確認は別gateであり、合成fixture成功を代替にしない。
 consumerのpin/sync/公開はこのformatter変更では実施しない。
 
+### 狭幅Sidebarの幅と折り返し（#192）
+
+assets 3.3.3ではmobile drawerの幅を、既存の280pxと利用可能なviewport幅から
+1remを除いた値の小さい方にする。scrollbarを除いた表示領域の右側にoverlayを
+操作できる帯を残し、通常幅とdesktopの280pxは維持する。sidebar内の長い語は
+`overflow-wrap: anywhere`で全文を折り返す。文字列・リンク先を省略せず、
+`overflow-x: hidden`で欠けを隠さない。headerやkeyboard controllerは変更しない。
+
+既存native gateは16条件のkeyboard/AX/focus/resizeに加え、160/195/280/320/
+390/768/1024 CSS px × Light/Dark × 3合成書名の42条件で、drawer、padding内の
+長い書名・nested TOC、active TOC、overlay hit、Escape/Spaceを測定する。
+旧固定幅と折り返し欠落の2つの負例が同じgeometry oracleで失敗することも確認する。
+この有限CSS幅検査はinteractive browser zoomの代用ではない。実際の200% zoom、
+consumer固有のnavigationとCSSの組合せ、支援技術は別途確認する。同期・採用は
+consumer単位の手順とPRが必要であり、formatterのmergeだけでは公開版は変わらない。
+
 ### 同期手順
 
 最初のdry-runから[`web-jekyll-legacy` adapter contractの「安全な同期手順」](../adapters/web-jekyll-legacy/README.md#安全な同期手順)を正本として実行する。この入口はformatterの全tracked fileを監査済みSHAのblobへ照合し、照合済みlockfileから依存関係を再構築してから予定componentを確認する。`shared/README.md`には同等の実行blockを複製しない。

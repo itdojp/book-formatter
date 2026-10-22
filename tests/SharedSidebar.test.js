@@ -2,7 +2,31 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import vm from 'node:vm';
 import fs from 'node:fs';
-import { sidebarScript, checkbox, sidebarPage } from './shared-sidebar-fixture.js';
+import { sidebarScript, checkbox, sidebarPage, longSidebarLabel } from './shared-sidebar-fixture.js';
+
+test('drawer stress fixture preserves full labels, nested navigation and existing controller', () => {
+  const page = sidebarPage({ stress: true });
+  assert.ok(page.includes(`<h2 class="book-title">${longSidebarLabel}</h2>`));
+  assert.ok(page.includes(`<a class="toc-link stress-link" href="#content">${longSidebarLabel}</a>`));
+  assert.ok(page.includes(sidebarScript));
+  assert.ok(!sidebarPage().includes('stress-link'), 'original keyboard fixtures remain unchanged');
+});
+
+test('mobile drawer CSS caps width and wraps without hiding full labels', () => {
+  const css = fs.readFileSync(new URL('../shared/assets/css/mobile-responsive.css', import.meta.url), 'utf8');
+  const block = css.match(/\.book-layout \.book-sidebar \{([^}]+)\}/)?.[1];
+  assert.ok(block);
+  assert.match(block, /width: min\(var\(--sidebar-width\), calc\(100% - 1rem\)\);/);
+  assert.match(block, /overflow-wrap: anywhere;/);
+  assert.doesNotMatch(block, /overflow(?:-x)?:\s*(?:hidden|clip)/);
+});
+
+test('drawer CSS is present in the independently versioned managed asset inventory', () => {
+  const version = JSON.parse(fs.readFileSync(new URL('../shared/version.json', import.meta.url), 'utf8'));
+  assert.ok(version.components.assets.files.includes('assets/css/mobile-responsive.css'));
+  assert.match(version.components.assets.version, /^\d+\.\d+\.\d+$/);
+  assert.ok(version.components.assets.files.every(file => fs.existsSync(new URL(`../shared/${file}`, import.meta.url))));
+});
 
 // State/event harness only. Native Tab/label activation/inert/CSS are tested
 // separately; this does not emulate browser focus or label default actions.

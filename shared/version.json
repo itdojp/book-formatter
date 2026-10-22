@@ -1,7 +1,7 @@
 {
-  "version": "3.3.2",
-  "updated": "2026-10-18",
-  "description": "Synchronize sidebar keyboard activation, accessible state and safe close focus",
+  "version": "3.3.3",
+  "updated": "2026-10-22",
+  "description": "Bound narrow mobile drawers and wrap full navigation labels without changing desktop geometry",
   "components": {
     "layouts": {
       "version": "3.3.2",
@@ -18,7 +18,7 @@
       ]
     },
     "assets": {
-      "version": "3.3.0",
+      "version": "3.3.3",
       "files": [
         "assets/css/main.css",
         "assets/css/mobile-responsive.css",

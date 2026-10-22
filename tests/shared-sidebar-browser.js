@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import { profiles } from './shared-header-fixture.js';
-import { sidebarPage } from './shared-sidebar-fixture.js';
+import { sidebarPage, longSidebarLabel } from './shared-sidebar-fixture.js';
 import { discoverChrome } from './shared-browser-discovery.js';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -102,9 +102,9 @@ try {
     await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
     await command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
   };
-  const load = async (width, theme, profile, script) => {
+  const load = async (width, theme, profile, script, options = {}) => {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
-    await command('Page.setDocumentContent', { frameId: frameTree.frame.id, html: sidebarPage({ theme, profile, script }) });
+    await command('Page.setDocumentContent', { frameId: frameTree.frame.id, html: sidebarPage({ theme, profile, script, ...options }) });
     await delay(80);
     await call(theme => { document.documentElement.dataset.theme = theme; }, theme);
     await evaluate('document.body.tabIndex = -1; document.body.focus(); document.body.removeAttribute("tabindex")');
@@ -181,8 +181,64 @@ try {
   // Pointer CSS-only fallback remains available without this enhancement.
   await click('.sidebar-toggle'); assert.equal((await state()).checked, true);
   assert.equal(results.length, 16);
+  // CSS geometry is measured natively. These finite CSS widths include reflow
+  // at 200%, but do not themselves claim interactive browser zoom coverage.
+  const geometry = () => call(() => {
+    const sidebar = document.getElementById('sidebar'), box = sidebar.getBoundingClientRect();
+    const root = document.documentElement;
+    const ranges = [...sidebar.querySelectorAll('.book-title, .toc-link')].flatMap(el => {
+      const range = document.createRange(); range.selectNodeContents(el);
+      return [...range.getClientRects()].map(r => ({ left: r.left, right: r.right }));
+    });
+    return { width: box.width, left: box.left, right: box.right, viewport: root.clientWidth,
+      rem: parseFloat(getComputedStyle(root).fontSize), clientWidth: sidebar.clientWidth,
+      scrollWidth: sidebar.scrollWidth, overflowX: getComputedStyle(sidebar).overflowX,
+      textInside: ranges.every(r => r.left >= box.left && r.right <= box.left + sidebar.clientWidth + 1),
+      fullLabel: sidebar.querySelector('.stress-link').textContent,
+      href: sidebar.querySelector('.stress-link').getAttribute('href') };
+  });
+  const requireGeometry = g => {
+    assert.ok(Math.abs(g.width - Math.min(280, g.viewport - g.rem)) <= 1, 'bounded mobile drawer width');
+    assert.ok(g.left >= 0 && g.right <= g.viewport - g.rem + 1, 'reachable backdrop strip');
+    assert.ok(g.scrollWidth <= g.clientWidth + 1 && g.textInside, 'full labels wrap without horizontal clipping');
+    assert.notEqual(g.overflowX, 'hidden', 'do not mask overflow');
+    assert.equal(g.fullLabel, longSidebarLabel); assert.equal(g.href, '#content');
+  };
+  const geometryResults = [];
+  for (const width of [160, 195, 280, 320, 390, 768, 1024]) for (const theme of ['light', 'dark']) for (const profile of profiles.slice(0, 3)) {
+    await load(width, theme, profile, undefined, { stress: true });
+    await key('Tab', 'Tab', 9); await key('Enter', 'Enter', 13); await assertOpen(true);
+    const g = await geometry(); requireGeometry(g);
+    const activeVisible = await evaluate('(() => { const a=document.querySelector(".toc-link.active").getBoundingClientRect(), s=document.getElementById("sidebar").getBoundingClientRect(); return a.top>=s.top && a.bottom<=s.bottom; })()');
+    assert.equal(activeVisible, true, 'active TOC remains reachable after label wrapping');
+    await evaluate('document.querySelector(".stress-link").focus()');
+    assert.equal(await evaluate('document.activeElement.className'), 'toc-link stress-link');
+    await key('Escape', 'Escape', 27); assert.equal((await assertOpen(false)).focus, 'sidebar-toggle');
+    await key(' ', 'Space', 32); await assertOpen(true);
+    const point = await evaluate('({ x: document.documentElement.clientWidth-8, y: Math.min(innerHeight-20, parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-height"))+30) })');
+    assert.equal(await call(({ x, y }) => document.elementFromPoint(x, y)?.id, point), 'sidebar-overlay');
+    await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
+    await command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
+    await assertOpen(false);
+    geometryResults.push({ width, theme, profile: profile.id, ...g });
+  }
+  const mainCss = await fs.readFile(new URL('../shared/assets/css/main.css', import.meta.url), 'utf8');
+  const mobileCss = await fs.readFile(new URL('../shared/assets/css/mobile-responsive.css', import.meta.url), 'utf8');
+  const mutations = [
+    mobileCss.replace('width: min(var(--sidebar-width), calc(100% - 1rem));', 'width: var(--sidebar-width);'),
+    mobileCss.replace('overflow-wrap: anywhere;', 'overflow-wrap: normal;')
+  ];
+  for (const mutated of mutations) {
+    assert.notEqual(mutated, mobileCss, 'negative control must mutate shipped CSS');
+    const css = mainCss.replace('@import url(\'./mobile-responsive.css\');', () => mutated);
+    await load(160, 'light', profiles[0], undefined, { stress: true, css });
+    await key('Tab', 'Tab', 9); await key('Enter', 'Enter', 13); await delay(350);
+    const g = await geometry(); assert.throws(() => requireGeometry(g), assert.AssertionError);
+  }
+  assert.equal(geometryResults.length, 42);
   console.log(JSON.stringify({ browser: chrome, passed: results.length, negativeControls: 2,
-    noJsPointerFallback: true, actualBrowserZoomClaimed: false, results }, null, 2));
+    noJsPointerFallback: true, actualBrowserZoomClaimed: false, results,
+    drawerGeometryPassed: geometryResults.length, drawerNegativeControls: mutations.length, geometryResults }, null, 2));
 } finally {
   for (const task of pending.values()) clearTimeout(task.timer);
   socket?.close();
