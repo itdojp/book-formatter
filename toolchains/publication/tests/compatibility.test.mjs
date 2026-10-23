@@ -41,7 +41,7 @@ test('private isolated Node24 package and exact overrides/lock', () => {
   assert.equal(p.engines.node, '>=24.18.0 <25');
   assertNodeVersion();
   assert.deepEqual(p.dependencies, { '@vivliostyle/cli': '11.3.3' });
-  assert.deepEqual(p.overrides, { trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2', 'press-ready': { uuid: '11.1.1' }, '@vivliostyle/cli': { dompurify: '3.4.16', handlebars: '4.7.10', vite: '8.1.6' } });
+  assert.deepEqual(p.overrides, { trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2', 'press-ready': { uuid: '11.1.1' }, '@vivliostyle/cli': { dompurify: '3.4.17', handlebars: '4.7.10', vite: '8.1.6' } });
   for (const [name, version] of Object.entries({ trim: '0.0.3', prismjs: '1.30.0', valibot: '1.4.2' })) {
     const entries = Object.entries(lock.packages).filter(([key]) => key.endsWith(`/node_modules/${name}`) || key === `node_modules/${name}`);
     assert.ok(entries.length > 0);
@@ -49,9 +49,9 @@ test('private isolated Node24 package and exact overrides/lock', () => {
   }
   assert.equal(pressRequire('uuid/package.json').version, '11.1.1');
   assert.equal(require('@vivliostyle/cli/package.json').version, '11.3.3');
-  assert.equal(lock.packages['node_modules/dompurify'].version, '3.4.16');
+  assert.equal(lock.packages['node_modules/dompurify'].version, '3.4.17');
   // Check the actual CLI resolution, not only a root-level dependency declaration.
-  assert.equal(cliRequire('dompurify').version, '3.4.16');
+  assert.equal(cliRequire('dompurify').version, '3.4.17');
   assert.equal(cliRequire('handlebars').VERSION, '4.7.10');
   assert.equal(lock.packages['node_modules/handlebars'].version, '4.7.10');
 });
@@ -384,4 +384,110 @@ test('CLI resolves patched Vite and its bundled launch-editor guards', () => {
   const argsEnd = source.indexOf('if (!lineNumber)', argsStart);
   assert.ok(argsStart >= 0 && argsEnd > argsStart);
   assert.match(source.slice(argsStart, argsEnd), /fileName = path\$\d+\.resolve\(fileName\)/);
+});
+
+test('CLI heading sanitation remains the default string API at the fixed caller', () => {
+  // Static caller guard plus direct API fixture, not execution of the CLI's file loader.
+  const caller = readFileSync(cliRequire.resolve('./dist/server-96BNRrbl.js'), 'utf8');
+  assert.ok(caller.includes('const htmlPurify = DOMPurify(new JSDOM("").window);'));
+  assert.ok(caller.includes('headingHtml: htmlPurify.sanitize(head.innerHTML)'));
+  const { window } = new JSDOM('');
+  try {
+    const purify = cliRequire('dompurify')(window);
+    for (const heading of ['合成の見出し', '<em>合成</em> &amp; fixture', '<code>fixture</code>', '<a href="#local">local</a>']) {
+      assert.equal(purify.sanitize(heading), heading);
+    }
+  } finally { window.close(); }
+});
+
+test('DOMPurify neutralizes parent and later sibling detached by each supported element hook', () => {
+  // Empty event attributes are inert; no resource, event dispatch or script evaluation.
+  for (const hook of ['beforeSanitizeElements', 'uponSanitizeElement', 'afterSanitizeElements', 'beforeSanitizeAttributes', 'afterSanitizeAttributes']) {
+    for (const target of ['parent', 'sibling']) {
+      const { window } = new JSDOM('<div id="root"><section id="parent"><b id="trigger">fixture</b><span id="inside" onclick="">inside</span></section><span id="sibling" onclick="">outside</span></div>');
+      try {
+        const rootNode = window.document.getElementById('root');
+        const detached = window.document.getElementById(target);
+        const victim = window.document.getElementById(target === 'parent' ? 'inside' : 'sibling');
+        const purify = createDOMPurify(window);
+        purify.addHook(hook, (node) => { if (node.id === 'trigger') detached.remove(); });
+        assert.equal(purify.sanitize(rootNode, { IN_PLACE: true }), rootNode);
+        assert.equal(detached.parentNode, null, `${hook}/${target}: removal occurred`);
+        assert.equal(victim.getAttribute('onclick'), null, `${hook}/${target}`);
+        assert.equal(victim.textContent, target === 'parent' ? 'inside' : 'outside');
+      } finally { window.close(); }
+    }
+  }
+});
+
+test('DOMPurify SAFE_FOR_TEMPLATES removes inert expressions assembled inside an attached shadow root', () => {
+  const { window } = new JSDOM('');
+  try {
+    const host = window.document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = '<span>{<i></i>{fixture}<i></i>}</span>';
+    const purify = createDOMPurify(window);
+    assert.equal(purify.sanitize(host, { IN_PLACE: true, SAFE_FOR_TEMPLATES: true, FORBID_TAGS: ['i'] }), host);
+    assert.equal(shadow.querySelectorAll('i').length, 0);
+    assert.equal(shadow.textContent.trim(), '');
+    // No downstream template evaluation. IN_PLACE is tested; not a claim for every DOM-return mode.
+  } finally { window.close(); }
+});
+
+test('DOMPurify XHTML SMIL attribute guard matches HTML mode using local fragments only', () => {
+  const { window } = new JSDOM('');
+  try {
+    for (const media of ['text/html', 'application/xhtml+xml']) {
+      const purify = createDOMPurify(window);
+      const clean = purify.sanitize('<svg xmlns="http://www.w3.org/2000/svg"><animate attributeName="href" values="#one;#two" /></svg>', {
+        PARSER_MEDIA_TYPE: media, ADD_TAGS: ['animate'], ADD_ATTR: ['attributeName', 'values']
+      });
+      const parsed = new window.DOMParser().parseFromString(clean, media);
+      const animate = parsed.querySelector('animate');
+      assert.ok(animate, 'retains the allowed element, not an empty-output false pass');
+      assert.equal(animate.hasAttribute('attributeName'), false);
+      assert.equal(animate.hasAttribute('attributename'), false);
+      assert.equal(animate.getAttribute('values'), '#one;#two');
+    }
+  } finally { window.close(); }
+});
+
+const agentRequire = createRequire(fetchRequire.resolve('@npmcli/agent/package.json'));
+const proxyRequire = createRequire(agentRequire.resolve('socks-proxy-agent/package.json'));
+const socksRequire = createRequire(proxyRequire.resolve('socks/package.json'));
+const { Address6, AddressError } = socksRequire('ip-address');
+
+test('patched ip-address resolves through CLI socks caller and preserves offline address conversion', () => {
+  assert.equal(socksRequire('ip-address/package.json').version, '10.7.4');
+  assert.ok(satisfies('10.7.4', proxyRequire('socks/package.json').dependencies['ip-address']));
+  const entries = Object.entries(lock.packages).filter(([key]) => key.endsWith('/ip-address'));
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0][1].version, '10.7.4');
+  assert.equal(entries[0][1].license, 'MIT');
+  const { ipToBuffer, ipv4ToInt32, int32ToIpv4 } = socksRequire('./build/common/helpers.js');
+  assert.equal(int32ToIpv4(ipv4ToInt32('192.0.2.10')), '192.0.2.10');
+  assert.equal(ipToBuffer('192.0.2.10').toString('hex'), 'c000020a');
+  assert.equal(ipToBuffer('2001:db8::1').toString('hex'), '20010db8000000000000000000000001');
+  assert.equal(Address6.fromByteArray([...ipToBuffer('2001:db8::1')]).correctForm(), '2001:db8::1');
+  const scoped = new Address6('2001:db8::1%fixture');
+  assert.equal(scoped.zone, '%fixture');
+  assert.equal(scoped.correctForm(), '2001:db8::1');
+  assert.equal(new Address6('2001:db8::/32').subnetMask, 32);
+  assert.throws(() => ipToBuffer('not-an-address'), /Invalid IP address format/);
+  // The real pure helpers run; no SocksClient connection, DNS, proxy or socket is opened.
+});
+
+test('ip-address rejects bounded malformed zones and retains index-based length-guard implementation', () => {
+  for (const end of ['\n', '\r', '\u2028', '\u2029']) {
+    const input = `2001:db8::1${'%'.repeat(32)}${end}`;
+    assert.equal(Address6.isValid(input), false);
+    assert.throws(() => new Address6(input), AddressError);
+  }
+  // Short behavior alone cannot prove a complexity bound. Guard the pinned implementation too;
+  // deliberately do not benchmark an oversized denial-of-service input on either version.
+  const source = readFileSync(socksRequire.resolve('ip-address/dist/ipv6.js'), 'utf8');
+  assert.ok(source.includes("const zoneStart = address.indexOf('%');"));
+  assert.ok(source.includes('address = address.slice(0, zoneStart);'));
+  assert.ok(!source.includes('RE_ZONE_STRING.exec(address)'));
+  assert.ok(!source.includes("address.replace(constants6.RE_ZONE_STRING, '')"));
 });

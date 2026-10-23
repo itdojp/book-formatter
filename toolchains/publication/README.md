@@ -23,7 +23,7 @@ install/auditだけはnpm registryへ接続します。`--ignore-scripts`を外�
 
 `test:offline`はLinuxのuser/network namespaceとNode permissionを必須とします。namespaceが使えなければ**失敗**し、通常networkで再試行しません。親と異なるnetwork namespace、外部interfaceなし、toolchain配下だけのread、write/child process拒否を実測します。`env -i`で実行し、入力はcommit済み合成fixtureのみです。ブラウザに渡す前の任意source/config/asset loaderは未提供です。
 
-`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全31件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
+`npm test`は開発者向け互換性単体実行であり、隔離probeをskipします。完了判定はCI同様`test:offline`（全37件、skip0）を必須とします。Node permissionは敵対的native addonや同一UIDプロセスに対する一般sandboxではありません。このgateの隔離を、将来のrenderer全体へそのまま適用できるとは主張しません。
 
 CIはUbuntu22.04、既存系列のcheckout/setup-node Actions、10分timeoutです。Node24.18.0固定はtoolchainだけであり、root enginesを狭めません。
 
@@ -169,3 +169,19 @@ Windows editor execution. Native compatibility requires the existing two real
 synthetic EPUB CI runs. See the [audit record](../../docs/dependency-audit-2026-10-21.md)
 for sources, old/new caller probes, the native-import diagnostic failure and
 explicit limits. Do not bypass confinement to make that diagnostic pass.
+
+### DOMPurify / ip-address recovery (2026-10-23 JST, #199)
+
+PR198 actual-main audit detects isolated critical2/moderate1 (affected-package
+counts). Update only CLI-scoped DOMPurify3.4.16→3.4.17 and lock-only
+ip-address10.7.2→10.7.4 within socks' existing range. License inventory and EPUB
+lock attestation follow the exact two-entry delta. Root/CLI/Node/image/EPUBCheck,
+moderate threshold, namespace and five goldens remain unchanged.
+
+The mandatory offline suite is now37 tests (six added), wrapper6 unchanged.
+Inert DOM regressions, actual socks pure callers and indexed-zone source guards
+are bounded tests, not browser exploit or large DoS workloads. See the
+[audit record](../../docs/dependency-audit-2026-10-23.md) for primary advisories,
+old/new comparison, license/SRI, actual-caller reachability and PDF/EPUB limits.
+Audit0 is execution-time evidence only; require exact-head real synthetic EPUB
+CI and review, then actual-main verification before consumer adoption.
