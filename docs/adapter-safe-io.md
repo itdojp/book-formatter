@@ -1,6 +1,6 @@
-# Adapter held-tree I/O 入力契約
+# Adapter held-tree I/Oとownership manifest契約
 
-`src/AdapterSafeIO.js`の`readFileFromHeldTree(root, rootIdentity, relativePath, options)`と`bindDirectoryFromHeldTree()`を直接呼ぶ開発者向けの有限契約です。一般的なsandboxや任意の敵対的JavaScript callerを実行する仕組みではありません。
+`src/AdapterSafeIO.js`の`readFileFromHeldTree(root, rootIdentity, relativePath, options)`と`bindDirectoryFromHeldTree()`を直接呼ぶ開発者向けの有限契約です。一般的なsandboxや任意の敵対的JavaScript callerを実行する仕組みではありません。`assertOwnedExistingOutput()`の同一handle読取、adapter横断の採用状況、source/output直列化の前提は[transactionの信頼境界](adapter-transaction-boundary.md)を参照してください。
 
 ## 最大サイズ
 

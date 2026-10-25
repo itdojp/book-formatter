@@ -87,4 +87,6 @@ Version 1は次を記録します。
 
 held-tree helperのサイズ引数・native path契約と検証範囲は[Adapter shared I/O](../docs/adapter-safe-io.md)を参照してください。
 
+source/config編集とbuildは、管理下の非shared workspaceで直列化します。共有ownership manifestの同一handle読取を、全adapterの同一UID並行writer隔離と混同しないでください。mdBook独自経路・skeletonを含む棚卸し、今回の有限保証と未完了項目は[transactionの信頼境界](../docs/adapter-transaction-boundary.md)にまとめています。
+
 `booth-plan-v1`はcommerce metadataと説明文を含む計画ZIPを生成します。実PDF/EPUBは同梱せず、販売・配布不可です。[commerce契約](../docs/commerce.md)を参照してください。

@@ -50,6 +50,43 @@ afterEach(async () => {
 });
 
 describe('AdapterBuild', () => {
+  for (const target of ['zenn', 'note', 'pdf', 'kindle', 'booth']) {
+    test(`${target}: ownership manifest replacement stops before output replacement`, async (context) => {
+      const bookDirectory = await copySampleBook();
+      const outputRoot = await createTemporaryDirectory('tmp-manifest-identity-');
+      const options = { bookDirectory, outputRoot, target, editionId: 'paid' };
+      const first = await buildStandardBookAdapter(options);
+      const file = first.manifestPath;
+      const contents = await fs.readFile(file);
+      const directoryIdentity = await fs.lstat(first.outputDirectory);
+      const sibling = path.join(outputRoot, 'untouched.txt');
+      await fs.writeFile(sibling, 'synthetic unrelated output');
+      const lstat = fs.lstat;
+      let injected = false;
+      context.mock.method(fs, 'lstat', async (candidate, ...args) => {
+        // Destination/overlap validation also stats this path; inject at the
+        // ownership read, not before that earlier independent validation.
+        const ownershipRead = new Error().stack.includes('assertOwnedExistingOutput');
+        const stat = await lstat(candidate, ...args);
+        if (String(candidate) === file && ownershipRead && !injected) {
+          injected = true;
+          await fs.rename(file, path.join(outputRoot, 'displaced.json'));
+          await fs.writeFile(file, contents);
+        }
+        return stat;
+      });
+      await assert.rejects(buildStandardBookAdapter(options), (error) =>
+        error instanceof AdapterBuildError && /without a valid adapter manifest/.test(error.message));
+      assert.strictEqual(injected, true);
+      const after = await lstat(first.outputDirectory);
+      assert.strictEqual(after.dev, directoryIdentity.dev);
+      assert.strictEqual(after.ino, directoryIdentity.ino);
+      assert.deepStrictEqual(await fs.readFile(file), contents);
+      assert.strictEqual(await fs.readFile(sibling, 'utf8'), 'synthetic unrelated output');
+      assert.deepStrictEqual((await fs.readdir(outputRoot)).sort(), ['displaced.json', target, 'untouched.txt'].sort());
+    });
+  }
+
   test('有限targetのREADMEが実装状態registryと一致する', async () => {
     assert.deepStrictEqual(ADAPTER_TARGETS, [
       'web-mdbook',
