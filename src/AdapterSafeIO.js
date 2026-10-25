@@ -142,6 +142,12 @@ function samePathIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
+function sameRegularFileSnapshot(expected, actual) {
+  return actual.isFile() && !actual.isSymbolicLink() &&
+    samePathIdentity(expected, actual) && expected.size === actual.size &&
+    expected.mtimeMs === actual.mtimeMs && expected.ctimeMs === actual.ctimeMs;
+}
+
 async function pathIdentity(candidate) {
   const stat = await fs.stat(candidate);
   return { dev: stat.dev, ino: stat.ino };
@@ -232,14 +238,35 @@ export function createAdapterSafeIO({ adapterName, target }) {
       const manifestPath = path.join(outputDirectory, 'manifest.json');
       const manifestStat = await fs.lstat(manifestPath);
       if (manifestStat.isSymbolicLink() || !manifestStat.isFile()) throw new Error('not a file');
-      manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      // Parse only bytes read through the file identity that was inspected.
+      // O_NONBLOCK also prevents a swapped FIFO from waiting for a writer on POSIX.
+      const handle = await openFile(
+        manifestPath,
+        fileSystemConstants.O_RDONLY | fileSystemConstants.O_NOFOLLOW |
+          fileSystemConstants.O_NONBLOCK
+      );
+      try {
+        const opened = await handle.stat();
+        if (!sameRegularFileSnapshot(manifestStat, opened)) throw new Error('changed before read');
+        const contents = await handle.readFile();
+        const completed = await handle.stat();
+        const current = await fs.lstat(manifestPath);
+        if (
+          !sameRegularFileSnapshot(opened, completed) ||
+          !sameRegularFileSnapshot(opened, current) ||
+          contents.length !== opened.size
+        ) throw new Error('changed during read');
+        manifest = JSON.parse(contents.toString('utf8'));
+      } finally {
+        await handle.close();
+      }
     } catch {
       throw new AdapterSafeIOError(
         `Refusing to replace output without a valid adapter manifest: ${outputDirectory}`
       );
     }
     if (
-      manifest.kind !== 'book-formatter.adapter-build' ||
+      manifest?.kind !== 'book-formatter.adapter-build' ||
       manifest.adapter?.target !== target
     ) {
       throw new AdapterSafeIOError(
