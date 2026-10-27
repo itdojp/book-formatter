@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-src about:">
+<title>Finite optional initializer fault fixture</title>
+</head>
+<body>
+<pre id="probe">[]</pre>
+<script>
+(async () => {
+  const mainSource = /* SHARED_MAIN_JSON */ null;
+  const names = ['addStyles', 'initSmoothScrolling', 'addHeadingIds', 'generateTOC', 'handleExternalLinks', 'enhanceImages'];
+  const checks = [];
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const check = (name, pass) => checks.push({ name, pass: Boolean(pass) });
+  const text = '日本語の合成教材・例外時も本文を保持する。'.repeat(100);
+  for (const mode of ['loading', 'complete']) {
+    for (const failed of [[], ...names.map((name) => [name]), names]) {
+      const label = mode + '/' + (failed.join(',') || 'none');
+      const frame = document.createElement('iframe');
+      document.body.appendChild(frame);
+      const doc = frame.contentDocument;
+      const win = frame.contentWindow;
+      try {
+        doc.open();
+        doc.write('<!doctype html><html><head><meta charset="utf-8"></head><body><nav><a id="local" href="#existing-id">本文へ</a></nav><main class="page-content"><h2 id="existing-id">日本語の既存ID</h2><h3 id="child-id">合成の小見出し</h3><p id="text"></p><img alt="synthetic image" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="><a id="external" href="https://external.example/">synthetic external reference, never visited</a></main><aside class="page-toc"></aside></body></html>');
+        doc.getElementById('text').textContent = text;
+        if (mode === 'complete') {
+          doc.close();
+          for (let attempt = 0; attempt < 10 && doc.readyState !== 'complete'; attempt++) await wait(10);
+        }
+        check(label + '/real readiness', doc.readyState === mode);
+        const attempts = [], warnings = [], errors = [];
+        const one = doc.querySelector.bind(doc), all = doc.querySelectorAll.bind(doc);
+        const listen = doc.addEventListener.bind(doc);
+        const observe = (name, fn) => (...args) => {
+          attempts.push(name);
+          if (failed.includes(name)) throw new Error('synthetic reader input MUST NOT be logged');
+          return fn(...args);
+        };
+        win.addEventListener('error', (event) => errors.push(event.message));
+        win.console.warn = (...args) => warnings.push(args);
+        doc.head.insertAdjacentHTML = observe('addStyles', doc.head.insertAdjacentHTML.bind(doc.head));
+        doc.addEventListener = (event, fn, options) => event === 'click'
+          ? observe('initSmoothScrolling', listen)(event, fn, options) : listen(event, fn, options);
+        doc.querySelector = (selector) => selector === '.page-toc'
+          ? observe('generateTOC', one)(selector) : one(selector);
+        doc.querySelectorAll = (selector) => {
+          const name = {
+            '.page-content h1, .page-content h2, .page-content h3, .page-content h4, .page-content h5, .page-content h6': 'addHeadingIds',
+            'a[href^="http"]': 'handleExternalLinks',
+            '.page-content img': 'enhanceImages'
+          }[selector];
+          return name ? observe(name, all)(selector) : all(selector);
+        };
+        const script = doc.createElement('script');
+        script.textContent = mainSource;
+        doc.body.appendChild(script);
+        if (mode === 'loading') doc.close();
+        await wait(300);
+        check(label + '/all initializers once and ordered', JSON.stringify(attempts) === JSON.stringify(names));
+        check(label + '/feature-specific warnings', JSON.stringify(warnings) === JSON.stringify(failed.map((name) => [
+          '[book-formatter/main] ' + name + ': optional initialization failed; continuing.'
+        ])));
+        check(label + '/no reader content in warning', !JSON.stringify(warnings).includes('MUST NOT'));
+        check(label + '/style isolation', Boolean(doc.head.querySelector('style')) === !failed.includes('addStyles'));
+        check(label + '/heading isolation', all('.heading-anchor').length === (failed.includes('addHeadingIds') ? 0 : 2));
+        check(label + '/TOC isolation', Boolean(one('.page-toc-list')) === !failed.includes('generateTOC'));
+        check(label + '/external-link isolation', one('#external').getAttribute('target') === (failed.includes('handleExternalLinks') ? null : '_blank'));
+        check(label + '/image isolation', one('img').hasAttribute('loading') === !failed.includes('enhanceImages'));
+        check(label + '/reader HTML preserved', one('#text').textContent === text && one('#local').getAttribute('href') === '#existing-id' && one('h2').id === 'existing-id');
+        one('img').click();
+        const modal = one('.image-modal');
+        const usable = Boolean(modal) === !failed.includes('enhanceImages');
+        modal?.querySelector('button').click();
+        check(label + '/independent image behavior', usable && !one('.image-modal'));
+        check(label + '/no uncaught exception', errors.length === 0);
+      } catch (error) {
+        checks.push({ name: label + '/fixture exception', pass: false, error: String(error) });
+      } finally {
+        frame.remove();
+      }
+    }
+  }
+  document.getElementById('probe').textContent = JSON.stringify(checks);
+})().catch((error) => {
+  document.getElementById('probe').textContent = JSON.stringify([{ name: 'fixture failure', pass: false, error: String(error) }]);
+});
+</script>
+</body>
+</html>

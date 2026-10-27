@@ -24,29 +24,39 @@ try {
     assert.equal(html.split(marker).length, 2, `one ${name} injection point required`);
     html = html.replace(marker, () => fs.readFileSync(path.join(root, `shared/assets/js/${name}.js`), 'utf8'));
   }
-  const page = path.join(directory, 'page.html');
-  fs.writeFileSync(page, html);
-  const result = spawnSync(chrome, [
-    '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-background-networking',
-    '--disable-component-update', '--no-first-run', '--no-default-browser-check', '--no-proxy-server',
-    '--host-resolver-rules=MAP * ~NOTFOUND', `--user-data-dir=${path.join(directory, 'profile')}`,
-    '--virtual-time-budget=6000', '--timeout=20000', '--dump-dom', pathToFileURL(page).href
-  ], { encoding: 'utf8', timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
-  assert.ifError(result.error);
-  assert.equal(result.status, 0, `Chrome failed (${result.signal}): ${result.stderr}`);
-  const findProbe = (node) => {
-    if (node.tagName === 'pre' && node.attrs?.some((a) => a.name === 'id' && a.value === 'probe')) return node;
-    for (const child of node.childNodes || []) {
-      const match = findProbe(child);
-      if (match) return match;
-    }
-  };
-  const probe = findProbe(parse(result.stdout));
-  assert.ok(probe, 'native DOM probe is absent');
-  const results = JSON.parse(probe.childNodes.map((node) => node.value || '').join(''));
-  assert.equal(results.length, 54, 'all browser assertions must finish');
-  assert.ok(results.every((check) => check.pass === true), JSON.stringify(results.filter((check) => !check.pass)));
-  console.log(JSON.stringify({ browser: chrome, passed: results.length, results }, null, 2));
+  function runFixture(filename, html, expectedCount, virtualTimeBudget) {
+    const page = path.join(directory, filename);
+    fs.writeFileSync(page, html);
+    const result = spawnSync(chrome, [
+      '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-background-networking',
+      '--disable-component-update', '--no-first-run', '--no-default-browser-check', '--no-proxy-server',
+      '--host-resolver-rules=MAP * ~NOTFOUND', `--user-data-dir=${path.join(directory, `profile-${filename}`)}`,
+      `--virtual-time-budget=${virtualTimeBudget}`, '--timeout=20000', '--dump-dom', pathToFileURL(page).href
+    ], { encoding: 'utf8', timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, `Chrome failed (${result.signal}): ${result.stderr}`);
+    const findProbe = (node) => {
+      if (node.tagName === 'pre' && node.attrs?.some((a) => a.name === 'id' && a.value === 'probe')) return node;
+      for (const child of node.childNodes || []) {
+        const match = findProbe(child);
+        if (match) return match;
+      }
+    };
+    const probe = findProbe(parse(result.stdout));
+    assert.ok(probe, 'native DOM probe is absent');
+    const results = JSON.parse(probe.childNodes.map((node) => node.value || '').join(''));
+    assert.equal(results.length, expectedCount, 'all browser assertions must finish');
+    assert.ok(results.every((check) => check.pass === true), JSON.stringify(results.filter((check) => !check.pass)));
+    console.log(JSON.stringify({ browser: chrome, fixture: filename, passed: results.length, results }, null, 2));
+  }
+  runFixture('page.html', html, 54, 6000);
+  const initMarker = '/* SHARED_MAIN_JSON */ null';
+  const initTemplate = fs.readFileSync(path.join(root, 'tests/fixtures/shared-dom/init-failures.html'), 'utf8');
+  assert.equal(initTemplate.split(initMarker).length, 2, 'one legacy main injection point required');
+  const main = fs.readFileSync(path.join(root, 'shared/assets/js/main.js'), 'utf8');
+  // Keep trusted source inside the JSON literal, not an HTML script delimiter.
+  const initHtml = initTemplate.replace(initMarker, () => JSON.stringify(main).replaceAll('<', '\\u003c'));
+  runFixture('init-failures.html', initHtml, 192, 12000);
 } finally {
   fs.rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

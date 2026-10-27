@@ -353,32 +353,31 @@
         document.head.insertAdjacentHTML('beforeend', styles);
     }
     
-    // Initialize all features - optimized for performance
+    // Optional enhancements must not prevent independent initializers from running.
+    // Labels are fixed here; do not log exception objects or reader-derived text.
+    function initializeFeature(name, initialize) {
+        try {
+            initialize();
+        } catch {
+            console.warn(`[book-formatter/main] ${name}: optional initialization failed; continuing.`);
+        }
+    }
+
     function init() {
-        // Critical features first
-        addStyles();
-        initSmoothScrolling();
-        
-        // Defer heavy processing to prevent browser freeze
+        initializeFeature('addStyles', addStyles);
+        initializeFeature('initSmoothScrolling', initSmoothScrolling);
+
         setTimeout(() => {
-            try {
-                addHeadingIds();
-            } catch (e) {
-                console.warn('Error in addHeadingIds:', e);
-            }
+            initializeFeature('addHeadingIds', addHeadingIds);
         }, 100);
-        
+
         setTimeout(() => {
-            try {
-                generateTOC();
-                handleExternalLinks();
-                enhanceImages();
-            } catch (e) {
-                console.warn('Error in deferred initialization:', e);
-            }
+            initializeFeature('generateTOC', generateTOC);
+            initializeFeature('handleExternalLinks', handleExternalLinks);
+            initializeFeature('enhanceImages', enhanceImages);
         }, 200);
     }
-    
+
     // Initialize when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

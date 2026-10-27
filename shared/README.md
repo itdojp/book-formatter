@@ -16,6 +16,10 @@
 | `markdown/` | active standard authoring contract | 標準Markdown規則。`sync-components`対象外 |
 | `mdbook/` | active `web-mdbook` asset | mdBook追加theme。Jekyll consumerへの同期対象外 |
 
+`assets/`の全fileが自動同期対象とは限りません。旧オプション`assets/js/main.js`は
+現在の標準layoutでは未読込で、managed一覧にも含まれません。その有限な例外分離と
+非目標は[旧main.jsの初期化境界](../docs/legacy-main-initialization.md)を参照してください。
+
 ## Jekyll component mapping
 
 `scripts/sync-components.js`はJekyll向けのlayouts / includes / assetsに次のmappingを使用する。
