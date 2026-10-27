@@ -102,7 +102,7 @@ test('test DOM class selectors share className/classList token state', () => {
   assert.equal(element.matches('.replacement'), true);
 });
 
-function fixture(script, texts = []) {
+function fixture(script, texts = [], prepare = () => {}) {
   const document = new Element('document');
   document.readyState = 'complete';
   document.head = new Element('head');
@@ -128,6 +128,7 @@ function fixture(script, texts = []) {
     setTimeout: (fn) => { timers.set(++timerId, fn); return timerId; },
     clearTimeout: (id) => timers.delete(id)
   };
+  prepare({ document, context });
   vm.runInNewContext(readFileSync(new URL(`../shared/assets/js/${script}`, import.meta.url), 'utf8'), context);
   const flush = () => {
     const callbacks = [...timers.values()]; timers.clear();
@@ -297,4 +298,72 @@ test('managed search fix has a discoverable assets/shared release version', () =
   assert.ok(newerThan323(version.version));
   assert.ok(newerThan323(version.components.assets.version));
   assert.ok(version.components.assets.files.includes('assets/js/search.js'));
+});
+
+const INITIALIZERS = [
+  'addStyles', 'initSmoothScrolling', 'addHeadingIds',
+  'generateTOC', 'handleExternalLinks', 'enhanceImages'
+];
+
+for (const readyState of ['loading', 'complete']) {
+  for (const failed of [[], ...INITIALIZERS.map((name) => [name]), INITIALIZERS]) {
+    test(`main: ${readyState} isolates synchronous initializer failures: ${failed.join(',') || 'none'}`, () => {
+      const attempts = [];
+      const warnings = [];
+      const delays = [];
+      const sentinel = 'synthetic reader input MUST NOT be logged';
+      const observe = (name, run) => (...args) => {
+        attempts.push(name);
+        if (failed.includes(name)) throw new Error(sentinel);
+        return run(...args);
+      };
+      const f = fixture('main.js', [], ({ document, context }) => {
+        document.readyState = readyState;
+        context.console.warn = (...args) => warnings.push(args);
+        const later = context.setTimeout;
+        context.setTimeout = (fn, delay) => { delays.push(delay); return later(fn); };
+        document.head.insertAdjacentHTML = observe('addStyles', document.head.insertAdjacentHTML);
+        const listen = document.addEventListener.bind(document);
+        document.addEventListener = (event, fn) => event === 'click'
+          ? observe('initSmoothScrolling', listen)(event, fn) : listen(event, fn);
+        const one = document.querySelector;
+        document.querySelector = (selector) => selector === '.page-toc'
+          ? observe('generateTOC', one)(selector) : one(selector);
+        const all = document.querySelectorAll;
+        document.querySelectorAll = (selector) => {
+          const name = {
+            '.page-content h1, .page-content h2, .page-content h3, .page-content h4, .page-content h5, .page-content h6': 'addHeadingIds',
+            'a[href^="http"]': 'handleExternalLinks',
+            '.page-content img': 'enhanceImages'
+          }[selector];
+          return name ? observe(name, all)(selector) : all(selector);
+        };
+      });
+      if (readyState === 'loading') {
+        assert.deepEqual(attempts, [], 'wait for DOM readiness');
+        f.document.emit('DOMContentLoaded');
+      }
+      assert.deepEqual(attempts, INITIALIZERS.slice(0, 2));
+      assert.deepEqual(delays, [100, 200], 'preserve both scheduling delays');
+      f.flush();
+      assert.deepEqual(attempts, INITIALIZERS, 'every independent initializer runs once, in order');
+      assert.deepEqual(warnings, failed.map((name) => [
+        `[book-formatter/main] ${name}: optional initialization failed; continuing.`
+      ]));
+      assert.equal(JSON.stringify(warnings).includes(sentinel), false);
+      assert.equal(f.document.listeners.get('click')?.length || 0,
+        failed.includes('initSmoothScrolling') ? 0 : 1);
+      f.flush();
+      assert.deepEqual(attempts, INITIALIZERS, 'no retries or duplicate initialization');
+    });
+  }
+}
+
+test('main: optional legacy utility remains outside default layouts and managed sync', () => {
+  const version = JSON.parse(readFileSync(new URL('../shared/version.json', import.meta.url), 'utf8'));
+  assert.equal(version.components.assets.files.includes('assets/js/main.js'), false);
+  for (const layout of ['book', 'default']) {
+    const source = readFileSync(new URL(`../shared/layouts/${layout}.html`, import.meta.url), 'utf8');
+    assert.equal(/<script[^>]+src=[^>]*assets\/js\/main\.js/u.test(source), false);
+  }
 });
