@@ -8,6 +8,10 @@ export const CONTEXT_TIMEOUT_MS = 1000;
 export const CONTEXT_BUFFER_BYTES = 4096;
 export const PATH_ENTRY_LIMIT = 64;
 export const PATH_LENGTH_LIMIT = 16384;
+// One source of truth, re-exported by discovery for existing callers.
+export const CHROME_CANDIDATES = Object.freeze([
+  'google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'
+]);
 export const PUBLIC_CHROME_PATHS = Object.freeze([
   '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
   '/usr/bin/chromium', '/usr/bin/chromium-browser',
@@ -17,7 +21,7 @@ export const PUBLIC_CHROME_PATHS = Object.freeze([
   '/usr/lib/chromium/chromium', '/usr/lib/chromium-browser/chromium-browser',
   '/snap/bin/chromium'
 ]);
-const candidates = new Set(['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']);
+const candidates = new Set(CHROME_CANDIDATES);
 const moduleFile = fileURLToPath(import.meta.url);
 const states = new Set(['resolved', 'redacted', 'not-found', 'inspection-limit', 'unavailable', 'unsupported-platform']);
 
@@ -50,7 +54,8 @@ export function inspectChromeContext(candidate, {
   try {
     for (const entry of entries) {
       // Empty/relative entries follow process lookup semantics but are not logged.
-      const executable = path.resolve(cwd, entry, candidate);
+      // This branch models Linux lookup, including in injected host fixtures.
+      const executable = path.posix.resolve(cwd, entry, candidate);
       let stat;
       try {
         stat = filesystem.statSync(executable);

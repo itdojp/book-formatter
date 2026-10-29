@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
+  CHROME_CANDIDATES as CONTEXT_CHROME_CANDIDATES,
   CONTEXT_TIMEOUT_MS, CONTEXT_BUFFER_BYTES, PATH_ENTRY_LIMIT, PATH_LENGTH_LIMIT,
   PUBLIC_CHROME_PATHS, inspectChromeContext, collectChromeContext
 } from './shared-browser-context.js';
@@ -112,6 +114,24 @@ const publicRecord = () => inspectFixture(
   fakeFilesystem({ '/usr/bin/google-chrome': { realPath: '/opt/google/chrome/google-chrome' } })
 );
 
+test('discovery re-exports the one frozen candidate list and every entry supports context', () => {
+  assert.equal(CHROME_CANDIDATES, CONTEXT_CHROME_CANDIDATES);
+  assert.ok(Object.isFrozen(CHROME_CANDIDATES));
+  assert.deepEqual(CHROME_CANDIDATES, ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']);
+  for (const candidate of CHROME_CANDIDATES) {
+    const selected = inspectChromeContext(candidate, { ...runtime, env: { PATH: '/usr/bin' },
+      filesystem: fakeFilesystem({ [`/usr/bin/${candidate}`]: {} }), cwd: '/fixture' });
+    assert.equal(selected.lookup.status, 'resolved');
+    assert.equal(selected.lookup.path, `/usr/bin/${candidate}`);
+    let calls = 0;
+    const collected = collectChromeContext(candidate, { run: () => {
+      calls++; return { status: 0, stdout: JSON.stringify(selected) };
+    } });
+    assert.equal(calls, 1);
+    assert.equal(collected.status, 'observed');
+  }
+});
+
 test('context reports only finite public lookup/realpath metadata and recognized runner identity', () => {
   const record = publicRecord();
   assert.deepEqual(record, {
@@ -197,7 +217,7 @@ test('metadata collector uses a bounded Node child, validates output and never l
   const result = collectChromeContext('google-chrome', { run(command, args, options) {
     calls++;
     assert.equal(command, process.execPath);
-    assert.ok(args[0].endsWith('/tests/shared-browser-context.js'));
+    assert.equal(args[0], fileURLToPath(new URL('./shared-browser-context.js', import.meta.url)));
     assert.equal(args[1], 'google-chrome');
     assert.equal(args.length, 2);
     assert.deepEqual(options, {

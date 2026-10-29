@@ -2,11 +2,9 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { collectChromeContext } from './shared-browser-context.js';
+import { CHROME_CANDIDATES, collectChromeContext } from './shared-browser-context.js';
 
-export const CHROME_CANDIDATES = Object.freeze([
-  'google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'
-]);
+export { CHROME_CANDIDATES };
 export const CHROME_PROBE_TIMEOUT_MS = 3000;
 export const CHROME_DIAGNOSTIC_LIMIT = 1024;
 

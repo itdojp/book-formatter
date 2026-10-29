@@ -12,6 +12,8 @@ first successful `--version` invocation. Each original invocation retains its
 3,000 ms timeout and failure classification. An explicit `CHROME_PATH` still
 has no fallback. Missing Chrome never becomes a synthetic browser success.
 No workflow, retry, browser pin, dependency, audit or native assertion changes.
+Candidate names are defined once in `shared-browser-context.js` and re-exported
+by discovery, preserving its existing public API without a circular import.
 
 ## Additive context
 
