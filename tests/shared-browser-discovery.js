@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { collectChromeContext } from './shared-browser-context.js';
 
 export const CHROME_CANDIDATES = Object.freeze([
   'google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'
@@ -16,7 +17,8 @@ function boundedOutput(value) {
 export function discoverChrome({
   chromePath = process.env.CHROME_PATH,
   probe = spawnSync,
-  now = () => performance.now()
+  now = () => performance.now(),
+  inspect = collectChromeContext
 } = {}) {
   const candidates = chromePath ? [chromePath] : CHROME_CANDIDATES;
   const diagnostics = [];
@@ -25,6 +27,12 @@ export function discoverChrome({
     // Preserve the legacy probe options exactly; decode only for diagnostics.
     const result = probe(candidate, ['--version'], { timeout: CHROME_PROBE_TIMEOUT_MS });
     const elapsedMs = Math.max(0, Math.round(now() - started));
+    let context;
+    try {
+      context = inspect(candidate, { explicitOverride: Boolean(chromePath) });
+    } catch {
+      context = { status: 'inspection-failed' };
+    }
     // Do not dump the environment, absolute override path or Error object.
     // JSON output escapes newlines rather than emitting workflow commands.
     diagnostics.push({
@@ -34,7 +42,8 @@ export function discoverChrome({
       errorCode: result.error?.code ?? null,
       elapsedMs,
       stdout: boundedOutput(result.stdout),
-      stderr: boundedOutput(result.stderr)
+      stderr: boundedOutput(result.stderr),
+      context
     });
     if (result.status === 0 && !result.error && !result.signal) {
       return { chrome: candidate, diagnostics };
